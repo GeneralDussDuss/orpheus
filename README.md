@@ -230,6 +230,7 @@ Orpheus does not install keybinds. Add them yourself; the author's
 ```lua
 o.bind("SUPER + SHIFT + M", "Music", "omarchy-shell -q orpheus library")
 o.bind("SUPER + CTRL + M", "Music visualizer", "omarchy-shell -q orpheus toggle")
+o.bind("SUPER + ALT + M", "Music widget", "omarchy-shell -q orpheus widget enabled toggle")
 o.bind("CTRL + SHIFT + O", "Orpheus sign-in", "omarchy-shell -q orpheus login")
 ```
 
@@ -237,6 +238,7 @@ o.bind("CTRL + SHIFT + O", "Orpheus sign-in", "omarchy-shell -q orpheus login")
 |---|---|
 | `Super+Shift+M` | the player |
 | `Super+Ctrl+M` | fullscreen stage |
+| `Super+Alt+M` | the desktop widget |
 | `Ctrl+Shift+O` | sign-in |
 
 In the player: `v` cycles the visualizer plane, `V` opens the stage, `1`–`7` switch tabs
@@ -247,6 +249,23 @@ In the player: `v` cycles the visualizer plane, `V` opens the stage, `1`–`7` s
 check state first, `toggle` flips the player, `status` prints the shell's status JSON.
 Everything is an IPC call; nothing is launched or kept alive. That is what makes it safe
 for a `.desktop` entry, which a launcher may fire twice.
+
+**The desktop widget** is configured through one method, `widget <key> <value>`:
+
+| key | values |
+|---|---|
+| `enabled` | `on` · `off` · `toggle` |
+| `style` | `compact` · `full` |
+| `corner` | `top-left` · `top-right` · `bottom-left` · `bottom-right` |
+| `layer` | `top` · `reserve` · `desktop` · `tile` · `float` |
+| `viz` | `prism` · `skyline` · `horizon` · `tunnel` · `orb` |
+| `monitor` | a monitor name, or empty for wherever it lands |
+
+`layer` is the one that decides how it behaves: `desktop` pins it behind your windows like
+a wallpaper, `tile` makes it a real window Hyprland lays out, `float` floats it, `top`
+sits above everything and `reserve` carves out space for it. Settings persist, so you set
+them once. Styles also cycle on the widget itself — scroll it or right-click — because
+this player does not do popout menus.
 
 Or call the shell directly — `omarchy-shell orpheus <method>` — with methods
 `status toggle show hide library login style railViz nextRailViz nextStyle miniPlayer

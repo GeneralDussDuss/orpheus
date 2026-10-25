@@ -579,14 +579,17 @@ Item {
     return statusText()
   }
   function setWidget(key, value) {
-    var allowed = { enabled: ["on", "off"], style: ["compact", "full"], corner: ["top-left", "top-right", "bottom-left", "bottom-right"],
+    var allowed = { enabled: ["on", "off", "toggle"], style: ["compact", "full"], corner: ["top-left", "top-right", "bottom-left", "bottom-right"],
                     layer: ["top", "reserve", "desktop", "tile", "float"] }
     if (key === "viz" && styles.indexOf(value) < 0) return "unknown viz: " + value + " (" + styles.join("|") + ")"
     if (allowed[key] && allowed[key].indexOf(value) < 0) return "unknown " + key + ": " + value + " (" + allowed[key].join("|") + ")"
     if (!allowed[key] && key !== "viz" && key !== "monitor") return "unknown setting: " + key + " (enabled|style|corner|layer|monitor|viz)"
     updateConfig(function(c) {
       c.widget = c.widget || {}
-      c.widget[key] = key === "enabled" ? value === "on" : value
+      // `toggle` exists so a keybind can be one command rather than two
+      c.widget[key] = key === "enabled"
+        ? (value === "toggle" ? !c.widget.enabled : value === "on")
+        : value
     })
     return statusText()
   }
