@@ -18,6 +18,7 @@ from aiohttp import web
 from .mpris import Mpris
 from .player import Player
 from . import eq as eqmod
+from .lyrics import Lyrics
 from .tidal import QUALITIES, Tidal
 
 log = logging.getLogger("orpheus")
@@ -39,6 +40,7 @@ class App:
         self.tidal = Tidal(STATE_DIR, self.prefs.get("quality"))
         self.player = Player(self.tidal, RUNTIME_DIR, CACHE_DIR, self._changed)
         self.player.eq = eqmod.normalize(self.prefs.get("eq"))
+        self.lyrics = Lyrics(self.tidal, CACHE_DIR)
         self.mpris = Mpris(self, self.player)
 
         self.version = 0
@@ -231,7 +233,15 @@ class App:
         @r.get("/lyrics/{id}")
         async def lyrics(req):
             need_login()
-            return J(await self.tidal.lyrics(req.match_info["id"]))
+            tid = req.match_info["id"]
+            # LRCLIB matches on title/artist/album/duration, so hand it the
+            # metadata we already hold rather than making it guess from an id.
+            meta = {}
+            for t in ([self.player.current] if self.player.current else []) + self.player.queue:
+                if t and str(t.get("id")) == str(tid):
+                    meta = t
+                    break
+            return J(await self.lyrics.get(tid, meta))
 
         @r.get("/eq")
         async def eq_get(req):

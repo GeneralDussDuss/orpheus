@@ -176,6 +176,8 @@ Item {
   property int loginRequests: 0      // bumps to send the open library to the sign-in page
   property int eqRequests: 0         // ... and the same for the equalizer
   property int eqHandled: 0
+  property int lyricsRequests: 0     // ... and the lyrics
+  property int lyricsHandled: 0
   property int loginHandled: 0
   property int barWidgets: 0           // bar widgets register themselves
   readonly property bool widgetShown: widget.enabled !== false && (player !== null || widgetIsWindow)
@@ -617,6 +619,7 @@ Item {
     function library(): string { root.libraryOpen = !root.libraryOpen; return root.statusText() }
     function login(): string { root.libraryOpen = true; root.loginRequests++; return root.statusText() }
     function eq(): string { root.libraryOpen = true; root.eqRequests++; return root.statusText() }
+    function lyrics(): string { root.libraryOpen = true; root.lyricsRequests++; return root.statusText() }
     function style(name: string): string { return root.setStyle(name) }
     function railViz(name: string): string { return root.setRailViz(name) }
     function nextRailViz(): string { return root.cycleRailViz(1) }

@@ -235,10 +235,14 @@ FloatingWindow {
   function showEq() {
     if (page.type !== "eq") go({ type: "eq", title: "equalizer" })
   }
+  function showLyrics() {
+    if (page.type !== "lyrics") go({ type: "lyrics", title: "lyrics" })
+  }
   Connections {
     target: win.engine
     function onLoginRequestsChanged() { win.engine.loginHandled = win.engine.loginRequests; win.showLogin() }
     function onEqRequestsChanged() { win.engine.eqHandled = win.engine.eqRequests; win.showEq() }
+    function onLyricsRequestsChanged() { win.engine.lyricsHandled = win.engine.lyricsRequests; win.showLyrics() }
   }
   Connections {
     target: win.api
@@ -338,6 +342,7 @@ FloatingWindow {
     if (t === "q" || (k === Qt.Key_W && (e.modifiers & Qt.ControlModifier))) { engine.libraryOpen = false; return true }
     if (t === "/") { go({ type: "search", title: "search" }); return true }
     if (t === "e") { go({ type: "eq", title: "equalizer" }); return true }
+    if (t === "L") { go({ type: "lyrics", title: "lyrics" }); return true }
     if (t >= "1" && t <= "7") { go(navItems[Number(t) - 1].page); return true }
     if (k === Qt.Key_Space) { api.control("toggle"); return true }
     if (t === "n") { api.control("next"); return true }
@@ -734,6 +739,13 @@ FloatingWindow {
         onLoaded: item.forceActiveFocus()
       }
 
+      Loader {
+        anchors.fill: parent
+        active: win.page.type === "lyrics"
+        sourceComponent: LyricsPane { host: win }
+        onLoaded: item.forceActiveFocus()
+      }
+
       // Sign-in / offline cover.
       Loader {
         anchors.fill: parent
@@ -1061,6 +1073,7 @@ FloatingWindow {
     list.forceActiveFocus()
     if (engine && engine.loginRequests > 0 && engine.loginRequests !== engine.loginHandled) { engine.loginHandled = engine.loginRequests; showLogin() }
     else if (engine && engine.eqRequests > 0 && engine.eqRequests !== engine.eqHandled) { engine.eqHandled = engine.eqRequests; load(); showEq() }
+    else if (engine && engine.lyricsRequests > 0 && engine.lyricsRequests !== engine.lyricsHandled) { engine.lyricsHandled = engine.lyricsRequests; load(); showLyrics() }
     else load()
   }
 }

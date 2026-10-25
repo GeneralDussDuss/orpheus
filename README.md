@@ -69,6 +69,7 @@ Colours come from the active Omarchy theme, so it changes when your desktop does
 - [Sign-in](#-sign-in)
 - [Keybinds and usage](#-keybinds-and-usage)
 - [Equalizer](#-equalizer)
+- [Lyrics](#-lyrics)
 - [Configuration](#-configuration)
 - [Troubleshooting](#-troubleshooting)
 - [Status and known issues](#-status-and-known-issues)
@@ -242,7 +243,7 @@ o.bind("CTRL + SHIFT + O", "Orpheus sign-in", "omarchy-shell -q orpheus login")
 | `Super+Alt+M` | the desktop widget |
 | `Ctrl+Shift+O` | sign-in |
 
-And in the player: `e` opens the equalizer.
+And in the player: `e` opens the equalizer, `L` the lyrics.
 
 In the player: `v` cycles the visualizer plane, `V` opens the stage, `1`–`7` switch tabs
 (home, search, mixes, playlists, albums, tracks, artists), `↵` plays, `space` pauses,
@@ -271,7 +272,7 @@ them once. Styles also cycle on the widget itself — scroll it or right-click �
 this player does not do popout menus.
 
 Or call the shell directly — `omarchy-shell orpheus <method>` — with methods
-`status toggle show hide library login eq style railViz nextRailViz nextStyle miniPlayer
+`status toggle show hide library login eq lyrics style railViz nextRailViz nextStyle miniPlayer
 placement widget`. Note the widget's visualizer is `widget viz <style>`; there is no
 `widgetViz`.
 
@@ -345,6 +346,25 @@ One thing the importer will warn you about: AutoEq fits out to 20&nbsp;kHz, abov
 where coupler measurements are reliable, so the 16&nbsp;kHz band often comes out as a large cut
 that is an artefact of the fit rather than anything you would hear. The warning is advisory —
 your data is imported as written.
+
+---
+
+## ╱╱ lyrics
+
+`L` in the player, or `omarchy-shell orpheus lyrics`. Synced lyrics scroll with the track,
+the current line lit, lines already sung dimmed behind it.
+
+TIDAL is asked first, since your subscription already carries timed lyrics for a lot of
+the catalogue. When it has none, or has only unsynced words, [LRCLIB](https://lrclib.net)
+is asked — it is free, needs no key, and often has timings TIDAL lacks. Failing both, the
+plain words are shown unsynced, and failing that it says so.
+
+Results are cached under `~/.cache/orpheus/lyrics`, including the misses: plenty of tracks
+have no lyrics anywhere and asking two services again on every play is rude to both.
+**No lyrics are bundled with Orpheus** — they are fetched at play time and cached locally.
+
+Community LRC files are often a fraction of a second out. `[` and `]` nudge the sync a
+quarter second at a time and `\` resets it.
 
 ---
 

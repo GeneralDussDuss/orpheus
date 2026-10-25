@@ -361,15 +361,6 @@ class Tidal:
             return [track_dict(t) for t in self.session.track(track_id).get_track_radio(limit=50)]
         return await asyncio.to_thread(work)
 
-    async def lyrics(self, track_id: str) -> dict:
-        def work():
-            l = self.session.track(track_id).lyrics()
-            return {"text": l.text or "", "synced": l.subtitles or ""}
-        try:
-            return await asyncio.to_thread(work)
-        except Exception:
-            return {"text": "", "synced": ""}
-
     # ---- playback ----------------------------------------------------------
 
     async def stream(self, track_id: str, cache_dir: Path) -> dict:
