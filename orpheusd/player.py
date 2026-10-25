@@ -12,6 +12,8 @@ import random
 import time
 from pathlib import Path
 
+from . import eq as eqmod
+
 log = logging.getLogger("orpheus.player")
 
 MPV_ARGS = [
@@ -50,6 +52,8 @@ class Player:
         self.volume = 100.0
         self.stream_info: dict = {}
         self.error = ""
+        self.eq: dict = eqmod.normalize(None)
+        self._eq_chain = ""
 
         self._proc = None
         self._reader = None
@@ -126,6 +130,9 @@ class Player:
         asyncio.create_task(self._read_loop())
         for i, prop in enumerate(["pause", "duration", "idle-active", "volume", "playlist-pos"]):
             await self._send(["observe_property", i + 1, prop])
+        # Restore the saved curve before anything plays, so the first track is
+        # already corrected rather than snapping into place a moment later.
+        await self._apply_eq()
         asyncio.create_task(self._clock_loop())
 
     async def stop(self):
@@ -375,6 +382,37 @@ class Player:
     async def seek(self, seconds: float):
         await self._send(["seek", max(0.0, float(seconds)), "absolute"])
         await self._refresh_position()
+
+    # ---- equalizer ---------------------------------------------------------
+
+    async def _apply_eq(self):
+        """Push the current curve to mpv, skipping a no-op rebuild.
+
+        Setting `af` rebuilds the audio filter graph, so only do it when the
+        resulting chain actually differs from what mpv is already running.
+        """
+        chain = eqmod.build_chain(self.eq)
+        if chain == self._eq_chain:
+            return
+        self._eq_chain = chain
+        if self._writer is None:
+            return
+        try:
+            await self._send(["set_property", "af", chain])
+        except Exception as e:
+            log.warning("could not apply EQ: %s", e)
+
+    async def set_eq(self, state: dict) -> dict:
+        self.eq = eqmod.normalize(state)
+        await self._apply_eq()
+        self.on_change()
+        return self.eq_state()
+
+    def eq_state(self) -> dict:
+        s = dict(self.eq)
+        s["preampEffective"] = eqmod.effective_preamp(self.eq)
+        s["active"] = bool(self._eq_chain)
+        return s
 
     async def set_volume(self, vol: float):
         await self._send(["set_property", "volume", max(0.0, min(130.0, float(vol)))])

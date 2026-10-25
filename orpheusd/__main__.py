@@ -17,6 +17,7 @@ from aiohttp import web
 
 from .mpris import Mpris
 from .player import Player
+from . import eq as eqmod
 from .tidal import QUALITIES, Tidal
 
 log = logging.getLogger("orpheus")
@@ -37,6 +38,7 @@ class App:
         self.prefs = self._load_prefs()
         self.tidal = Tidal(STATE_DIR, self.prefs.get("quality"))
         self.player = Player(self.tidal, RUNTIME_DIR, CACHE_DIR, self._changed)
+        self.player.eq = eqmod.normalize(self.prefs.get("eq"))
         self.mpris = Mpris(self, self.player)
 
         self.version = 0
@@ -58,6 +60,7 @@ class App:
         else:
             self.prefs.pop("quality", None)
         self.prefs["volume"] = round(self.player.volume)
+        self.prefs["eq"] = self.player.eq
         PREFS.write_text(json.dumps(self.prefs, indent=2) + "\n")
 
     # ---- change notification -------------------------------------------------
@@ -134,6 +137,7 @@ class App:
                                    albumLiked=self.tidal.is_liked("album", t.get("albumId", "")))
         return {"version": self.version, "login": self.tidal.login_state,
                 "quality": self.tidal.quality, "player": player,
+                "eq": self.player.eq_state(),
                 "likedVersion": self.tidal.liked_version}
 
     async def _liked_loop(self):
@@ -228,6 +232,76 @@ class App:
         async def lyrics(req):
             need_login()
             return J(await self.tidal.lyrics(req.match_info["id"]))
+
+        @r.get("/eq")
+        async def eq_get(req):
+            # describe() carries the band centres and the preset list, so the UI
+            # never has to hardcode the spec.
+            return J({**eqmod.describe(), "state": self.player.eq_state()})
+
+        @r.post("/eq")
+        async def eq_set(req):
+            b = await body(req)
+            if "preset" in b and b["preset"]:
+                preset = eqmod.preset_by_id(str(b["preset"]))
+                if preset is None:
+                    raise web.HTTPBadRequest(text=f"unknown preset: {b['preset']}")
+                state = {
+                    "enabled": bool(b.get("enabled", True)),
+                    "gains": preset["gains"],
+                    "preamp": preset.get("preamp"),
+                    "preset": preset["id"],
+                }
+            else:
+                state = dict(self.player.eq)
+                if "gains" in b:
+                    state["gains"] = b["gains"]
+                    state["preset"] = None   # hand-edited, so it is no longer the preset
+                if "band" in b:
+                    # one band at a time, for a slider drag
+                    try:
+                        i = int(b["band"])
+                    except (TypeError, ValueError):
+                        raise web.HTTPBadRequest(text="band must be an index")
+                    if not 0 <= i < len(eqmod.BANDS):
+                        raise web.HTTPBadRequest(text=f"band must be 0..{len(eqmod.BANDS) - 1}")
+                    gains = list(state["gains"])
+                    gains[i] = b.get("gain", 0)
+                    state["gains"] = gains
+                    state["preset"] = None
+                if "preamp" in b:
+                    state["preamp"] = b["preamp"]
+                if "enabled" in b:
+                    state["enabled"] = bool(b["enabled"])
+            out = await self.player.set_eq(state)
+            self._save_prefs()
+            return J(out)
+
+        @r.post("/eq/presets")
+        async def eq_import(req):
+            # Import a correction from an AutoEq "FixedBandEQ.txt". The text is
+            # posted by the client; Orpheus ships no measurement data of its own,
+            # because AutoEq's MIT licence covers its code and not the
+            # measurements behind it.
+            b = await body(req)
+            name = str(b.get("name", "")).strip()
+            text = b.get("text", "")
+            if not name:
+                raise web.HTTPBadRequest(text="a name is required")
+            try:
+                parsed = eqmod.parse_fixed_band(text)
+            except ValueError as e:
+                raise web.HTTPBadRequest(text=str(e))
+            entry = eqmod.save_device_preset(
+                name, parsed["gains"], parsed["preamp"],
+                source=str(b.get("source", "")), note=str(b.get("note", "")))
+            return J({"preset": entry, "warnings": parsed["warnings"]})
+
+        @r.delete("/eq/presets/{id}")
+        async def eq_preset_delete(req):
+            if not eqmod.delete_device_preset(req.match_info["id"]):
+                raise web.HTTPNotFound(text="no such preset")
+            return J({"ok": True})
 
         @r.post("/play")
         async def play(req):

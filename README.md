@@ -68,6 +68,7 @@ Colours come from the active Omarchy theme, so it changes when your desktop does
 - [Install](#-install)
 - [Sign-in](#-sign-in)
 - [Keybinds and usage](#-keybinds-and-usage)
+- [Equalizer](#-equalizer)
 - [Configuration](#-configuration)
 - [Troubleshooting](#-troubleshooting)
 - [Status and known issues](#-status-and-known-issues)
@@ -274,12 +275,68 @@ placement widget`. Note the widget's visualizer is `widget viz <style>`; there i
 
 ---
 
+## ╱╱ equalizer
+
+Ten bands at 31, 62, 125, 250, 500&nbsp;Hz and 1, 2, 4, 8, 16&nbsp;kHz, ±12&nbsp;dB in half-decibel
+steps. The two end bands are shelves rather than peaks, because a peaking filter at 31&nbsp;Hz
+with Q&nbsp;1.4 has almost no effect by 20&nbsp;Hz — "lift the sub-bass" should do what it says.
+
+It runs inside mpv as a filter chain, not as a PipeWire sink. That means it follows the
+output device automatically, affects nothing but Orpheus, and adds no dependency. **A flat
+or disabled EQ removes the filter entirely**, so the signal path is untouched rather than
+running through a unity-gain biquad.
+
+**Headroom is automatic.** Orpheus runs mpv with `--replaygain-clip=no`, so the signal is
+already permitted above 0&nbsp;dBFS before the EQ touches it; boosting a band on top of that
+clips in the final integer conversion where nothing can catch it. The preamp defaults to
+minus the largest boost. You can override it, but you probably should not.
+
+```sh
+curl -s 127.0.0.1:47837/eq                  # bands, presets, current state
+curl -X POST 127.0.0.1:47837/eq -d '{"preset":"loudness","enabled":true}'
+curl -X POST 127.0.0.1:47837/eq -d '{"band":0,"gain":4.5}'   # one band, for a slider
+curl -X POST 127.0.0.1:47837/eq -d '{"enabled":false}'       # bypass
+```
+
+Six tone presets ship with it: Flat, Bass Lift, Vocal, Loudness, Tame Treble and Speech.
+
+### Headphone corrections
+
+Orpheus ships **no measurement data**, deliberately. The obvious source is
+[AutoEq](https://github.com/jaakkopasanen/AutoEq), whose MIT licence covers its code and
+not its data — the measurements come from oratory1990, Rtings, Super Review and others, none
+of whom have granted redistribution, and the maintainer confirms the distinction in AutoEq
+issue [#790](https://github.com/jaakkopasanen/AutoEq/issues/790). So Orpheus ships the
+importer instead, and the numbers stay on your machine.
+
+Find your headphones in AutoEq's results, take the **`FixedBandEQ.txt`** (not
+`ParametricEQ.txt` or `GraphicEQ.txt` — the fixed-band file is already fitted to these exact
+ten centres) and post it:
+
+```sh
+curl -X POST 127.0.0.1:47837/eq/presets -H 'Content-Type: application/json' \
+  --argjson text "$(jq -Rs . < 'Sennheiser HD 6XX FixedBandEQ.txt')" \
+  -d "{\"name\":\"Sennheiser HD 6XX\",\"text\":$(jq -Rs . < 'Sennheiser HD 6XX FixedBandEQ.txt')}"
+```
+
+It lands in `~/.local/state/orpheus/eq-presets.json` and appears alongside the tone presets.
+`DELETE /eq/presets/{id}` removes one.
+
+One thing the importer will warn you about: AutoEq fits out to 20&nbsp;kHz, above the range
+where coupler measurements are reliable, so the 16&nbsp;kHz band often comes out as a large cut
+that is an artefact of the fit rather than anything you would hear. The warning is advisory —
+your data is imported as written.
+
+---
+
 ## ╱╱ configuration
 
 Little is configurable, and most of it is by hand.
 
 - **Audio quality** is picked in the player (`high` 320k, `lossless` FLAC, `hires`); the
   choice is stored in `~/.local/state/orpheus/daemon.json`.
+- **The EQ curve** is stored in the same file and restored before the first track plays.
+  Imported headphone corrections live beside it in `eq-presets.json`.
 - **Port.** The daemon defaults to `47837`, settable with `--port` or `ORPHEUS_PORT`.
   `Api.qml` hardcodes `47837`, so changing the daemon's port also means editing the QML.
 - **State**: `~/.local/state/orpheus/` (session, prefs, `resume.json` — the queue and
