@@ -243,16 +243,32 @@ o.bind("CTRL + SHIFT + O", "Orpheus sign-in", "omarchy-shell -q orpheus login")
 | `Super+Alt+M` | the desktop widget |
 | `Ctrl+Shift+O` | sign-in |
 
-And in the player: `e` opens the equalizer, `L` the lyrics.
+And in the player: `e` opens the equalizer, `L` the lyrics, `y` copies a link to
+whatever the cursor is on.
 
 In the player: `v` cycles the visualizer plane, `V` opens the stage, `1`–`7` switch tabs
 (home, search, mixes, playlists, albums, tracks, artists), `↵` plays, `space` pauses,
 `f` favourites, `/` searches, `q` closes.
 
-**CLI.** `bin/orpheus [open|stage|close|toggle|status]` is idempotent: `open` and `close`
-check state first, `toggle` flips the player, `status` prints the shell's status JSON.
-Everything is an IPC call; nothing is launched or kept alive. That is what makes it safe
-for a `.desktop` entry, which a launcher may fire twice.
+**Sharing.** `y` copies a TIDAL link to the clipboard — for the row under the cursor,
+not necessarily what is playing, since what you want to send is usually what you are
+looking at. `Y` copies a [song.link](https://song.link) instead, which opens on whatever
+service the person you send it to actually uses; a bare TIDAL link is no use to a friend
+on Spotify. Tracks and albums have a universal form, artists and playlists do not, and a
+mix has no link at all — its id means nothing outside your account.
+
+`orpheus share` does the same from a keybind with nothing open (`-u` for the universal
+link). It asks the daemon rather than the shell, because the window's status poll only
+runs while a window is on screen:
+
+```lua
+o.bind("SUPER + SHIFT + C", "Copy song link", "orpheus share")
+```
+
+**CLI.** `bin/orpheus [open|stage|close|toggle|status|share]` is idempotent: `open` and
+`close` check state first, `toggle` flips the player, `status` prints the shell's status
+JSON. Apart from `share`, everything is an IPC call; nothing is launched or kept alive.
+That is what makes it safe for a `.desktop` entry, which a launcher may fire twice.
 
 **The desktop widget** is configured through one method, `widget <key> <value>`:
 

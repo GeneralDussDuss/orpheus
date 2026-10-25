@@ -335,6 +335,39 @@ FloatingWindow {
     else api.playTracks(pageTracks, start, { kind: page.type, id: page.id || page.what, title: page.title })
   }
 
+  // ---- sharing ----------------------------------------------------------------
+  //
+  // What you want to send someone is almost never what is playing: it is the
+  // row you are looking at. So the target is the cursor first, the page second,
+  // and the playing track only as a last resort.
+  function shareTarget() {
+    var r = rows[list.currentIndex]
+    if (r && r.item) return r.item
+    if (page.type === "detail" && page.id) return { kind: page.kind, id: page.id }
+    if (track) return { kind: "track", id: track.id }
+    return null
+  }
+
+  function share(universal) {
+    var it = shareTarget()
+    if (!it) { say("nothing to share"); return true }
+    if (!engine) return true
+    var url = engine.shareUrl(it.kind, it.id, universal)
+    if (!url) { say("a " + it.kind + " has no link to share"); return true }
+    // asked for a universal link and got the TIDAL one back: say so, rather
+    // than letting someone paste a TIDAL link thinking it is portable
+    var note = universal && !engine.universalUrl(it.kind, it.id) ? "tidal only · " : ""
+    Quickshell.clipboardText = url
+    say("copied · " + note + url)
+    return true
+  }
+
+  // Copying is invisible otherwise: nothing moves, and a working shortcut looks
+  // exactly like a dead one.
+  property string flash: ""
+  Timer { id: flashOff; interval: 2800; onTriggered: win.flash = "" }
+  function say(msg) { flash = msg; flashOff.restart() }
+
   // ---- keys -------------------------------------------------------------------
   function handleKey(e) {
     var k = e.key, t = e.text
@@ -366,6 +399,8 @@ FloatingWindow {
       return true
     }
     if (t === "F") { if (track) api.toggleLike("track", track.id); return true }
+    if (t === "y") return share(false)
+    if (t === "Y") return share(true)
     return false
   }
 
@@ -769,7 +804,7 @@ FloatingWindow {
         width: parent.width
         height: Math.min(parent.height * 0.7, parent.width - win.cw * 3 + win.ch * 10)
         title: !!win.engine && win.engine.railViz !== "off" ? "now · " + win.engine.railViz : "now"
-        keyHint: Tui.hints([["v", "viz"], ["V", "stage"]], win.accentText, win.dim)
+        keyHint: Tui.hints([["v", "viz"], ["V", "stage"], ["y", "share"]], win.accentText, win.dim)
         clock: win.clock
         Column {
           width: parent.width
@@ -938,6 +973,32 @@ FloatingWindow {
           }
         }
       }
+    }
+
+    // A line that says what just happened, over the page and above the
+    // transport, then gets out of the way.
+    Rectangle {
+      id: flashBox
+      visible: opacity > 0.01
+      opacity: win.flash ? 1 : 0
+      Behavior on opacity { NumberAnimation { duration: 180 } }
+      anchors.horizontalCenter: parent.horizontalCenter
+      y: transport.y - height - win.ch * 0.8
+      width: Math.min(parent.width - win.cw * 2, flashLine.implicitWidth + win.cw * 4)
+      height: win.ch * 2.2
+      color: Qt.rgba(win.baseBg.r, win.baseBg.g, win.baseBg.b, 0.97)
+      border.width: 1
+      border.color: win.accent
+      Text {
+        id: flashLine
+        anchors.centerIn: parent
+        width: Math.min(implicitWidth, flashBox.width - win.cw * 3)
+        elide: Text.ElideMiddle
+        text: win.flash
+        font.family: win.family; font.pixelSize: Style.font.caption
+        color: win.accentText
+      }
+      MouseArea { anchors.fill: parent; onClicked: win.flash = "" }
     }
 
     // └─ transport ─┘

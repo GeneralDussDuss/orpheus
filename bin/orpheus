@@ -6,7 +6,29 @@
 # fires it twice, so `open` checks first.
 set -u
 
+API=http://127.0.0.1:47837
+
 shell() { omarchy-shell orpheus "$@"; }
+
+# Ask the daemon, not the shell: the window's status poll only runs while a
+# window is on screen, so a keybind pressed with everything closed would see no
+# track. The daemon always knows.
+share() {
+  local universal=no url
+  case "${1:-}" in -u|--universal|universal) universal=yes ;; esac
+  url=$(curl -fsS --max-time 3 "$API/status" 2>/dev/null | python3 -c '
+import json, sys
+universal = len(sys.argv) > 1 and sys.argv[1] == "yes"
+track = (json.load(sys.stdin).get("player") or {}).get("track") or {}
+if not track.get("id"):
+    raise SystemExit(1)
+# song.link takes the TIDAL id straight and opens on whatever service the
+# person has; the bare TIDAL link is no use to someone without TIDAL.
+print(("https://song.link/t/" if universal else "https://tidal.com/track/") + str(track["id"]))
+' "$universal") || { echo "orpheus: nothing playing" >&2; exit 1; }
+  printf '%s' "$url" | wl-copy 2>/dev/null || true
+  echo "$url"
+}
 is_open() { shell status 2>/dev/null | grep -q "\"$1\":true"; }
 
 case "${1:-open}" in
@@ -15,5 +37,6 @@ case "${1:-open}" in
   close)  is_open library && shell library >/dev/null ;;
   toggle) shell library >/dev/null ;;
   status) shell status ;;
-  *) echo "usage: orpheus [open|stage|close|toggle|status]" >&2; exit 2 ;;
+  share)  shift; share "$@" ;;
+  *) echo "usage: orpheus [open|stage|close|toggle|status|share [-u]]" >&2; exit 2 ;;
 esac

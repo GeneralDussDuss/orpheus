@@ -598,6 +598,39 @@ Item {
     return statusText()
   }
 
+  // ---- links ------------------------------------------------------------
+  //
+  // The engine owns these rather than the window, so a link can be copied from
+  // a keybind with nothing open.
+  function tidalUrl(kind, id) {
+    if (!id) return ""
+    // A mix is assembled for one account and its id means nothing to anyone
+    // else, so there is deliberately no link for one.
+    var kinds = { track: "track", album: "album", artist: "artist", playlist: "playlist" }
+    return kinds[kind] ? "https://tidal.com/" + kinds[kind] + "/" + id : ""
+  }
+
+  // song.link takes a TIDAL id directly and sends whoever opens it to the
+  // service they actually use - which is the point, since a bare TIDAL link is
+  // useless to a friend on Spotify. Their API wants a key now; this URL form
+  // does not, and it costs us no request at all.
+  function universalUrl(kind, id) {
+    if (!id) return ""
+    if (kind === "track") return "https://song.link/t/" + id
+    if (kind === "album") return "https://album.link/t/" + id
+    return ""
+  }
+
+  function shareUrl(kind, id, universal) {
+    return (universal ? universalUrl(kind, id) : "") || tidalUrl(kind, id)
+  }
+
+  function copyShare(kind, id, universal) {
+    var url = shareUrl(kind, id, universal)
+    if (url) Quickshell.clipboardText = url
+    return url
+  }
+
   function statusText() {
     return JSON.stringify({ open: open, library: libraryOpen, widget: widget, style: style, railViz: railViz, miniPlayer: miniPlayer, placement: placement,
                             cava: hasCava, listening: listening,
