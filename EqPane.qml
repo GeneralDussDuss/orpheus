@@ -51,9 +51,13 @@ Rectangle {
   property bool eqOn: false
   property string presetId: ""
   property real preampShown: 0
+  property bool preampManual: false
   property int sel: 0
   property bool loaded: false
   property string note: ""
+
+  // less headroom than the biggest boost needs
+  readonly property bool clipping: preampShown > autoPreamp() + 0.01
 
   readonly property string presetName: {
     for (var i = 0; i < presets.length; i++)
@@ -80,6 +84,7 @@ Rectangle {
     eqOn = !!s.enabled
     presetId = s.preset || ""
     preampShown = s.preampEffective || 0
+    preampManual = s.preamp !== null && s.preamp !== undefined
   }
 
   // ---- editing -----------------------------------------------------------
@@ -102,7 +107,7 @@ Rectangle {
     presetId = ""
     // Touching a band implies you want to hear it.
     if (!eqOn && !flat()) eqOn = true
-    preampShown = autoPreamp()
+    if (!preampManual) preampShown = autoPreamp()
     push.restart()
   }
 
@@ -117,6 +122,24 @@ Rectangle {
     var peak = 0
     for (var i = 0; i < gains.length; i++) peak = Math.max(peak, gains[i])
     return -Math.round(peak * 2) / 2
+  }
+
+  // Boosting cannot make anything louder - there is nothing above full scale -
+  // so the automatic headroom pulls everything down by the largest boost. That
+  // is correct and it is also why "more bass" can land as "quieter". Let the
+  // listener take it back, and show them which mode they are in.
+  function setPreamp(v) {
+    if (!api) return
+    var clamped = Math.max(-24, Math.min(0, Math.round(v * 2) / 2))
+    preampShown = clamped
+    preampManual = true
+    api.post("/eq", { preamp: clamped }, function(ok, d) { if (ok) pane.apply(d) })
+  }
+
+  function autoHeadroom() {
+    if (!api) return
+    preampManual = false
+    api.post("/eq", { preamp: null }, function(ok, d) { if (ok) pane.apply(d) })
   }
 
   function resetBand() {
@@ -205,6 +228,9 @@ Rectangle {
     else if (t === "p") { cyclePreset(1); e.accepted = true }
     else if (t === "P") { cyclePreset(-1); e.accepted = true }
     else if (t === "b") { toggleBypass(); e.accepted = true }
+    else if (t === "[") { setPreamp(preampShown - 0.5); e.accepted = true }
+    else if (t === "]") { setPreamp(preampShown + 0.5); e.accepted = true }
+    else if (t === "\\") { autoHeadroom(); e.accepted = true }
     else if (k === Qt.Key_Escape || t === "q") { e.accepted = host.handleKey(e) }
     else e.accepted = host.handleKey(e)
   }
@@ -236,7 +262,11 @@ Rectangle {
         return dot + '  ' + (on ? "active" : "bypassed")
              + '   <font color="' + Tui.hex(host.dim) + '">preset</font> ' + Tui.esc(pane.presetName)
              + '   <font color="' + Tui.hex(host.dim) + '">preamp</font> '
-             + (pane.preampShown <= -0.05 ? pane.preampShown.toFixed(1) : "0.0") + ' dB'
+             + '<font color="' + Tui.hex(pane.clipping ? host.accentText : host.fg) + '">'
+             + (pane.preampShown <= -0.05 ? pane.preampShown.toFixed(1) : "0.0") + ' dB</font>'
+             + ' <font color="' + Tui.hex(host.dim) + '">'
+             + (pane.preampManual ? "manual" : "auto") + '</font>'
+             + (pane.clipping ? '  <font color="' + Tui.hex(host.accentText) + '">may clip</font>' : '')
       }
       font.family: host.family; font.pixelSize: Style.font.body
       color: host.fg
@@ -363,7 +393,7 @@ Rectangle {
     Text {
       text: "[h/l] band   [j/k] ±" + pane.step.toFixed(1) + "   [J/K] coarse   "
             + "[0] zero band   [z] zero all   [p] preset   [b] bypass   [esc] back"
-            + "      drag or scroll a band · right click to bypass"
+            + "\n[ and ] preamp   [\\] auto headroom      drag or scroll a band · right click to bypass"
       font.family: host.family; font.pixelSize: Style.font.caption
       color: host.dim
     }
