@@ -19,8 +19,27 @@ Rectangle {
 
   // Color.background carries alpha; binding it straight through makes the pane
   // translucent and whatever is behind the window reads through the bars.
-  color: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 1)
+  // Color.background can arrive as a string, and `.r`/`.g`/`.b` on a string are
+  // undefined, so Qt.rgba() built from them yields a transparent fill and the
+  // window behind reads straight through the pane. Declaring it as a `color`
+  // property forces the coercion first, after which the components are real.
+  readonly property color base: Color.background
+  color: Qt.rgba(base.r, base.g, base.b, 1)
   focus: true
+
+  // Declared before everything else, so the band hit-targets below sit above it.
+  // Its job is to put keyboard focus back on the pane: without it a stray click
+  // elsewhere left the keys going to the list underneath, which looks exactly
+  // like a key that does not work.
+  MouseArea {
+    anchors.fill: parent
+    acceptedButtons: Qt.LeftButton | Qt.RightButton
+    onPressed: function(m) {
+      pane.forceActiveFocus()
+      if (m.button === Qt.RightButton) pane.toggleBypass()
+      m.accepted = true
+    }
+  }
 
   // ---- model -------------------------------------------------------------
 
@@ -122,9 +141,24 @@ Rectangle {
     api.post("/eq", { preset: p.id, enabled: true }, function(ok, d) { if (ok) pane.apply(d) })
   }
 
+  // Ask for the opposite of what we are showing and let the reply set it. Doing
+  // the flip locally first meant a disagreement with the daemon could leave the
+  // two fighting, with the key appearing to do nothing.
   function toggleBypass() {
-    eqOn = !eqOn
-    if (api) api.post("/eq", { enabled: eqOn }, function(ok, d) { if (ok) pane.apply(d) })
+    if (!api) return
+    api.post("/eq", { enabled: !eqOn }, function(ok, d) { if (ok) pane.apply(d) })
+  }
+
+  function setGainAt(i, frac) {
+    var v = (1 - frac * 2) * limit                   // 0 at the top -> +limit
+    var g = gains.slice()
+    g[i] = Math.max(-limit, Math.min(limit, Math.round(v / step) * step))
+    gains = g
+    sel = i
+    presetId = ""
+    if (!eqOn && !flat()) eqOn = true
+    preampShown = autoPreamp()
+    push.restart()
   }
 
   Component.onCompleted: load()
@@ -206,6 +240,11 @@ Rectangle {
       }
       font.family: host.family; font.pixelSize: Style.font.body
       color: host.fg
+      MouseArea {
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onClicked: { pane.forceActiveFocus(); pane.toggleBypass() }
+      }
     }
 
     Item { width: 1; height: host.ch * 0.4 }
@@ -235,16 +274,41 @@ Rectangle {
 
       Repeater {
         model: pane.bands.length
-        Text {
+        Item {
           required property int index
-          readonly property bool isSel: index === pane.sel
-          text: pane.column(index)
           width: pane.colW
-          horizontalAlignment: Text.AlignHCenter
-          font.family: host.family; font.pixelSize: Style.font.caption
-          color: !pane.eqOn || pane.flat() ? host.dim
-               : isSel ? host.accentText
-               : Tui.mix(host.fg, host.bg, 0.25)
+          height: bar.implicitHeight
+          Text {
+            id: bar
+            anchors.fill: parent
+            readonly property bool isSel: parent.index === pane.sel
+            text: pane.column(parent.index)
+            horizontalAlignment: Text.AlignHCenter
+            font.family: host.family; font.pixelSize: Style.font.caption
+            color: !pane.eqOn || pane.flat() ? host.dim
+                 : isSel ? host.accentText
+                 : Tui.mix(host.fg, host.bg, 0.25)
+          }
+          // The volume meter below is clickable and scrollable; an equalizer that
+          // only answered the keyboard would teach two different lessons in one
+          // window.
+          MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.SizeVerCursor
+            acceptedButtons: Qt.LeftButton | Qt.MiddleButton
+            onPressed: function(m) {
+              pane.forceActiveFocus()
+              if (m.button === Qt.MiddleButton) { pane.sel = parent.index; pane.resetBand() }
+              else pane.setGainAt(parent.index, m.y / height)
+            }
+            onPositionChanged: function(m) {
+              if (pressed) pane.setGainAt(parent.index, Math.max(0, Math.min(1, m.y / height)))
+            }
+            onWheel: function(w) {
+              pane.sel = parent.index
+              pane.nudge(w.angleDelta.y > 0 ? pane.step : -pane.step)
+            }
+          }
         }
       }
     }
@@ -299,6 +363,7 @@ Rectangle {
     Text {
       text: "[h/l] band   [j/k] ±" + pane.step.toFixed(1) + "   [J/K] coarse   "
             + "[0] zero band   [z] zero all   [p] preset   [b] bypass   [esc] back"
+            + "      drag or scroll a band · right click to bypass"
       font.family: host.family; font.pixelSize: Style.font.caption
       color: host.dim
     }
