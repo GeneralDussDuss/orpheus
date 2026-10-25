@@ -46,7 +46,15 @@ FloatingWindow {
   // whatever sits behind the window bleed through the player. The Hyprland
   // rule already asks for opacity 1, but that cannot fix a surface whose own
   // colour has alpha.
-  color: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 1)
+  //
+  // The coercion through `baseBg` is the part that matters. Color.background
+  // can arrive as a STRING, and `.r`/`.g`/`.b` on a string are undefined, so
+  // Qt.rgba() built straight from them returns a fully transparent colour --
+  // which made the whole window see-through on exactly the themes this guard
+  // was written for. Declaring it as a `color` property forces the conversion
+  // first, after which the components are real numbers.
+  readonly property color baseBg: Color.background
+  color: Qt.rgba(baseBg.r, baseBg.g, baseBg.b, 1)
   onVisibleChanged: if (!visible && engine) engine.libraryOpen = false
 
   // ---- fit the monitor we're on ---------------------------------------------
