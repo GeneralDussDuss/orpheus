@@ -288,10 +288,16 @@ output device automatically, affects nothing but Orpheus, and adds no dependency
 or disabled EQ removes the filter entirely**, so the signal path is untouched rather than
 running through a unity-gain biquad.
 
-**Headroom is automatic.** Orpheus runs mpv with `--replaygain-clip=no`, so the signal is
-already permitted above 0&nbsp;dBFS before the EQ touches it; boosting a band on top of that
-clips in the final integer conversion where nothing can catch it. The preamp defaults to
-minus the largest boost. You can override it, but you probably should not.
+**Headroom, and why a boost can sound quieter.** Boosting a band cannot make anything
+louder — there is nothing above full scale. So the preamp pulls the whole signal down by
+the size of the largest boost: lift 31&nbsp;Hz by 6&nbsp;dB and the bass lands at net zero while
+everything else drops 6. Relative to each other the bass is +6; absolutely, the track got
+quieter. That is what stops it clipping, and it matters here because mpv already runs with
+`--replaygain-clip=no`, so material is permitted above 0&nbsp;dBFS before the EQ touches it.
+
+You can take the headroom back. `[` and `]` move the preamp half a decibel at a time and
+`\` returns it to automatic. Taking less than the curve needs is allowed and says **may
+clip** while it is.
 
 ```sh
 curl -s 127.0.0.1:47837/eq                  # bands, presets, current state
@@ -305,6 +311,8 @@ Six tone presets ship with it: Flat, Bass Lift, Vocal, Loudness, Tame Treble and
 Open it with `e` in the player, or `omarchy-shell orpheus eq` to open the window straight
 onto it. Inside: `h`/`l` pick a band, `j`/`k` move it by half a decibel, `J`/`K` coarse,
 `0` zeroes a band, `z` zeroes all, `p` cycles presets, `b` bypasses, `esc` goes back.
+`[` and `]` set the preamp, `\` returns it to automatic. The bands also take the mouse:
+click or drag to set one, scroll to nudge, middle click to zero, right click to bypass.
 
 The transport bar carries a small readout beside the volume — eight block glyphs
 summarising the ten bands, accented while a filter is live and a flat dim line when it is
