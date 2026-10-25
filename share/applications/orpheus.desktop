@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Name=Orpheus
+GenericName=Music Player
+Comment=TIDAL player and music visualizer
+Exec=orpheus open
+Icon=multimedia-player
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+Keywords=music;tidal;player;visualizer;audio;orpheus;
+StartupNotify=false
+Actions=Stage;
+
+[Desktop Action Stage]
+Name=Visualizer
+Exec=orpheus stage

@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# uv / virtualenv (recreate with `uv sync`)
+.venv/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Local scratch
+*.log
+.claude/
+
+# NOTE: shaders/*.qsb are deliberately NOT ignored. They are build output of
+# build-shaders.sh, but are committed so that installing does not require
+# Qt's shader tools. Rebuild and commit them whenever a .frag or _common.glsl changes.
+
+# Working notes for Claude Code, not shipped
+CLAUDE.md

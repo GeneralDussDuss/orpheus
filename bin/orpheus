@@ -1,0 +1,19 @@
+#!/bin/bash
+# Orpheus command line entry point. The player itself lives in the Omarchy
+# shell, so everything here is an IPC call; nothing is launched or kept alive.
+# This exists mainly so a .desktop file has an idempotent command to run:
+# `orpheus library` toggles, which would close the window when a launcher
+# fires it twice, so `open` checks first.
+set -u
+
+shell() { omarchy-shell orpheus "$@"; }
+is_open() { shell status 2>/dev/null | grep -q "\"$1\":true"; }
+
+case "${1:-open}" in
+  open)   is_open library || shell library >/dev/null ;;
+  stage)  is_open open    || shell toggle  >/dev/null ;;
+  close)  is_open library && shell library >/dev/null ;;
+  toggle) shell library >/dev/null ;;
+  status) shell status ;;
+  *) echo "usage: orpheus [open|stage|close|toggle|status]" >&2; exit 2 ;;
+esac
