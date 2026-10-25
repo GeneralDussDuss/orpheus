@@ -203,10 +203,63 @@ Item {
 
   function cavaConfig() {
     return "[general]\nbars = 32\nframerate = " + audioFps + "\nautosens = 1\n\n"
-      + "[input]\nmethod = pipewire\nsource = auto\n\n"
+      + "[input]\nmethod = pipewire\nsource = " + (sinkMonitor || "auto") + "\n\n"
       + "[output]\nmethod = raw\nraw_target = /dev/stdout\ndata_format = ascii\nascii_max_range = 1000\n"
       + "bar_delimiter = 59\nframe_delimiter = 10\nchannels = mono\nmono_option = average\n\n"
       + "[smoothing]\nnoise_reduction = 70\n"
+  }
+
+  // ---- Output device ------------------------------------------------------
+  // cava's `source = auto` resolves a monitor once, when it starts, and then
+  // keeps reading that one device. Change the default sink afterwards -- connect
+  // Bluetooth headphones, wake the USB DAC -- and cava carries on listening to a
+  // monitor that has gone silent, so the visualizer flatlines while music is
+  // plainly playing. Nothing errors and cava never exits, so the restart timer
+  // below never fires either. Resolve the default sink ourselves, pin cava to
+  // its monitor, and follow it when it moves.
+  property string sinkMonitor: ""
+
+  function probeSink() { if (hasCava) sinkProbe.running = true }
+
+  Process {
+    id: sinkProbe
+    command: ["pactl", "get-default-sink"]
+    stdout: SplitParser {
+      onRead: function(line) {
+        var name = String(line).trim()
+        // pactl prints this placeholder when no default is set yet
+        if (name && name !== "@DEFAULT_SINK@") root.sinkMonitor = name + ".monitor"
+      }
+    }
+  }
+
+  onHasCavaChanged: probeSink()
+
+  // pactl reports a change on the server object when the default sink moves.
+  // One long-lived subscriber beats polling: device changes are rare, and this
+  // costs nothing between them.
+  Process {
+    id: sinkWatch
+    command: ["pactl", "subscribe"]
+    stdout: SplitParser {
+      onRead: function(line) { if (/on (server|sink)\b/.test(String(line))) sinkSettle.restart() }
+    }
+  }
+
+  // Switching devices emits a burst of events; re-probe once it settles.
+  Timer { id: sinkSettle; interval: 250; onTriggered: root.probeSink() }
+
+  // Keep the subscriber alive across a pipewire restart.
+  Timer {
+    interval: 5000
+    repeat: true
+    running: root.hasCava && !sinkWatch.running
+    onTriggered: { sinkWatch.running = true; root.probeSink() }
+  }
+
+  onSinkMonitorChanged: {
+    cavaConfigFile.setText(cavaConfig())
+    if (cava.running) { cava.running = false; cavaRestart.restart() }
   }
 
   FileView { id: cavaConfigFile; path: root.cavaConfigPath; printErrors: false }
