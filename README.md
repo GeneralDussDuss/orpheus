@@ -283,6 +283,19 @@ Little is configurable, and most of it is by hand.
 - **No sound or no visualizer.** The visualizer reads PipeWire through `cava`; check
   `command -v cava mpv`. (Orpheus has nothing to do with your DAC — if the whole desktop
   is silent, that is elsewhere.)
+- **The visualizer is flat while music is obviously playing.** Orpheus pins `cava` to the
+  monitor of your *default sink* and follows it when you switch output. If it ever gets
+  out of step, check which source `cava` actually grabbed:
+
+  ```sh
+  pactl get-default-sink                       # where audio is going
+  grep '^source' ~/.local/state/orpheus/cava.conf   # where cava was told to listen
+  pactl list source-outputs | grep -A6 cava    # where cava actually is
+  ```
+
+  Those three should agree. If the config says `source = auto`, `pactl` could not be
+  reached and cava is guessing — that is the old behaviour, and it breaks as soon as you
+  change output device.
 - **Visualizer is a black rectangle after a shader edit.** Rebuild with
   `./build-shaders.sh` and restart the shell. A uniform-block mismatch between
   `_common.glsl` and `Viz.qml` is the usual cause.
