@@ -34,6 +34,14 @@ Rectangle {
   property string loadedFor: ""
   property real offset: 0          // listener's own nudge, seconds
 
+  // Two separate delays were stacking up. The daemon's position is already a
+  // little old by the time the HTTP response lands, and an LRC timestamp marks
+  // when a line STARTS being sung - so highlighting exactly on it means the
+  // line lights up as the words arrive, which reads as late because you have
+  // not had time to look at it yet. Karaoke has always run slightly ahead for
+  // the same reason. Light the line a short beat early.
+  readonly property real lead: 0.45
+
   // ---- position ----------------------------------------------------------
 
   property real anchorPos: 0       // last position the daemon reported
@@ -45,7 +53,7 @@ Rectangle {
   // Re-anchor whenever the daemon's number moves, which also covers seeking.
   onStChanged: {
     var p = (st && st.position) || 0
-    if (Math.abs(p - projected()) > 0.35 || !playing) {
+    if (Math.abs(p - projected()) > 0.2 || !playing) {
       anchorPos = p
       anchorAt = now()
     }
@@ -64,8 +72,46 @@ Rectangle {
     onTriggered: pane.clockPos = pane.projected()
   }
 
+  // Each line resolves out of noise when its turn comes, rather than simply
+  // changing colour. Same decode the wordmark uses on the site, so the player
+  // and the page behave like one thing.
+  property real decode: 1
+  readonly property string noise: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#%&@$?/\\|<>░▒▓"
+  property int scrambleTick: 0
+
+  NumberAnimation {
+    id: decodeAnim
+    target: pane
+    property: "decode"
+    from: 0
+    to: 1
+    duration: 520
+    easing.type: Easing.OutCubic
+  }
+
+  Timer {
+    id: scrambler
+    interval: 45
+    repeat: true
+    running: pane.decode < 1
+    onTriggered: pane.scrambleTick++
+  }
+
+  function decoded(real) {
+    if (decode >= 1 || !real) return real
+    var n = Math.floor(decode * real.length)
+    var out = real.substring(0, n)
+    // one unresolved character per remaining position, reshuffled as it runs
+    for (var i = n; i < real.length; i++) {
+      if (real.charAt(i) === " ") { out += " "; continue }
+      var k = (i * 7 + scrambleTick * 13 + n) % noise.length
+      out += noise.charAt(k)
+    }
+    return out
+  }
+
   readonly property int activeLine: {
-    var p = clockPos - offset
+    var p = clockPos + lead - offset
     if (!lines || !lines.length) return -1
     // binary search for the last line at or before now
     var lo = 0, hi = lines.length - 1, found = -1
@@ -76,7 +122,12 @@ Rectangle {
     return found
   }
 
-  onActiveLineChanged: if (activeLine >= 0) list.positionViewAtIndex(activeLine, ListView.Center)
+  onActiveLineChanged: {
+    if (activeLine >= 0) list.positionViewAtIndex(activeLine, ListView.Center)
+    // skip the effect on an empty line - there is nothing to resolve
+    var line = activeLine >= 0 && lines[activeLine] ? lines[activeLine].text : ""
+    if (line) { decode = 0; decodeAnim.restart() } else decode = 1
+  }
 
   // ---- loading -----------------------------------------------------------
 
@@ -164,29 +215,45 @@ Rectangle {
     model: pane.lines
     clip: true
     interactive: true
-    preferredHighlightBegin: height / 2 - (host ? host.ch : 10)
-    preferredHighlightEnd: height / 2 + (host ? host.ch : 10)
-    highlightRangeMode: ListView.ApplyRange
     currentIndex: pane.activeLine
+    // positionViewAtIndex sets contentY outright; the Behavior turns that jump
+    // into a glide. Using preferredHighlightBegin/End as well would be a second
+    // mechanism aiming at the same thing, and the two fight.
+    Behavior on contentY { NumberAnimation { duration: 340; easing.type: Easing.OutCubic } }
 
     delegate: Text {
+      id: lyricLine
       required property var modelData
       required property int index
       readonly property bool isNow: index === pane.activeLine
       readonly property bool isPast: index < pane.activeLine
+      // how far ahead this line is, so the ones coming up sit brighter than
+      // the far future and the page has some depth to it
+      readonly property int ahead: index - pane.activeLine
+
       width: ListView.view.width
       wrapMode: Text.WordWrap
       // an empty timed line is an instrumental gap; give it air, not a blank row
-      text: modelData.text === "" ? "·" : modelData.text
+      text: modelData.text === "" ? "·"
+          : isNow ? pane.decoded(modelData.text)
+          : modelData.text
       font.family: host.family
       font.pixelSize: isNow ? Style.font.body + 2 : Style.font.body
       font.bold: isNow
       color: isNow ? host.accentText
-           : isPast ? Tui.mix(host.dim, host.bg, 0.3)
-           : Tui.mix(host.fg, host.bg, 0.35)
+           : isPast ? Tui.mix(host.dim, host.bg, 0.45)
+           : Tui.mix(host.fg, host.bg, ahead <= 2 ? 0.3 : 0.55)
       topPadding: host ? host.ch * 0.22 : 2
       bottomPadding: host ? host.ch * 0.22 : 2
-      Behavior on color { ColorAnimation { duration: 180 } }
+
+      // the line lifts very slightly as it lands, and settles back after
+      transform: Translate { y: lyricLine.isNow ? -2 : 0
+        Behavior on y { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } } }
+
+      opacity: isNow ? 1 : (isPast ? 0.75 : 0.9)
+      Behavior on opacity { NumberAnimation { duration: 220 } }
+      Behavior on color { ColorAnimation { duration: 220 } }
+      Behavior on font.pixelSize { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
     }
   }
 
