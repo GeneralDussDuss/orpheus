@@ -14,6 +14,30 @@ FloatingWindow {
   property var engine: null
   readonly property var api: engine ? engine.api : null
   readonly property var st: api ? api.player : ({})
+  readonly property var eqState: (api && api.status && api.status.eq) || ({})
+  readonly property bool eqActive: eqState.active === true
+
+  // The curve as eight block glyphs, for the transport bar. Not a readout you
+  // can set anything from -- it is there to answer "is something shaping this,
+  // and roughly what" at a glance, and to be a target to click.
+  function eqSpark() {
+    // Bypassed reads as a flat line rather than a flat row of blocks: the
+    // difference between "off" and "on but flat" should be obvious at a glance.
+    var g = eqState.gains
+    if (!eqActive || !g || !g.length) return "────────"
+    var blocks = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
+    var out = ""
+    // ten bands into eight glyphs, averaging the pairs that collide
+    for (var i = 0; i < 8; i++) {
+      var a = Math.floor(i * g.length / 8), b = Math.floor((i + 1) * g.length / 8)
+      var sum = 0, n = 0
+      for (var k = a; k < Math.max(a + 1, b); k++) { sum += g[k] || 0; n++ }
+      var v = n ? sum / n : 0
+      var idx = Math.round((v + 12) / 24 * 7)
+      out += blocks[Math.max(0, Math.min(7, idx))]
+    }
+    return out
+  }
   readonly property var track: api ? api.track : null
   readonly property real clock: engine ? engine.time : -1
 
@@ -200,9 +224,13 @@ FloatingWindow {
   function showLogin() {
     if (page.type !== "login") go({ type: "login", title: "sign in" })
   }
+  function showEq() {
+    if (page.type !== "eq") go({ type: "eq", title: "equalizer" })
+  }
   Connections {
     target: win.engine
     function onLoginRequestsChanged() { win.engine.loginHandled = win.engine.loginRequests; win.showLogin() }
+    function onEqRequestsChanged() { win.engine.eqHandled = win.engine.eqRequests; win.showEq() }
   }
   Connections {
     target: win.api
@@ -301,6 +329,7 @@ FloatingWindow {
     if (k === Qt.Key_Escape || k === Qt.Key_Backspace) { back(); return true }
     if (t === "q" || (k === Qt.Key_W && (e.modifiers & Qt.ControlModifier))) { engine.libraryOpen = false; return true }
     if (t === "/") { go({ type: "search", title: "search" }); return true }
+    if (t === "e") { go({ type: "eq", title: "equalizer" }); return true }
     if (t >= "1" && t <= "7") { go(navItems[Number(t) - 1].page); return true }
     if (k === Qt.Key_Space) { api.control("toggle"); return true }
     if (t === "n") { api.control("next"); return true }
@@ -688,6 +717,15 @@ FloatingWindow {
         }
       }
 
+      // Equalizer cover. Above the list, below the sign-in cover: there is
+      // nothing to equalize if we are not signed in.
+      Loader {
+        anchors.fill: parent
+        active: win.page.type === "eq"
+        sourceComponent: EqPane { host: win }
+        onLoaded: item.forceActiveFocus()
+      }
+
       // Sign-in / offline cover.
       Loader {
         anchors.fill: parent
@@ -888,7 +926,7 @@ FloatingWindow {
       x: 0
       y: parent.height - height
       width: parent.width
-      height: win.ch * 3
+      height: win.ch * 4
       title: win.st.playing ? "playing" : "paused"
       keyHint: Tui.hints([["space", "play"], ["n/p", "skip"], ["h/l", "seek"], ["+/-", "vol"], ["s", "shuffle"], ["r", "repeat"]], win.accentText, win.dim)
       clock: win.clock
@@ -985,6 +1023,28 @@ FloatingWindow {
             }
           }
         }
+        Text {
+          id: eqMini
+          text: "eq " + win.eqSpark()
+          font.family: win.family; font.pixelSize: Style.font.caption
+          font.bold: win.eqActive
+          color: win.eqActive ? win.accentText : win.dim
+          anchors.verticalCenter: parent.verticalCenter
+          MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            // left opens the full equalizer, right toggles bypass without leaving
+            // the page -- the same "no popout, no detour" rule as the widget
+            onClicked: function(m) {
+              if (m.button === Qt.RightButton) {
+                win.api.post("/eq", { enabled: !win.eqActive }, function() {})
+              } else {
+                win.showEq()
+              }
+            }
+          }
+        }
       }
     }
   }
@@ -992,6 +1052,7 @@ FloatingWindow {
   Component.onCompleted: {
     list.forceActiveFocus()
     if (engine && engine.loginRequests > 0 && engine.loginRequests !== engine.loginHandled) { engine.loginHandled = engine.loginRequests; showLogin() }
+    else if (engine && engine.eqRequests > 0 && engine.eqRequests !== engine.eqHandled) { engine.eqHandled = engine.eqRequests; load(); showEq() }
     else load()
   }
 }

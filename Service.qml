@@ -174,6 +174,8 @@ Item {
   property bool open: false
   property bool libraryOpen: false
   property int loginRequests: 0      // bumps to send the open library to the sign-in page
+  property int eqRequests: 0         // ... and the same for the equalizer
+  property int eqHandled: 0
   property int loginHandled: 0
   property int barWidgets: 0           // bar widgets register themselves
   readonly property bool widgetShown: widget.enabled !== false && (player !== null || widgetIsWindow)
@@ -614,6 +616,7 @@ Item {
     function hide(): string { root.open = false; return root.statusText() }
     function library(): string { root.libraryOpen = !root.libraryOpen; return root.statusText() }
     function login(): string { root.libraryOpen = true; root.loginRequests++; return root.statusText() }
+    function eq(): string { root.libraryOpen = true; root.eqRequests++; return root.statusText() }
     function style(name: string): string { return root.setStyle(name) }
     function railViz(name: string): string { return root.setRailViz(name) }
     function nextRailViz(): string { return root.cycleRailViz(1) }
