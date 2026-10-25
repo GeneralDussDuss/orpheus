@@ -3,12 +3,16 @@ import Quickshell
 import qs.Commons
 import "Tui.js" as Tui
 
-// Lyrics, following the track.
+// Lyrics, following the track, lit word by word.
 //
-// The daemon refreshes position about once a second, which is far too coarse to
-// land a line on its own beat, so this extrapolates from the last known value
-// against a local clock and only re-anchors when the daemon disagrees. Nothing
-// extra is asked of the network: the same status poll drives it.
+// Providers put <mm:ss.xx> tags inside a line when they know which syllable is
+// being sung, and the daemon keeps them, so a line can fill in as it is sung
+// rather than switching colour all at once. Tracks without those tags get the
+// same treatment from character-weighted timings spread between this line and
+// the next, which is close enough that you only notice if you go looking.
+//
+// Each line also makes an entrance: its words arrive in sequence rather than
+// appearing as a block.
 Rectangle {
   id: pane
 
@@ -34,13 +38,16 @@ Rectangle {
   property string loadedFor: ""
   property real offset: 0          // listener's own nudge, seconds
 
-  // Two separate delays were stacking up. The daemon's position is already a
-  // little old by the time the HTTP response lands, and an LRC timestamp marks
-  // when a line STARTS being sung - so highlighting exactly on it means the
-  // line lights up as the words arrive, which reads as late because you have
-  // not had time to look at it yet. Karaoke has always run slightly ahead for
-  // the same reason. Light the line a short beat early.
+  // An LRC timestamp marks when a line STARTS being sung, so landing exactly on
+  // it reads as late: you have not had time to look at the line yet. Karaoke
+  // has always run slightly ahead for the same reason.
   readonly property real lead: 0.45
+
+  // The fill front inside a line wants a much smaller head start than the line
+  // itself. The line arrives early so you can read it; the words light up as
+  // they are sung, and borrowing the line's 0.45 s here ran the fill most of a
+  // word ahead of the voice.
+  readonly property real fillLead: 0.12
 
   // ---- position ----------------------------------------------------------
 
@@ -70,53 +77,18 @@ Rectangle {
 
   property real clockPos: 0
   Timer {
-    interval: 100            // 10 Hz is plenty to land a line on its beat
+    interval: 50             // the fill front advances on this tick
     repeat: true
     running: pane.visible
     onTriggered: pane.clockPos = pane.projected()
   }
 
-  // Each line resolves out of noise when its turn comes, rather than simply
-  // changing colour. Same decode the wordmark uses on the site, so the player
-  // and the page behave like one thing.
-  property real decode: 1
-  readonly property string noise: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#%&@$?/\\|<>░▒▓"
-  property int scrambleTick: 0
-
-  NumberAnimation {
-    id: decodeAnim
-    target: pane
-    property: "decode"
-    from: 0
-    to: 1
-    duration: 520
-    easing.type: Easing.OutCubic
-  }
-
-  Timer {
-    id: scrambler
-    interval: 45
-    repeat: true
-    running: pane.decode < 1
-    onTriggered: pane.scrambleTick++
-  }
-
-  function decoded(real) {
-    if (decode >= 1 || !real) return real
-    var n = Math.floor(decode * real.length)
-    var out = real.substring(0, n)
-    // one unresolved character per remaining position, reshuffled as it runs
-    for (var i = n; i < real.length; i++) {
-      if (real.charAt(i) === " ") { out += " "; continue }
-      var k = (i * 7 + scrambleTick * 13 + n) % noise.length
-      out += noise.charAt(k)
-    }
-    return out
-  }
+  readonly property real head: clockPos + lead - offset           // which line
+  readonly property real fillHead: clockPos + fillLead - offset   // how far into it
 
   readonly property int activeLine: {
-    var p = clockPos + lead - offset
     if (!lines || !lines.length) return -1
+    var p = head
     // binary search for the last line at or before now
     var lo = 0, hi = lines.length - 1, found = -1
     while (lo <= hi) {
@@ -126,11 +98,84 @@ Rectangle {
     return found
   }
 
+  // ---- words -------------------------------------------------------------
+
+  function tokenize(s) {
+    var out = [], i = 0
+    while (i < s.length) {
+      while (i < s.length && s.charAt(i) === " ") i++
+      var a = i
+      while (i < s.length && s.charAt(i) !== " ") i++
+      if (i > a) out.push({ text: s.substring(a, i), a: a, b: i })
+    }
+    return out
+  }
+
+  // One span per visible word: when it starts, and when the next takes over.
+  function wordSpans(idx) {
+    var line = lines[idx]
+    if (!line || !line.text) return []
+    var toks = tokenize(line.text)
+    if (!toks.length) return []
+
+    var t0 = line.t
+    var t1 = idx + 1 < lines.length ? lines[idx + 1].t : t0 + 4
+    if (t1 - t0 < 0.4) t1 = t0 + 0.4
+    if (t1 - t0 > 10) t1 = t0 + 10     // a long gap after a line is silence, not a drawl
+
+    // Guess first, weighting each word by its length: long words take longer to
+    // sing than short ones, so an even split visibly runs ahead on "I" and
+    // behind on anything with four syllables.
+    var total = 0, i
+    for (i = 0; i < toks.length; i++) total += toks[i].text.length + 1
+    var out = [], acc = 0
+    for (i = 0; i < toks.length; i++) {
+      out.push({ text: toks[i].text, t: t0 + (t1 - t0) * (acc / total) })
+      acc += toks[i].text.length + 1
+    }
+
+    // A real tag beats the guess. Tags are matched by character overlap, so a
+    // tag landing mid-word still claims the word it is inside.
+    var tags = line.words || []
+    for (var k = 0; k < tags.length; k++) {
+      for (i = 0; i < toks.length; i++) {
+        if (toks[i].a < tags[k].b && tags[k].a < toks[i].b) { out[i].t = tags[k].t; break }
+      }
+    }
+    for (i = 1; i < out.length; i++) if (out[i].t < out[i - 1].t) out[i].t = out[i - 1].t
+    for (i = 0; i < out.length; i++) out[i].end = i + 1 < out.length ? out[i + 1].t : t1
+    return out
+  }
+
+  property var activeWords: []
+
+  // ---- the entrance ------------------------------------------------------
+  //
+  // 0 wave  - words rise into place, left to right
+  // 1 rain  - they fall in out of noise
+  // 2 plain - no entrance, just the fill
+  property int style: 0
+  readonly property var styleNames: ["wave", "rain", "plain"]
+  readonly property int stagger: style === 1 ? 50 : 34
+
+  property bool entering: false
+  property int shuffle: 0
+
+  Timer { id: settle; onTriggered: pane.entering = false }
+  // only the rain style shows unresolved glyphs, so only it needs reshuffling
+  Timer { interval: 45; repeat: true; running: pane.entering && pane.style === 1
+          onTriggered: pane.shuffle++ }
+
   onActiveLineChanged: {
+    activeWords = activeLine >= 0 ? wordSpans(activeLine) : []
     if (activeLine >= 0) list.positionViewAtIndex(activeLine, ListView.Center)
-    // skip the effect on an empty line - there is nothing to resolve
-    var line = activeLine >= 0 && lines[activeLine] ? lines[activeLine].text : ""
-    if (line) { decode = 0; decodeAnim.restart() } else decode = 1
+    if (activeWords.length && style !== 2) {
+      entering = true
+      settle.interval = 500 + stagger * Math.min(activeWords.length, 12)
+      settle.restart()
+    } else {
+      entering = false
+    }
   }
 
   // ---- loading -----------------------------------------------------------
@@ -140,7 +185,7 @@ Rectangle {
     if (loadedFor === String(track.id)) return
     loadedFor = String(track.id)
     loading = true
-    lines = []; plain = ""; source = ""; instrumental = false; offset = 0
+    lines = []; plain = ""; source = ""; instrumental = false; offset = 0; activeWords = []
     api.get("/lyrics/" + track.id, function(ok, d) {
       pane.loading = false
       if (!ok || !d) { pane.source = "none"; return }
@@ -164,6 +209,10 @@ Rectangle {
     if (t === "[") { offset -= 0.25; e.accepted = true }
     else if (t === "]") { offset += 0.25; e.accepted = true }
     else if (t === "\\") { offset = 0; e.accepted = true }
+    // not "v": the player uses that to cycle the visualiser everywhere else,
+    // and a page that quietly means something different by a key is worse than
+    // no shortcut at all
+    else if (t === "m") { style = (style + 1) % 3; e.accepted = true }
     else if (k === Qt.Key_Down || t === "j") { list.flick(0, -600); e.accepted = true }
     else if (k === Qt.Key_Up || t === "k") { list.flick(0, 600); e.accepted = true }
     else e.accepted = host.handleKey(e)
@@ -175,6 +224,15 @@ Rectangle {
   }
 
   // ---- drawing -----------------------------------------------------------
+
+  // The words are laid out as separate items, so one space of the body font is
+  // the gap between them.
+  FontMetrics {
+    id: fm
+    font.family: host ? host.family : "monospace"
+    font.pixelSize: Style.font.body
+  }
+  readonly property real spaceW: fm.advanceWidth(" ")
 
   Column {
     id: header
@@ -198,7 +256,8 @@ Rectangle {
         if (pane.instrumental) return "instrumental"
         if (!pane.lines.length && !pane.plain) return "nothing found for this track"
         var via = pane.source === "lrclib" ? "lrclib" : pane.source
-        return (pane.synced ? "synced · " : "unsynced · ") + via
+        var wordLevel = pane.lines.length && pane.lines[0].words !== undefined
+        return (pane.synced ? (wordLevel ? "synced · word level · " : "synced · ") : "unsynced · ") + via
              + (Math.abs(pane.offset) > 0.01
                 ? "   offset " + (pane.offset > 0 ? "+" : "") + pane.offset.toFixed(2) + "s" : "")
       }
@@ -225,39 +284,119 @@ Rectangle {
     // mechanism aiming at the same thing, and the two fight.
     Behavior on contentY { NumberAnimation { duration: 340; easing.type: Easing.OutCubic } }
 
-    delegate: Text {
-      id: lyricLine
+    delegate: Item {
+      id: row
       required property var modelData
       required property int index
       readonly property bool isNow: index === pane.activeLine
       readonly property bool isPast: index < pane.activeLine
-      // how far ahead this line is, so the ones coming up sit brighter than
-      // the far future and the page has some depth to it
+      // how far ahead this line is, so the ones coming up sit brighter than the
+      // far future and the page has some depth to it
       readonly property int ahead: index - pane.activeLine
+      // an empty timed line is an instrumental gap: give it air, not a blank row
+      readonly property bool gap: (modelData.text || "") === ""
+      readonly property var toks: gap ? [{ text: "· · ·", a: 0, b: 5 }]
+                                      : pane.tokenize(modelData.text || "")
+      readonly property real pad: host ? host.ch * 0.22 : 2
 
       width: ListView.view.width
-      wrapMode: Text.WordWrap
-      // an empty timed line is an instrumental gap; give it air, not a blank row
-      text: modelData.text === "" ? "·"
-          : isNow ? pane.decoded(modelData.text)
-          : modelData.text
-      font.family: host.family
-      font.pixelSize: isNow ? Style.font.body + 2 : Style.font.body
-      font.bold: isNow
-      color: isNow ? host.accentText
-           : isPast ? Tui.mix(host.dim, host.bg, 0.45)
-           : Tui.mix(host.fg, host.bg, ahead <= 2 ? 0.3 : 0.55)
-      topPadding: host ? host.ch * 0.22 : 2
-      bottomPadding: host ? host.ch * 0.22 : 2
+      height: flow.implicitHeight + pad * 2
 
-      // the line lifts very slightly as it lands, and settles back after
-      transform: Translate { y: lyricLine.isNow ? -2 : 0
-        Behavior on y { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } } }
+      Flow {
+        id: flow
+        y: row.pad
+        width: parent.width
+        spacing: pane.spaceW
 
-      opacity: isNow ? 1 : (isPast ? 0.75 : 0.9)
-      Behavior on opacity { NumberAnimation { duration: 220 } }
-      Behavior on color { ColorAnimation { duration: 220 } }
-      Behavior on font.pixelSize { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+        Repeater {
+          model: row.toks.length
+
+          // Font size deliberately does not change with state. The words are
+          // separate items, so resizing them reflows the line - and the list
+          // under it - on every frame of the animation, which shows up as the
+          // whole page breathing. Weight, colour and a small lift carry the
+          // emphasis instead.
+          delegate: Text {
+            id: word
+            required property int index
+
+            readonly property string raw: row.toks[index].text
+            readonly property var span: row.isNow && pane.activeWords.length > index
+                                        ? pane.activeWords[index] : null
+            // how much of this word has been sung
+            readonly property real fill: span
+                ? Math.max(0, Math.min(1, (pane.fillHead - span.t) / Math.max(0.12, span.end - span.t)))
+                : 0
+            readonly property bool onIt: span !== null && pane.fillHead >= span.t && pane.fillHead < span.end
+            readonly property bool live: row.isNow
+
+            property real res: 1       // resolved out of noise, 0..1
+            property real rise: 0      // entrance offset, px
+            property real fade: 1
+
+            text: res >= 1 ? raw : Tui.decode(raw, res, word.index * 3 + pane.shuffle)
+            font.family: host.family
+            font.pixelSize: Style.font.body
+            font.bold: row.isNow
+            font.letterSpacing: onIt ? 0.6 : 0
+            color: row.isNow ? Tui.mix(host.accentText, host.bg, 0.52 * (1 - fill))
+                 : row.isPast ? Tui.mix(host.dim, host.bg, 0.45)
+                 : Tui.mix(host.fg, host.bg, row.ahead <= 2 ? 0.3 : 0.55)
+            opacity: (row.isNow ? 1 : (row.isPast ? 0.75 : 0.9)) * fade
+
+            // The fill front moves every 50 ms; smoothing it as well would just
+            // make the words light up late. Only the line's own change of state
+            // is worth easing.
+            Behavior on color { enabled: !row.isNow; ColorAnimation { duration: 200 } }
+            Behavior on font.letterSpacing { NumberAnimation { duration: 160 } }
+
+            transform: [
+              Translate { y: word.rise },
+              Translate { y: word.onIt ? -2 : 0
+                Behavior on y { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } } }
+            ]
+
+            SequentialAnimation {
+              id: entrance
+              PauseAnimation { duration: Math.min(word.index, 12) * pane.stagger }
+              ParallelAnimation {
+                NumberAnimation { target: word; property: "rise"; to: 0; duration: 360
+                                  easing.type: pane.style === 1 ? Easing.OutBack : Easing.OutCubic }
+                NumberAnimation { target: word; property: "fade"; to: 1; duration: 260 }
+                NumberAnimation { target: word; property: "res"; to: 1; duration: 320
+                                  easing.type: Easing.OutCubic }
+              }
+            }
+
+            // an instrumental gap breathes instead of arriving
+            SequentialAnimation {
+              id: breathe
+              running: row.gap && row.isNow
+              loops: Animation.Infinite
+              NumberAnimation { target: word; property: "fade"; to: 1; duration: 700
+                                easing.type: Easing.InOutSine }
+              NumberAnimation { target: word; property: "fade"; to: 0.3; duration: 900
+                                easing.type: Easing.InOutSine }
+            }
+
+            function arrive() {
+              entrance.stop()
+              if (!row.isNow || row.gap || pane.style === 2) {
+                rise = 0; res = 1
+                if (!breathe.running) fade = 1
+                return
+              }
+              rise = pane.style === 1 ? -15 : 10
+              res = pane.style === 1 ? 0 : 1
+              fade = pane.style === 1 ? 0.25 : 0.15
+              entrance.restart()
+            }
+
+            onLiveChanged: arrive()
+            Component.onCompleted: arrive()
+          }
+        }
+      }
     }
   }
 
@@ -286,8 +425,12 @@ Rectangle {
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.bottom: parent.bottom
     anchors.bottomMargin: host ? host.ch : 10
-    text: pane.synced ? "[ and ] nudge sync   [\\] reset   [esc] back"
-                      : "[esc] back"
+    textFormat: Text.StyledText
+    text: pane.synced
+          ? Tui.hints([["[ ]", "nudge sync"], ["\\", "reset"],
+                       ["m", pane.styleNames[pane.style]], ["esc", "back"]],
+                      host.accent, host.dim)
+          : Tui.hints([["esc", "back"]], host.accent, host.dim)
     font.family: host.family; font.pixelSize: Style.font.caption
     color: host.dim
   }

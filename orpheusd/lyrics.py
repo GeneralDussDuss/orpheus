@@ -28,9 +28,57 @@ UA = "Orpheus/0.1 (https://github.com/GeneralDussDuss/orpheus)"
 # lyrics anywhere, and re-asking two services on every play is rude to both.
 MISS_TTL = 7 * 24 * 3600
 
+# Bumped when the shape of a cached entry changes - word timings were added in
+# v2, and an entry from before that would silently keep the interface on the
+# old whole-line behaviour for a week.
+CACHE_V = 2
+
 _TIME = re.compile(r"\[(\d+):(\d{1,2})(?:[.:](\d{1,3}))?\]")
-_WORD = re.compile(r"<\d+:\d{1,2}(?:[.:]\d{1,3})?>")
+_WORD = re.compile(r"<(\d+):(\d{1,2})(?:[.:](\d{1,3}))?>")
 _OFFSET = re.compile(r"\[offset:\s*([+-]?\d+)\s*\]", re.I)
+
+
+def _secs(mm: str, ss: str, frac: str | None) -> float:
+    # "5" is five tenths, "50" is fifty hundredths: scale by the digits
+    frac = frac or "0"
+    return int(mm) * 60 + int(ss) + int(frac) / (10 ** len(frac))
+
+
+def _split_words(body: str) -> tuple[str, list[dict]]:
+    """A body with <mm:ss.xx> tags -> (clean text, [{t, a, b}]).
+
+    A word tag says which syllable is being sung right now, which is what lets
+    the interface fill a line in as it is sung instead of lighting the whole
+    thing at once. The spans are character offsets into the clean text, so the
+    interface never has to re-tokenise and disagree with us about where a word
+    begins.
+    """
+    runs: list[tuple[float | None, str]] = []
+    at, stamp = 0, None
+    for m in _WORD.finditer(body):
+        runs.append((stamp, body[at:m.start()]))
+        stamp = _secs(m.group(1), m.group(2), m.group(3))
+        at = m.end()
+    runs.append((stamp, body[at:]))
+
+    clean, spans = "", []
+    for t, run in runs:
+        if not run:
+            continue
+        start = len(clean)
+        clean += run
+        if t is not None:
+            spans.append({"t": round(t, 3), "a": start, "b": len(clean)})
+
+    # the text is stripped for display, so the offsets have to move with it
+    lead = len(clean) - len(clean.lstrip())
+    text = clean.strip()
+    kept = []
+    for s in spans:
+        a, b = max(0, s["a"] - lead), min(len(text), s["b"] - lead)
+        if b > a:
+            kept.append({"t": s["t"], "a": a, "b": b})
+    return text, kept
 
 
 def parse_lrc(text: str) -> list[dict]:
@@ -45,12 +93,21 @@ def parse_lrc(text: str) -> list[dict]:
         stamps = list(_TIME.finditer(raw))
         if not stamps:
             continue
-        body = _WORD.sub("", _TIME.sub("", raw)).strip()
+        body, words = _split_words(_TIME.sub("", raw))
+        base = None
         for m in stamps:
-            frac = m.group(3) or "0"
-            # "5" is five tenths, "50" is fifty hundredths: scale by the digits
-            seconds = int(m.group(1)) * 60 + int(m.group(2)) + int(frac) / (10 ** len(frac))
-            out.append({"t": round(seconds, 3), "text": body})
+            seconds = _secs(m.group(1), m.group(2), m.group(3))
+            if base is None:
+                base = seconds
+            line = {"t": round(seconds, 3), "text": body}
+            if words:
+                # one set of word tags serves a line written at several times;
+                # shift them onto each occurrence
+                shift = seconds - base
+                line["words"] = words if not shift else [
+                    {"t": round(w["t"] + shift, 3), "a": w["a"], "b": w["b"]} for w in words
+                ]
+            out.append(line)
     out.sort(key=lambda line: line["t"])
     return out
 
@@ -83,12 +140,14 @@ class Lyrics:
             data = json.loads(self._path(track_id).read_text())
         except Exception:
             return None
+        if data.get("v") != CACHE_V:
+            return None
         if data.get("source") == "none" and time.time() - data.get("at", 0) > MISS_TTL:
             return None
         return data
 
     def _store(self, track_id: str, data: dict) -> dict:
-        data = dict(data, at=time.time())
+        data = dict(data, at=time.time(), v=CACHE_V)
         try:
             self._path(track_id).write_text(json.dumps(data))
         except Exception as e:
