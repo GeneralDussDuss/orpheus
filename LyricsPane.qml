@@ -59,7 +59,11 @@ Rectangle {
     }
   }
 
+  // Api.qml interpolates position for everything now, so read that rather than
+  // keeping a second copy of the same arithmetic here - two extrapolations
+  // drifting apart is exactly what made the clocks disagree.
   function projected() {
+    if (api) return api.position || 0
     if (!playing) return anchorPos
     return anchorPos + (now() - anchorAt)
   }

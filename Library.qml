@@ -347,8 +347,8 @@ FloatingWindow {
     if (k === Qt.Key_Space) { api.control("toggle"); return true }
     if (t === "n") { api.control("next"); return true }
     if (t === "p") { api.control("previous"); return true }
-    if (k === Qt.Key_Right || t === "l") { api.control("seek", { position: (st.position || 0) + 10 }); return true }
-    if (k === Qt.Key_Left || t === "h") { api.control("seek", { position: Math.max(0, (st.position || 0) - 10) }); return true }
+    if (k === Qt.Key_Right || t === "l") { api.control("seek", { position: (api.position || 0) + 10 }); return true }
+    if (k === Qt.Key_Left || t === "h") { api.control("seek", { position: Math.max(0, (api.position || 0) - 10) }); return true }
     if (t === "+" || t === "=") { api.control("volume", { volume: Math.min(100, (st.volume || 0) + 5) }); return true }
     if (t === "-") { api.control("volume", { volume: Math.max(0, (st.volume || 0) - 5) }); return true }
     if (t === "s") { api.control("shuffle"); return true }
@@ -994,7 +994,7 @@ FloatingWindow {
         }
         Text {
           id: posText
-          text: win.lpad(win.clockText(win.st.position), 6)
+          text: win.lpad(win.clockText(win.api ? win.api.position : 0), 6)
           font.family: win.family; font.pixelSize: Style.font.body; color: win.dim
         }
         Text {
@@ -1002,7 +1002,7 @@ FloatingWindow {
           readonly property int cells: Math.max(10, Math.floor(
               (transport.width - win.cw * 62 - (nowText.visible ? nowText.width + win.cw * 2 : 0)) / win.cw))
           textFormat: Text.StyledText
-          text: Tui.meterRich((win.st.position || 0) / Math.max(1, win.st.duration || 1), cells, win.accent, Tui.mix(win.dim, win.bg, 0.4))
+          text: Tui.meterRich(((win.api ? win.api.position : 0)) / Math.max(1, win.st.duration || 1), cells, win.accent, Tui.mix(win.dim, win.bg, 0.4))
           font.family: win.family; font.pixelSize: Style.font.body
           MouseArea {
             anchors.fill: parent

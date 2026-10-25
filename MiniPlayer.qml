@@ -12,8 +12,15 @@ Item {
 
   property var engine: null
   readonly property var player: engine ? engine.player : null
-  readonly property real length: player && player.lengthSupported ? player.length : 0
-  readonly property real position: player && player.positionSupported ? player.position : 0
+  // For our own track read the daemon, the same interpolated value the player
+  // window and the widget use, so the three clocks cannot drift apart. MPRIS
+  // never broadcasts Position, so anyone else's player is extrapolated by
+  // Quickshell and is the best we can do for them.
+  readonly property bool ours: !!player && player.identity === "Orpheus" && !!engine && !!engine.api
+  readonly property real length: ours ? (engine.api.player.duration || 0)
+                                      : (player && player.lengthSupported ? player.length : 0)
+  readonly property real position: ours ? (engine.api.position || 0)
+                                        : (player && player.positionSupported ? player.position : 0)
 
   FontMetrics { id: fm; font.family: Style.font.family; font.pixelSize: Style.font.body }
   readonly property real cw: fm.advanceWidth("M")

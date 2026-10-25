@@ -30,7 +30,7 @@ TuiBox {
 
   readonly property real length: apiPlayer ? (apiPlayer.duration || 0)
                                            : (player && player.lengthSupported ? player.length : 0)
-  readonly property real position: apiPlayer ? (apiPlayer.position || 0) : mprisPos
+  readonly property real position: ours ? (engine.api.position || 0) : mprisPos
 
   onPlayerChanged: { mprisBase = 0; mprisAt = Date.now(); mprisPos = 0 }
   readonly property color fg: Tui.ensure(Color.foreground, Color.background, 7)

@@ -108,6 +108,35 @@ QtObject {
     })
   }
 
+  // ---- position ----------------------------------------------------------
+  // The daemon's figure is correct but only arrives about once a second, so
+  // every surface that drew it straight showed a number up to a second old and
+  // jumped when the next poll landed - and the player window, the widget and
+  // the mini player could each be stale by a different amount, which is what
+  // made them visibly disagree. Interpolate once, here, and let them all read
+  // the same value.
+  property real posBase: 0        // last figure the daemon reported
+  property real posAt: 0          // ... and the local ms when it arrived
+  property real position: 0
+
+  function reanchor() {
+    posBase = (player && player.position) || 0
+    posAt = Date.now()
+    position = posBase
+  }
+  onStatusChanged: reanchor()
+
+  property Timer posTick: Timer {
+    interval: 80
+    repeat: true
+    running: api.active && api.online && api.player.playing === true
+    onTriggered: {
+      var p = api.posBase + (Date.now() - api.posAt) / 1000
+      var dur = api.player.duration || 0
+      api.position = dur > 0 ? Math.min(p, dur) : p
+    }
+  }
+
   property Timer retry: Timer { interval: 2000; onTriggered: api.poll() }
   // The interpolated position moves between status pushes; refresh it gently.
   property Timer tick: Timer {
