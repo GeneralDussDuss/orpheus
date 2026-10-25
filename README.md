@@ -242,6 +242,8 @@ o.bind("CTRL + SHIFT + O", "Orpheus sign-in", "omarchy-shell -q orpheus login")
 | `Super+Alt+M` | the desktop widget |
 | `Ctrl+Shift+O` | sign-in |
 
+And in the player: `e` opens the equalizer.
+
 In the player: `v` cycles the visualizer plane, `V` opens the stage, `1`–`7` switch tabs
 (home, search, mixes, playlists, albums, tracks, artists), `↵` plays, `space` pauses,
 `f` favourites, `/` searches, `q` closes.
@@ -269,7 +271,7 @@ them once. Styles also cycle on the widget itself — scroll it or right-click �
 this player does not do popout menus.
 
 Or call the shell directly — `omarchy-shell orpheus <method>` — with methods
-`status toggle show hide library login style railViz nextRailViz nextStyle miniPlayer
+`status toggle show hide library login eq style railViz nextRailViz nextStyle miniPlayer
 placement widget`. Note the widget's visualizer is `widget viz <style>`; there is no
 `widgetViz`.
 
@@ -299,6 +301,15 @@ curl -X POST 127.0.0.1:47837/eq -d '{"enabled":false}'       # bypass
 ```
 
 Six tone presets ship with it: Flat, Bass Lift, Vocal, Loudness, Tame Treble and Speech.
+
+Open it with `e` in the player, or `omarchy-shell orpheus eq` to open the window straight
+onto it. Inside: `h`/`l` pick a band, `j`/`k` move it by half a decibel, `J`/`K` coarse,
+`0` zeroes a band, `z` zeroes all, `p` cycles presets, `b` bypasses, `esc` goes back.
+
+The transport bar carries a small readout beside the volume — eight block glyphs
+summarising the ten bands, accented while a filter is live and a flat dim line when it is
+not, so you can tell at a glance whether something is shaping the sound. Left click opens
+the pane, right click bypasses without leaving the page.
 
 ### Headphone corrections
 
