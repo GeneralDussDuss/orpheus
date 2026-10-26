@@ -14,6 +14,7 @@ that is as good as a session for as long as it lasts.
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import logging
 import re
@@ -32,6 +33,11 @@ _BARE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 
 # Audio for the music player: one stream, no muxing, straight into the queue.
 AUDIO_FORMAT = "bestaudio[acodec!=none]/best"
+# A flat search carries no date at all: YouTube only ships the "3 weeks ago"
+# line, and yt-dlp turns that into a timestamp only when asked. It is
+# approximate by construction - every result lands on a whole week, month or
+# year back from today - so the UI shows it as an age, which is what it is.
+DATE_ARGS = ["--extractor-args", "youtubetab:approximate_date"]
 # Video for the window: mpv's own ytdl hook merges the separate video and audio
 # streams, which is work we would otherwise have to do ourselves.
 VIDEO_FORMAT = "bestvideo[height<=?1080]+bestaudio/best[height<=?1080]/best"
@@ -91,6 +97,13 @@ class YouTube:
                 if (t.get("width") or 0) >= 320:
                     break
         channel = e.get("channel") or e.get("uploader") or ""
+        published = e.get("timestamp") or e.get("release_timestamp") or 0
+        if not published and e.get("upload_date"):
+            try:
+                published = int(datetime.datetime.strptime(
+                    e["upload_date"], "%Y%m%d").replace(tzinfo=datetime.timezone.utc).timestamp())
+            except ValueError:
+                published = 0
         live = (e.get("live_status") or "") in ("is_live", "is_upcoming")
         return {
             "kind": "track",
@@ -102,6 +115,7 @@ class YouTube:
             "duration": int(e.get("duration") or 0),
             "art": art,
             "views": int(e.get("view_count") or 0),
+            "published": int(published or 0),
             "live": live,
             "url": watch_url(vid),
         }
@@ -121,7 +135,7 @@ class YouTube:
         hit = self._searches.get(key)
         if hit and time.time() - hit[0] < SEARCH_TTL:
             return hit[1]
-        out = await self._run("--flat-playlist", "-J", "--no-warnings",
+        out = await self._run("--flat-playlist", "-J", "--no-warnings", *DATE_ARGS,
                               f"ytsearch{int(limit)}:{query}")
         try:
             data = json.loads(out)

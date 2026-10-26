@@ -139,14 +139,26 @@ class Video:
     # ---- what it is for ----------------------------------------------------
 
     async def watch(self, entry: dict):
-        """Show a video, starting the window if it is not already up."""
+        """Show a YouTube video, starting the window if it is not already up."""
+        # mpv resolves the watch URL through its own ytdl hook, which merges the
+        # separate video and audio streams for us.
+        await self.play(watch_url(entry["id"]), entry)
+
+    async def play(self, url: str, entry: dict, options: dict | None = None):
+        """Show any stream the window can take.
+
+        The options are mpv's own, applied to this file only: a scraped stream
+        usually needs a referrer to be fetched at all, and may carry subtitles
+        as a separate URL. `force-media-title` is what the window title - and so
+        the Hyprland rule - ends up showing.
+        """
         await self._ensure()
         self.entry = entry
         self.position = 0.0
         self.duration = float(entry.get("duration") or 0)
-        # mpv resolves the watch URL through its own ytdl hook, which merges the
-        # separate video and audio streams for us.
-        await self._send(["loadfile", watch_url(entry["id"]), "replace"], wait=False)
+        opts = {k: v for k, v in (options or {}).items() if v}
+        cmd = ["loadfile", url, "replace", 0, opts] if opts else ["loadfile", url, "replace"]
+        await self._send(cmd, wait=False)
         await self._send(["set_property", "pause", False], wait=False)
         self.on_change()
 

@@ -173,7 +173,45 @@ FloatingWindow {
     var c = trackCols(cols)
     return "  # " + "  " + pad("TITLE", c.tw - 2) + pad("ARTIST", c.aw) + pad(c.album ? "ALBUM" : "", c.bw) + "    " + lpad("TIME", 6)
   }
-  readonly property bool hasTrackTable: pageTracks.length > 0 && page.type !== "search"
+  // How many people watched, in as few characters as possible.
+  function viewText(n) {
+    n = Number(n || 0)
+    if (!n) return ""
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + "B views"
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + "M views"
+    if (n >= 1e3) return Math.round(n / 1e3) + "K views"
+    return n + " views"
+  }
+
+  // How long ago, in the fewest characters that stay true. The date behind
+  // this is YouTube's own "3 weeks ago" read back through yt-dlp, so it is
+  // only ever accurate to the unit it is printed in - which is exactly what an
+  // age says, and what an exact date would quietly lie about.
+  function ageText(ts) {
+    if (!ts) return ""
+    var d = (Date.now() / 1000 - ts) / 86400
+    if (d < 0.5) return "today"
+    if (d < 7) return Math.round(d) + "d ago"
+    if (d < 31) return Math.round(d / 7) + "w ago"
+    if (d < 345) return Math.round(d / 30.4) + "mo ago"
+    return Math.round(d / 365) + "y ago"
+  }
+
+  // A video row. The same line serves a YouTube result, a series and an
+  // episode, because the section never learns which provider answered.
+  function mediaLine(it, cols) {
+    var glyph = it.kind === "show" ? "❖" : (it.live ? "◉" : "▶")
+    var right = it.kind === "show" ? (it.episodes ? it.episodes + " episodes" : "series")
+              : it.live ? "LIVE" : clockText(it.duration)
+    var sub = it.kind === "show" ? "" : (artists(it.artists) || (it.ep ? "episode " + it.ep : ""))
+    var wide = cols - 4 - 8
+    var tw = sub ? Math.floor(wide * 0.52) : wide
+    var line = " " + glyph + "  " + pad(it.title, tw)
+    if (sub) line += pad(sub, wide - tw - 21) + pad(viewText(it.views), 12) + pad(ageText(it.published), 9)
+    return line + lpad(right, 8)
+  }
+
+  readonly property bool hasTrackTable: pageTracks.length > 0 && page.type !== "search" && page.type !== "video"
   property real loadedAt: 0
 
   // Where the sound actually goes, for the status line.
@@ -198,7 +236,8 @@ FloatingWindow {
     { key: "4", label: "playlists", page: { type: "collection", what: "playlists", title: "playlists" } },
     { key: "5", label: "albums", page: { type: "collection", what: "albums", title: "albums" } },
     { key: "6", label: "tracks", page: { type: "collection", what: "tracks", title: "liked tracks" } },
-    { key: "7", label: "artists", page: { type: "collection", what: "artists", title: "artists" } }
+    { key: "7", label: "artists", page: { type: "collection", what: "artists", title: "artists" } },
+    { key: "8", label: "video", page: { type: "video", title: "video" } }
   ]
   property var page: navItems[0].page
   property var history: []
@@ -207,6 +246,29 @@ FloatingWindow {
   property var pageTracks: []    // tracks on this page, in play order
   property bool loading: false
   property string query: ""
+
+  // ---- the video section -----------------------------------------------------
+  //
+  // One section, two providers, and nothing in the page that knows which one it
+  // is talking to: a provider answers with rows, a row knows how to play
+  // itself. `page.show` is set on the episode list of one series.
+  property string vprovider: "youtube"
+  property string vquery: ""
+  readonly property bool videoPage: page.type === "video"
+  readonly property bool searching: page.type === "search" || (videoPage && !page.show)
+  readonly property var videoState: (api && api.video) || ({})
+  readonly property bool watching: videoState.running === true
+  readonly property var providers: (api && api.providers) || ({ youtube: true })
+  readonly property var vproviders: [
+    { id: "youtube", label: "youtube", by: "yt-dlp" },
+    { id: "anime", label: "anime", by: "ani-cli" }
+  ]
+  onVproviderChanged: if (videoPage && !page.show) load()
+
+  // A daemon error arrives as plain text; it is already a sentence.
+  function errText(d, fallback) {
+    return (typeof d === "string" && d.trim()) ? d.trim().toLowerCase() : fallback
+  }
 
   // The account line sits in every screenshot of this window, so never render a
   // contactable address: mask the local part and keep just enough to tell which
@@ -271,7 +333,9 @@ FloatingWindow {
   }
 
   function load() {
-    if (!api || !api.signedIn) return
+    // The video section needs no TIDAL session: YouTube and ani-cli are not
+    // TIDAL, and making someone sign in to watch something would be a lie.
+    if (!api || (!api.signedIn && page.type !== "video")) return
     rows = []; pageData = null; pageTracks = []; loading = true
     var p = page
     if (p.type === "home") {
@@ -291,6 +355,8 @@ FloatingWindow {
       searchInput.forceActiveFocus()
     } else if (p.type === "collection") {
       api.get("/collection/" + p.what, function(ok, d) { if (page === p) setRows(section("", ok ? d : [])) })
+    } else if (p.type === "video") {
+      loadVideo(p)
     } else if (p.type === "detail") {
       api.get("/" + p.kind + "/" + p.id, function(ok, d) {
         if (page !== p) return
@@ -300,6 +366,47 @@ FloatingWindow {
         setRows(r)
       })
     }
+  }
+
+  function loadVideo(p) {
+    if (p.show) {
+      api.animeEpisodes(p.show.query, p.show.index, function(ok, d) {
+        if (page !== p) return
+        if (!ok) { setRows([]); say(errText(d, "couldn't list the episodes")); return }
+        setRows(section(p.show.title, (d && d.results) || []))
+      })
+      return
+    }
+    searchInput.forceActiveFocus()
+    var q = vquery.trim()
+    if (!q) { setRows([]); return }
+    var prov = vprovider
+    var answer = function(ok, d) {
+      if (page !== p || prov !== vprovider || q !== vquery.trim()) return
+      if (!ok) { setRows([]); say(errText(d, "that search went nowhere")); return }
+      setRows(section(prov, (d && d.results) || []))
+    }
+    if (prov === "anime") api.animeSearch(q, answer)
+    else api.ytSearch(q, answer)
+  }
+
+  // Typing goes to whichever search the page is showing.
+  function searchNow() { if (videoPage) load(); else runSearch() }
+
+  // ⏎ on a video row. A series opens; everything else plays in the window.
+  function videoActivate(it) {
+    if (it.kind === "show") { go({ type: "video", show: it, title: it.title }); return }
+    say("opening ╱╱ " + it.title)
+    api.watch(it, function(ok, d) { if (!ok) say(errText(d, "couldn't play that")) })
+  }
+
+  // The other half of a YouTube row: the sound of it, through the music player,
+  // with the rest of the results behind it as a queue.
+  function listenHere() {
+    var r = rows[list.currentIndex]
+    if (!r || !r.item || r.item.provider !== "youtube") { say("only youtube rows can be listened to"); return }
+    api.listen(pageTracks, r.trackIndex || 0, { kind: "youtube", title: "youtube · " + vquery.trim() })
+    say("listening ╱╱ " + r.item.title)
   }
 
   function runSearch() {
@@ -321,6 +428,7 @@ FloatingWindow {
     var r = rows[index]
     if (!r || !r.item) return
     var it = r.item
+    if (page.type === "video") { videoActivate(it); return }
     if (it.kind !== "track") { go({ type: "detail", kind: it.kind, id: it.id, title: it.title }); return }
     var p = page
     if (p.type === "detail" && p.kind !== "artist") api.play({ kind: p.kind, id: p.id }, r.trackIndex)
@@ -369,6 +477,33 @@ FloatingWindow {
   function say(msg) { flash = msg; flashOff.restart() }
 
   // ---- keys -------------------------------------------------------------------
+  function videoKey(e) {
+    var k = e.key, t = e.text
+    if (k === Qt.Key_Tab || t === "\t") {
+      vprovider = vproviders[(providerIndex + 1) % vproviders.length].id
+      return true
+    }
+    if (t === "a") { listenHere(); return true }
+    if (t === "c") {
+      if (!providers.curd) { say("curd is not installed"); return true }
+      say("handing over to curd · it owns the player from here")
+      api.curd(true, function(ok, d) { if (!ok) say(errText(d, "couldn't start curd")) })
+      return true
+    }
+    if (!watching) return false
+    var pos = videoState.position || 0
+    if (k === Qt.Key_Space) { api.videoControl("toggle"); return true }
+    if (k === Qt.Key_Right || t === "l") { api.videoControl("seek", { position: pos + 10 }); return true }
+    if (k === Qt.Key_Left || t === "h") { api.videoControl("seek", { position: Math.max(0, pos - 10) }); return true }
+    if (t === "F") { api.videoControl("fullscreen"); return true }
+    if (t === "x") { api.videoControl("close"); say("closed the video window"); return true }
+    return false
+  }
+  readonly property int providerIndex: {
+    for (var i = 0; i < vproviders.length; i++) if (vproviders[i].id === vprovider) return i
+    return 0
+  }
+
   function handleKey(e) {
     var k = e.key, t = e.text
     if (k === Qt.Key_Escape || k === Qt.Key_Backspace) { back(); return true }
@@ -376,7 +511,10 @@ FloatingWindow {
     if (t === "/") { go({ type: "search", title: "search" }); return true }
     if (t === "e") { go({ type: "eq", title: "equalizer" }); return true }
     if (t === "L") { go({ type: "lyrics", title: "lyrics" }); return true }
-    if (t >= "1" && t <= "7") { go(navItems[Number(t) - 1].page); return true }
+    if (t >= "1" && t <= "8") { go(navItems[Number(t) - 1].page); return true }
+    // On the video page the transport reaches the video window instead: it is
+    // the thing you are looking at, and the music is paused behind it anyway.
+    if (videoPage && videoKey(e)) return true
     if (k === Qt.Key_Space) { api.control("toggle"); return true }
     if (t === "n") { api.control("next"); return true }
     if (t === "p") { api.control("previous"); return true }
@@ -539,7 +677,10 @@ FloatingWindow {
       height: nav.height
       title: win.page.type === "detail" ? win.page.kind + " · " + (win.pageData ? win.pageData.title : win.page.title || "")
            : (win.page.title || win.page.type)
-      keyHint: win.page.type === "search" ? Tui.hints([["/", "search"], ["⏎", "play"]], win.accentText, win.dim)
+      keyHint: win.videoPage ? Tui.hints(win.page.show ? [["⏎", "watch"], ["esc", "back"]]
+                                                      : [["⇥", "provider"], ["⏎", "watch"], ["a", "listen"], ["c", "curd"]],
+                                       win.accentText, win.dim)
+             : win.page.type === "search" ? Tui.hints([["/", "search"], ["⏎", "play"]], win.accentText, win.dim)
                                           : Tui.hints([["⏎", "open"], ["a", "queue"], ["f", "♥ like"], ["P", "play all"]], win.accentText, win.dim)
       footer: win.history.length ? "esc back" : ""
       focused: list.activeFocus || searchInput.activeFocus
@@ -548,9 +689,12 @@ FloatingWindow {
       // Detail header: art + title + actions.
       Item {
         id: header
-        visible: win.page.type === "detail" || win.page.type === "search"
+        visible: win.page.type === "detail" || win.page.type === "search" || win.videoPage
         width: parent.width
-        height: win.page.type === "detail" ? win.ch * 9 : (win.page.type === "search" ? win.ch * 2 : 0)
+        height: win.page.type === "detail" ? win.ch * 9
+              : win.page.type === "search" ? win.ch * 2
+              : win.videoPage ? (win.page.show ? 0 : win.ch * 3.4) + (win.watching ? win.ch * 2.1 : 0)
+              : 0
 
         Row {
           visible: win.page.type === "detail"
@@ -595,9 +739,42 @@ FloatingWindow {
           }
         }
 
+        // ╱╱ which service answers. Tab moves between them; a provider that is
+        // not installed says so rather than failing when you press ⏎.
+        Row {
+          visible: win.videoPage && !win.page.show
+          spacing: win.cw * 2
+          Text {
+            text: "╱╱ ⇥"
+            font.family: win.family; font.pixelSize: Style.font.caption; font.letterSpacing: 1
+            color: win.accent
+          }
+          Repeater {
+            model: win.vproviders
+            Text {
+              required property var modelData
+              readonly property bool on: modelData.id === win.vprovider
+              readonly property bool ready: win.providers[modelData.id] !== false
+              textFormat: Text.StyledText
+              text: '<font color="' + Tui.hex(on ? win.accentText : win.dim) + '">'
+                    + (on ? "▰ " : "▱ ") + Tui.esc(modelData.label) + '</font>'
+                    + ' <font color="' + Tui.hex(Tui.mix(win.dim, win.bg, 0.3)) + '">'
+                    + Tui.esc(ready ? modelData.by : "not installed") + '</font>'
+              font.family: win.family; font.pixelSize: Style.font.caption; font.letterSpacing: 1
+              Behavior on opacity { NumberAnimation { duration: 160 } }
+              opacity: ready ? 1 : 0.55
+              MouseArea {
+                anchors.fill: parent
+                onClicked: { win.vprovider = parent.modelData.id; list.forceActiveFocus() }
+              }
+            }
+          }
+        }
+
         // Search prompt.
         Row {
-          visible: win.page.type === "search"
+          y: win.videoPage ? win.ch * 1.7 : 0
+          visible: win.searching
           Text { text: "❯ "; font.family: win.family; font.pixelSize: Style.font.body; color: win.accentText; font.bold: true }
           TextInput {
             id: searchInput
@@ -607,19 +784,70 @@ FloatingWindow {
             color: win.fg
             selectionColor: Tui.alpha(Color.accent, 0.35)
             cursorDelegate: Rectangle { width: win.cw; color: win.accent; opacity: 0.7 }
-            text: win.query
-            onTextEdited: { win.query = text; searchTimer.restart() }
+            text: win.videoPage ? win.vquery : win.query
+            onTextEdited: {
+              if (win.videoPage) win.vquery = text; else win.query = text
+              searchTimer.restart()
+            }
             Keys.onDownPressed: list.forceActiveFocus()
             Keys.onReturnPressed: { list.forceActiveFocus(); win.activate(list.currentIndex) }
             Keys.onEscapePressed: list.forceActiveFocus()
+            Keys.onTabPressed: if (win.videoPage) win.vprovider = win.vproviders[(win.providerIndex + 1) % win.vproviders.length].id
             Text {
               visible: !parent.text
-              text: "artists, albums, tracks, playlists"
+              text: win.videoPage ? (win.vprovider === "anime" ? "a series, by name"
+                                                             : "videos, or paste a youtube link")
+                                : "artists, albums, tracks, playlists"
               font: parent.font
               color: win.dim
             }
           }
-          Timer { id: searchTimer; interval: 300; onTriggered: win.runSearch() }
+          Timer { id: searchTimer; interval: 300; onTriggered: win.searchNow() }
+        }
+
+        // What is on the other screen. Only here, because this is the only page
+        // where the video window is the thing you are driving.
+        Item {
+          id: watchStrip
+          visible: win.videoPage && win.watching
+          y: win.page.show ? 0 : win.ch * 3.4
+          width: parent.width
+          height: win.ch * 2.1
+
+          readonly property var entry: win.videoState.entry || ({})
+          readonly property real progress: win.videoState.duration > 0
+                                         ? win.videoState.position / win.videoState.duration : 0
+
+          Text {
+            width: parent.width
+            clip: true
+            textFormat: Text.StyledText
+            text: '<font color="' + Tui.hex(win.accent) + '">'
+                  + (win.videoState.paused ? "‖‖" : "▶ ") + '</font> '
+                  + '<font color="' + Tui.hex(win.fg) + '">' + Tui.esc(watchStrip.entry.title || "video") + '</font>'
+            font.family: win.family; font.pixelSize: Style.font.body
+          }
+          Row {
+            y: win.ch * 1.1
+            spacing: win.cw
+            Text {
+              textFormat: Text.StyledText
+              text: Tui.meterRich(watchStrip.progress, Math.max(8, Math.floor((watchStrip.width / win.cw) * 0.4)),
+                                  win.accent, Tui.mix(win.dim, win.bg, 0.4))
+              font.family: win.family; font.pixelSize: Style.font.caption
+            }
+            Text {
+              text: win.clockText(win.videoState.position) + " ╱ " + win.clockText(win.videoState.duration)
+              font.family: win.family; font.pixelSize: Style.font.caption
+              color: win.dim
+            }
+            Text {
+              textFormat: Text.StyledText
+              text: Tui.hints([["␣", "⏯"], ["h l", "seek"], ["F", "full"], ["x", "close"]],
+                              win.accentText, Tui.mix(win.dim, win.bg, 0.25))
+              font.family: win.family; font.pixelSize: Style.font.caption
+            }
+          }
         }
       }
 
@@ -660,7 +888,7 @@ FloatingWindow {
         Keys.onPressed: function(e) {
           var t = e.text
           if (e.key === Qt.Key_Down || t === "j") { move(1); e.accepted = true }
-          else if (e.key === Qt.Key_Up || t === "k") { if (!move(-1) && win.page.type === "search") searchInput.forceActiveFocus(); e.accepted = true }
+          else if (e.key === Qt.Key_Up || t === "k") { if (!move(-1) && win.searching) searchInput.forceActiveFocus(); e.accepted = true }
           else if (e.key === Qt.Key_PageDown) { move(10); e.accepted = true }
           else if (e.key === Qt.Key_PageUp) { move(-10); e.accepted = true }
           else if (t === "g") { currentIndex = win.firstItemRow(); e.accepted = true }
@@ -683,7 +911,9 @@ FloatingWindow {
           required property int index
           readonly property var it: modelData.item
           readonly property bool isCursor: ListView.isCurrentItem
-          readonly property bool isPlaying: !!(it && win.track && it.kind === "track" && it.id === win.track.id)
+          readonly property bool isPlaying: !!(it && it.kind === "track" && (
+            (win.track && it.id === win.track.id)
+            || (win.videoPage && win.watching && (win.videoState.entry || {}).id === it.id)))
           width: ListView.view.width
           height: win.ch * (modelData.header ? 1.7 : 1.3)
 
@@ -725,6 +955,12 @@ FloatingWindow {
               if (!it) return ""
               var cols = Math.floor(width / win.cw)
               var line
+              // A YouTube result is a track - that is how it reaches the music
+              // player - so the page, not the kind, decides how it is drawn.
+              if (win.videoPage || it.kind === "show" || it.kind === "video") {
+                line = win.mediaLine(it, cols)
+                return rowItem.reveal < 1 ? Tui.decode(line, rowItem.reveal, rowItem.index) : line
+              }
               if (it.kind === "track") {
                 var num = rowItem.isPlaying ? (win.st.playing ? Tui.eq(win.clock, rowItem.index) : "‖‖‖")
                                             : win.lpad(String((rowItem.modelData.trackIndex || 0) + 1), 3)
@@ -758,6 +994,9 @@ FloatingWindow {
           anchors.centerIn: parent
           visible: win.loading || (!win.rows.length && win.page.type !== "login")
           text: win.loading ? Tui.decode("loading", (win.clock * 2) % 1, Math.floor(win.clock * 8))
+              : win.videoPage ? (win.page.show ? "no episodes"
+                             : win.vquery ? "nothing found on " + win.vprovider
+                             : "type to search " + win.vprovider + " · ⏎ watch · a listen")
               : win.page.type === "search" ? (win.query ? "no results" : "type to search · ⏎ play · esc back")
               : "nothing here yet"
           font.family: win.family; font.pixelSize: Style.font.body
@@ -784,7 +1023,9 @@ FloatingWindow {
       // Sign-in / offline cover.
       Loader {
         anchors.fill: parent
-        active: !win.api || !win.api.online || !win.api.signedIn || win.page.type === "login"
+        // The video section is not TIDAL's, so it stays reachable signed out.
+        active: !win.api || !win.api.online || win.page.type === "login"
+             || (!win.api.signedIn && !win.videoPage)
         sourceComponent: LoginPane { host: win }
       }
     }

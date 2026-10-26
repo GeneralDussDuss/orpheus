@@ -15,6 +15,7 @@ from pathlib import Path
 
 from aiohttp import web
 
+from .anime import PLAYER as ANI_PLAYER, Anime, AnimeError
 from .mpris import Mpris
 from .player import Player
 from . import eq as eqmod
@@ -41,6 +42,7 @@ class App:
         self.prefs = self._load_prefs()
         self.tidal = Tidal(STATE_DIR, self.prefs.get("quality"))
         self.youtube = YouTube()
+        self.anime = Anime(RUNTIME_DIR)
         self.player = Player(self.tidal, self.youtube, RUNTIME_DIR, CACHE_DIR, self._changed)
         self.video = Video(RUNTIME_DIR, self._changed)
         self.player.eq = eqmod.normalize(self.prefs.get("eq"))
@@ -145,6 +147,8 @@ class App:
                 "quality": self.tidal.quality, "player": player,
                 "eq": self.player.eq_state(),
                 "video": self.video.state(),
+                "providers": {"youtube": True, "anime": self.anime.available,
+                              "curd": self.anime.curd},
                 "likedVersion": self.tidal.liked_version}
 
     async def _liked_loop(self):
@@ -418,6 +422,74 @@ class App:
                 await self.video.pause()
                 await self.player.play_list(items, index,
                                             b.get("context") or {"kind": "youtube", "title": "youtube"})
+            return J(self.status())
+
+        # ---- anime -----------------------------------------------------------
+        #
+        # A series is addressed by the search that found it plus its place in
+        # the results, because that is all ani-cli's -S takes.
+
+        @r.get("/anime/search")
+        async def anime_search(req):
+            try:
+                results = await self.anime.search(req.query.get("q", ""))
+            except AnimeError as e:
+                raise web.HTTPBadGateway(text=str(e))
+            return J({"query": req.query.get("q", ""), "results": results})
+
+        @r.get("/anime/episodes")
+        async def anime_episodes(req):
+            try:
+                results = await self.anime.episodes(req.query.get("q", ""),
+                                                    int(req.query.get("i", 1)))
+            except (AnimeError, ValueError) as e:
+                raise web.HTTPBadGateway(text=str(e))
+            return J({"results": results})
+
+        @r.post("/anime/watch")
+        async def anime_watch(req):
+            """Body {query, index, ep, title}: resolve one episode and show it."""
+            b = await body(req)
+            query, ep = b.get("query") or "", str(b.get("ep") or "")
+            if not query or not ep:
+                raise web.HTTPBadRequest(text="query and ep are required")
+            index = int(b.get("index") or 1)
+            try:
+                got = await self.anime.resolve(query, index, ep, b.get("quality") or "best")
+            except AnimeError as e:
+                raise web.HTTPBadGateway(text=str(e))
+            # Never two things playing at once.
+            await self.player.set_paused(True)
+            title = got.get("title") or b.get("title") or f"{query} episode {ep}"
+            entry = {"kind": "video", "provider": "anime", "id": f"{index}@{query}#{ep}",
+                     "title": title, "query": query, "index": index, "ep": ep,
+                     "duration": 0}
+            await self.video.play(got["url"], entry, {
+                "referrer": got.get("referrer"),
+                "sub-files": got.get("subs"),
+                "force-media-title": title,
+            })
+            return J(self.status())
+
+        @r.post("/anime/curd")
+        async def anime_curd(req):
+            """Hand over to Curd, which owns its own player.
+
+            Curd does AniList progress, intro skipping and Discord presence from
+            inside mpv's IPC socket, so it has to be the one running it. Orpheus
+            opens it in a terminal and stays out of the way.
+            """
+            if not self.anime.curd:
+                raise web.HTTPNotFound(text="curd is not installed")
+            args = ["-c"] if (await body(req)).get("resume") else []
+            term = os.environ.get("TERMINAL") or "alacritty"
+            try:
+                await asyncio.create_subprocess_exec(
+                    term, "--title", "Orpheus ╱╱ curd", "-e",
+                    "curd", "-player", str(ANI_PLAYER), *args,
+                    stdin=asyncio.subprocess.DEVNULL)
+            except OSError as e:
+                raise web.HTTPBadGateway(text=f"could not start {term}: {e}")
             return J(self.status())
 
         @r.post("/video/{action}")

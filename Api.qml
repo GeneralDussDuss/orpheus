@@ -86,6 +86,33 @@ QtObject {
   function playTracks(tracks, index, context) { post("/play", { tracks: tracks, index: index || 0, context: context || {} }) }
   function enqueue(item, next) { post("/enqueue", { kind: item.kind, id: item.id, track: item.kind === "track" ? item : undefined, next: !!next }) }
 
+  // ---- the video section -----------------------------------------------
+  //
+  // Two verbs, because a video has two things you might want from it: `watch`
+  // puts it in the video window, `listen` sends it through the music player
+  // instead, where it arrives with the queue, the equaliser and the visualiser
+  // already attached.
+  readonly property var video: status.video || ({})
+  readonly property var providers: status.providers || ({ youtube: true })
+
+  function ytSearch(q, done) { get("/yt/search?q=" + encodeURIComponent(q), done) }
+  function animeSearch(q, done) { get("/anime/search?q=" + encodeURIComponent(q), done) }
+  function animeEpisodes(q, i, done) {
+    get("/anime/episodes?q=" + encodeURIComponent(q) + "&i=" + (i || 1), done)
+  }
+
+  function watch(item, done) {
+    if (item.provider === "anime")
+      post("/anime/watch", { query: item.query, index: item.index, ep: item.ep, title: item.title }, done)
+    else
+      post("/yt/play", { items: [item], index: 0, mode: "video" }, done)
+  }
+  function listen(items, index, context, done) {
+    post("/yt/play", { items: items, index: index || 0, mode: "audio", context: context }, done)
+  }
+  function videoControl(action, body) { post("/video/" + action, body || {}) }
+  function curd(resume, done) { post("/anime/curd", { resume: !!resume }, done) }
+
   // ---- long poll ----
   property int version: -1
   property bool polling: false

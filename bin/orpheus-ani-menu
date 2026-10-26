@@ -1,0 +1,14 @@
+#!/bin/sh
+# ani-cli's menu, with nobody at the keyboard.
+#
+# ani-cli has no "print the results" mode: every list it builds goes straight
+# into fzf. It does let you replace fzf (ANI_CLI_MENU), and it calls the
+# replacement as `menu [extra flags] "<prompt>"` with the candidates on stdin.
+# So this is a menu that copies the candidates to a file and selects nothing,
+# which makes ani-cli stop right there. The prompt is written with them,
+# because the same program is asked for the series list, the episode list and
+# the quality list, and the caller needs to know which one it got.
+out="${ORPHEUS_ANI_DUMP:-/dev/null}"
+{ printf 'prompt\t%s\n' "$*"; cat -; } >"$out"
+# Empty stdout, non-zero exit: ani-cli reads this as "nothing was chosen".
+exit 1
