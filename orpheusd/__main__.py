@@ -20,6 +20,8 @@ from .player import Player
 from . import eq as eqmod
 from .lyrics import Lyrics
 from .tidal import QUALITIES, Tidal
+from .video import Video
+from .youtube import YouTube, YouTubeError
 
 log = logging.getLogger("orpheus")
 
@@ -38,7 +40,9 @@ class App:
             d.mkdir(parents=True, exist_ok=True)
         self.prefs = self._load_prefs()
         self.tidal = Tidal(STATE_DIR, self.prefs.get("quality"))
-        self.player = Player(self.tidal, RUNTIME_DIR, CACHE_DIR, self._changed)
+        self.youtube = YouTube()
+        self.player = Player(self.tidal, self.youtube, RUNTIME_DIR, CACHE_DIR, self._changed)
+        self.video = Video(RUNTIME_DIR, self._changed)
         self.player.eq = eqmod.normalize(self.prefs.get("eq"))
         self.lyrics = Lyrics(self.tidal, CACHE_DIR)
         self.mpris = Mpris(self, self.player)
@@ -140,6 +144,7 @@ class App:
         return {"version": self.version, "login": self.tidal.login_state,
                 "quality": self.tidal.quality, "player": player,
                 "eq": self.player.eq_state(),
+                "video": self.video.state(),
                 "likedVersion": self.tidal.liked_version}
 
     async def _liked_loop(self):
@@ -383,6 +388,47 @@ class App:
             need_login()
             return J({"version": self.tidal.liked_version, **{k: sorted(v) for k, v in self.tidal.liked.items()}})
 
+        # ---- youtube ---------------------------------------------------------
+
+        @r.get("/yt/search")
+        async def yt_search(req):
+            """Search, or resolve a pasted link. Needs no TIDAL session."""
+            try:
+                results = await self.youtube.search(req.query.get("q", ""),
+                                                    max(1, min(40, int(req.query.get("n", 20)))))
+            except YouTubeError as e:
+                raise web.HTTPBadGateway(text=str(e))
+            return J({"query": req.query.get("q", ""), "results": results})
+
+        @r.post("/yt/play")
+        async def yt_play(req):
+            """Body {items, index, mode}: `audio` goes through the music player
+            with everything that implies - queue, equaliser, visualiser - and
+            `video` opens the window."""
+            b = await body(req)
+            items = b.get("items") or ([b["item"]] if b.get("item") else [])
+            if not items:
+                raise web.HTTPBadRequest(text="items is required")
+            index = max(0, min(len(items) - 1, int(b.get("index", 0))))
+            if b.get("mode") == "video":
+                # Never two things playing at once.
+                await self.player.set_paused(True)
+                await self.video.watch(items[index])
+            else:
+                await self.video.pause()
+                await self.player.play_list(items, index,
+                                            b.get("context") or {"kind": "youtube", "title": "youtube"})
+            return J(self.status())
+
+        @r.post("/video/{action}")
+        async def video_control(req):
+            a = req.match_info["action"]
+            if not await self.video.command(a, await body(req)):
+                if not self.video.running:
+                    raise web.HTTPConflict(text="no video window open")
+                raise web.HTTPNotFound(text=f"unknown action {a}")
+            return J(self.status())
+
         app = web.Application()
         app.add_routes(r)
         return app
@@ -396,6 +442,7 @@ async def serve(port: int):
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
     await stop.wait()
+    await app.video.close()
     try:
         RESUME.write_text(json.dumps(app.player.snapshot()))
     except Exception as e:

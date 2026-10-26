@@ -32,8 +32,9 @@ MPV_ARGS = [
 
 
 class Player:
-    def __init__(self, tidal, runtime_dir: Path, cache_dir: Path, on_change):
+    def __init__(self, tidal, youtube, runtime_dir: Path, cache_dir: Path, on_change):
         self.tidal = tidal
+        self.youtube = youtube
         self.socket_path = runtime_dir / "mpv.sock"
         self.cache_dir = cache_dir
         self.on_change = on_change
@@ -256,6 +257,11 @@ class Player:
         return {k: info.get(k) for k in ("quality", "bitDepth", "sampleRate", "codec")}
 
     async def _resolve(self, track: dict) -> dict:
+        # The only place that knows a track has a service behind it. Everything
+        # downstream - the queue, shuffle, the equaliser, MPRIS, the visualiser,
+        # resume - works the same either way, because by here it is just a URL.
+        if track.get("provider") == "youtube":
+            return await self.youtube.stream(track["id"])
         return await self.tidal.stream(track["id"], self.cache_dir)
 
     async def _load(self, order_pos: int):
@@ -269,7 +275,14 @@ class Player:
             info = await self._resolve(track)
         except Exception as e:
             log.warning("stream for %s failed: %s", track["id"], e)
-            self.error = "This track isn't available to stream"
+            if track.get("provider") == "youtube":
+                # yt-dlp says something useful ("Video unavailable", "Private
+                # video"); a generic line would throw that away. Drop the cached
+                # URL too, so a retry actually re-resolves.
+                self.youtube.forget(track["id"])
+                self.error = str(e)
+            else:
+                self.error = "This track isn't available to stream"
             self.on_change()
             return await self._advance_after_error()
         if token != self._loading:
