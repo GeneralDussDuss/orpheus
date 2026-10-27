@@ -1,17 +1,43 @@
 #!/bin/bash
-# Install Orpheus on an Omarchy machine, from wherever this checkout lives.
+# Install Orpheus on an Omarchy machine.
+#
+#   curl -fsSL https://raw.githubusercontent.com/GeneralDussDuss/orpheus/main/install.sh | bash
+#
+# fetches Orpheus into ~/.config/omarchy/plugins/orpheus (or updates it) and
+# installs it. From a checkout, wherever it lives:
 #
 #   ./install.sh              install, or bring an install up to date (safe to re-run)
+#   ./install.sh --yes        the same, without asking before installing packages
 #   ./install.sh --check      say what is missing, change nothing
 #   ./install.sh --uninstall  undo everything this script did; keeps your
 #                             sign-in, likes cache and EQ in ~/.local/state/orpheus
-#
-# Works from a plain clone or from `omarchy plugin add`, which clones into
-# ~/.config/omarchy/plugins/orpheus.
 set -euo pipefail
 
-DIR=$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
+REPO=${ORPHEUS_REPO:-https://github.com/GeneralDussDuss/orpheus}
 PLUGIN=~/.config/omarchy/plugins/orpheus
+
+# Piped from curl there is no file and no checkout yet: fetch one, then hand
+# over to its own copy of this script, with the keyboard back on stdin.
+src=${BASH_SOURCE[0]:-}
+if [[ -z $src || ! -f $src || ! -f $(dirname "$src")/manifest.json ]]; then
+  dest=${ORPHEUS_DEST:-$PLUGIN}
+  command -v git >/dev/null || { echo "Orpheus needs git to install" >&2; exit 1; }
+  if [[ -d $dest/.git ]]; then
+    echo "updating $dest"; git -C "$dest" pull --ff-only --quiet
+  elif [[ -e $dest ]]; then
+    echo "$dest exists but is not a git checkout; move it aside and try again" >&2; exit 1
+  else
+    echo "fetching Orpheus into $dest"; mkdir -p "${dest%/*}"
+    git clone --quiet --depth 1 "$REPO" "$dest"
+  fi
+  if [[ -r /dev/tty ]] && { : </dev/tty; } 2>/dev/null; then
+    exec bash "$dest/install.sh" "$@" </dev/tty
+  fi
+  exec bash "$dest/install.sh" "$@"
+fi
+
+DIR=$(cd "$(dirname "$(readlink -f "$src")")" && pwd)
+ASSUME_YES=0
 UNIT=~/.config/systemd/user/orpheusd.service
 HYPR=~/.config/hypr
 REQUIRE='require("hypr.orpheus")'
@@ -50,9 +76,11 @@ check() {
 
 install() {
   if ! check; then
-    if [[ -t 0 ]]; then
-      read -rp "  install the missing packages now? [Y/n] " a
-      [[ ${a:-y} =~ ^[Yy] ]] || exit 1
+    if ((ASSUME_YES)) || [[ -t 0 ]]; then
+      if ! ((ASSUME_YES)); then
+        read -rp "  install ${missing[*]} now? [Y/n] " a
+        [[ ${a:-y} =~ ^[Yy] ]] || exit 1
+      fi
       omarchy pkg add "${missing[@]}"
       check || exit 1
     else
@@ -107,6 +135,12 @@ install() {
   fi
   omarchy restart shell >/dev/null 2>&1 && ok "shell restarted"
 
+  # Show it, rather than describe it. The shell needs a moment after a restart.
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    timeout 2 omarchy-shell shell ping >/dev/null 2>&1 && break; sleep 0.5
+  done
+  "$DIR/bin/orpheus" open >/dev/null 2>&1 || true
+
   step "done"
   echo "  Super+Shift+M opens the player, Super+Ctrl+M the visualizer."
   echo "  Sign in to TIDAL with Ctrl+Shift+O; the video section (8) works without it."
@@ -141,6 +175,7 @@ uninstall() {
 case "${1:-}" in
   --check) check ;;
   --uninstall) uninstall ;;
+  -y|--yes) ASSUME_YES=1; install ;;
   "") install ;;
-  *) echo "usage: $0 [--check | --uninstall]"; exit 2 ;;
+  *) echo "usage: $0 [--yes | --check | --uninstall]"; exit 2 ;;
 esac
