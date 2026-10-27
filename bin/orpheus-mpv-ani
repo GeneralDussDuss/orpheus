@@ -27,7 +27,8 @@ for a in "$@"; do
 done
 
 if [ -z "${ORPHEUS_ANI_RESOLVE:-}" ]; then
-  exec mpv "$@" --force-window=yes --title="Orpheus ╱╱ \${media-title}"
+  exec mpv "$@" --force-window=yes --wayland-app-id=orpheus.video \
+    --auto-window-resize=no --title="Orpheus ╱╱ \${media-title}"
 fi
 
 esc() { printf '%s' "$1" | sed 's|\\|\\\\|g; s|"|\\"|g'; }

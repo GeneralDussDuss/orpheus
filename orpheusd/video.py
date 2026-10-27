@@ -27,7 +27,10 @@ VIDEO_ARGS = [
     "--idle=yes",            # the window stays up between videos
     "--force-window=yes",    # ... and appears immediately, before the stream resolves
     "--keep-open=no",
-    # Hyprland matches windows on this, since every mpv shares one app id.
+    # Our own app id, so Hyprland places this window by its rule, not mpv's
+    # generic one; the window opens at its final size, and mpv must not undo it.
+    "--wayland-app-id=orpheus.video",
+    "--auto-window-resize=no",
     "--title=Orpheus ╱╱ ${media-title}",
     f"--ytdl-format={VIDEO_FORMAT}",
 ]
