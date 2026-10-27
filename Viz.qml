@@ -43,7 +43,6 @@ ShaderEffect {
   property real light: engine && engine.lightTheme ? 1 : 0
   property real beat: engine ? engine.beat : 0
   property real flow: engine ? engine.travel : 0
-  property real tempo: engine ? engine.tempoScale : 1
 
   // Spectrum history for Prism and Horizon, kept on the GPU: histFx renders a 32x40 target
   // from its own previous frame (rows shift back one step, row 0 = now).

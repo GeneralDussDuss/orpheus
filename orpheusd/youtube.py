@@ -56,11 +56,30 @@ def watch_url(vid: str) -> str:
     return "https://www.youtube.com/watch?v=" + vid
 
 
+def thumbnail(e: dict) -> str:
+    # thumbnails run small to large; the first one big enough for a row is
+    # plenty, and the largest is a waste to fetch for a list
+    art = ""
+    for t in e.get("thumbnails") or []:
+        if t.get("url"):
+            art = t["url"]
+            if (t.get("width") or 0) >= 320:
+                break
+    return art
+
+
 class YouTubeError(RuntimeError):
     pass
 
 
 class YouTube:
+    """Every yt-dlp source is this class with a different name, search prefix
+    and row shape: see `soundcloud.py`."""
+
+    name = "youtube"
+    SEARCH = "ytsearch"
+    SEARCH_ARGS = DATE_ARGS
+
     def __init__(self):
         self._searches: dict[str, tuple[float, list[dict]]] = {}
         self._streams: dict[str, tuple[float, dict]] = {}
@@ -73,7 +92,7 @@ class YouTube:
             out, err = await asyncio.wait_for(proc.communicate(), timeout)
         except asyncio.TimeoutError:
             proc.kill()
-            raise YouTubeError("youtube took too long to answer")
+            raise YouTubeError(f"{self.name} took too long to answer")
         if proc.returncode != 0:
             # yt-dlp's last stderr line is the one worth showing; the rest is
             # traceback and progress noise.
@@ -88,14 +107,7 @@ class YouTube:
     def _entry(e: dict) -> dict:
         """One search result in the shape the player and the UI already use."""
         vid = e.get("id") or ""
-        art = ""
-        # thumbnails run small to large; the first one big enough for a row is
-        # plenty, and the largest is a waste to fetch for a list
-        for t in e.get("thumbnails") or []:
-            if t.get("url"):
-                art = t["url"]
-                if (t.get("width") or 0) >= 320:
-                    break
+        art = thumbnail(e)
         channel = e.get("channel") or e.get("uploader") or ""
         published = e.get("timestamp") or e.get("release_timestamp") or 0
         if not published and e.get("upload_date"):
@@ -120,6 +132,17 @@ class YouTube:
             "url": watch_url(vid),
         }
 
+    # ---- addressing --------------------------------------------------------
+
+    def link(self, text: str) -> str | None:
+        """The page a pasted link points at, or None when it is a search."""
+        vid = video_id(text)
+        return watch_url(vid) if vid else None
+
+    def page(self, item_id: str) -> str:
+        """What yt-dlp is handed to resolve a row it returned earlier."""
+        return watch_url(item_id)
+
     # ---- asking ------------------------------------------------------------
 
     async def search(self, query: str, limit: int = 20) -> list[dict]:
@@ -127,16 +150,16 @@ class YouTube:
         if not query:
             return []
         # A pasted link is not a search: it is someone handing you the answer.
-        vid = video_id(query)
-        if vid:
-            return [await self.info(vid)]
+        url = self.link(query)
+        if url:
+            return [await self.info(url)]
 
         key = f"{limit}:{query.lower()}"
         hit = self._searches.get(key)
         if hit and time.time() - hit[0] < SEARCH_TTL:
             return hit[1]
-        out = await self._run("--flat-playlist", "-J", "--no-warnings", *DATE_ARGS,
-                              f"ytsearch{int(limit)}:{query}")
+        out = await self._run("--flat-playlist", "-J", "--no-warnings", *self.SEARCH_ARGS,
+                              f"{self.SEARCH}{int(limit)}:{query}")
         try:
             data = json.loads(out)
         except json.JSONDecodeError:
@@ -145,8 +168,8 @@ class YouTube:
         self._searches[key] = (time.time(), items)
         return items
 
-    async def info(self, vid: str) -> dict:
-        out = await self._run("-J", "--no-warnings", "--no-playlist", watch_url(vid))
+    async def info(self, url: str) -> dict:
+        out = await self._run("-J", "--no-warnings", "--no-playlist", url)
         try:
             return self._entry(json.loads(out))
         except json.JSONDecodeError:
@@ -159,7 +182,7 @@ class YouTube:
             return hit[1]
         out = await self._run("-f", AUDIO_FORMAT, "--no-warnings", "--no-playlist",
                               "--print", "%(acodec)s|%(abr)s|%(asr)s|%(ext)s",
-                              "--print", "urls", watch_url(vid))
+                              "--print", "urls", self.page(vid))
         lines = [l for l in out.splitlines() if l.strip()]
         if len(lines) < 2:
             raise YouTubeError("no audio stream for that video")
@@ -176,7 +199,8 @@ class YouTube:
         info = {
             # mpv loads this; it is never logged
             "source": lines[-1].strip(),
-            "codec": (codec if codec and codec != "none" else ext).upper(),
+            # mp4a.40.2 is how the container spells AAC; nobody reads it that way
+            "codec": "AAC" if codec.startswith("mp4a") else (codec if codec and codec != "none" else ext).upper(),
             "quality": f"{kbps}k" if kbps else "STREAM",
             "bitDepth": None,
             "sampleRate": rate,

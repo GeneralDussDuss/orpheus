@@ -95,7 +95,9 @@ QtObject {
   readonly property var video: status.video || ({})
   readonly property var providers: status.providers || ({ youtube: true })
 
-  function ytSearch(q, done) { get("/yt/search?q=" + encodeURIComponent(q), done) }
+  function ytSearch(q, done, provider) {
+    get("/yt/search?q=" + encodeURIComponent(q) + "&provider=" + (provider || "youtube"), done)
+  }
   function animeSearch(q, done) { get("/anime/search?q=" + encodeURIComponent(q), done) }
   function animeEpisodes(q, i, done) {
     get("/anime/episodes?q=" + encodeURIComponent(q) + "&i=" + (i || 1), done)

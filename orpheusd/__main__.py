@@ -22,6 +22,7 @@ from . import eq as eqmod
 from .lyrics import Lyrics
 from .tidal import QUALITIES, Tidal
 from .video import Video
+from .soundcloud import SoundCloud
 from .youtube import YouTube, YouTubeError
 
 log = logging.getLogger("orpheus")
@@ -42,8 +43,9 @@ class App:
         self.prefs = self._load_prefs()
         self.tidal = Tidal(STATE_DIR, self.prefs.get("quality"))
         self.youtube = YouTube()
+        self.sources = {"youtube": self.youtube, "soundcloud": SoundCloud()}
         self.anime = Anime(RUNTIME_DIR)
-        self.player = Player(self.tidal, self.youtube, RUNTIME_DIR, CACHE_DIR, self._changed)
+        self.player = Player(self.tidal, self.sources, RUNTIME_DIR, CACHE_DIR, self._changed)
         self.video = Video(RUNTIME_DIR, self._changed)
         self.player.eq = eqmod.normalize(self.prefs.get("eq"))
         self.lyrics = Lyrics(self.tidal, CACHE_DIR)
@@ -147,7 +149,7 @@ class App:
                 "quality": self.tidal.quality, "player": player,
                 "eq": self.player.eq_state(),
                 "video": self.video.state(),
-                "providers": {"youtube": True, "anime": self.anime.available,
+                "providers": {"youtube": True, "soundcloud": True, "anime": self.anime.available,
                               "curd": self.anime.curd},
                 "likedVersion": self.tidal.liked_version}
 
@@ -396,9 +398,14 @@ class App:
 
         @r.get("/yt/search")
         async def yt_search(req):
-            """Search, or resolve a pasted link. Needs no TIDAL session."""
+            """Search, or resolve a pasted link. Needs no TIDAL session.
+            `?provider=soundcloud` asks SoundCloud instead; the route kept its
+            name because every yt-dlp source answers through it."""
+            source = self.sources.get(req.query.get("provider") or "youtube")
+            if not source:
+                raise web.HTTPNotFound(text="unknown provider")
             try:
-                results = await self.youtube.search(req.query.get("q", ""),
+                results = await source.search(req.query.get("q", ""),
                                                     max(1, min(40, int(req.query.get("n", 20)))))
             except YouTubeError as e:
                 raise web.HTTPBadGateway(text=str(e))

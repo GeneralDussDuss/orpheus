@@ -173,14 +173,15 @@ FloatingWindow {
     var c = trackCols(cols)
     return "  # " + "  " + pad("TITLE", c.tw - 2) + pad("ARTIST", c.aw) + pad(c.album ? "ALBUM" : "", c.bw) + "    " + lpad("TIME", 6)
   }
-  // How many people watched, in as few characters as possible.
-  function viewText(n) {
+  // How many people watched, or listened, in as few characters as possible.
+  function viewText(n, unit) {
     n = Number(n || 0)
+    unit = " " + (unit || "views")
     if (!n) return ""
-    if (n >= 1e9) return (n / 1e9).toFixed(1) + "B views"
-    if (n >= 1e6) return (n / 1e6).toFixed(1) + "M views"
-    if (n >= 1e3) return Math.round(n / 1e3) + "K views"
-    return n + " views"
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + "B" + unit
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + "M" + unit
+    if (n >= 1e3) return Math.round(n / 1e3) + "K" + unit
+    return n + unit
   }
 
   // How long ago, in the fewest characters that stay true. The date behind
@@ -206,8 +207,9 @@ FloatingWindow {
     var sub = it.kind === "show" ? "" : (artists(it.artists) || (it.ep ? "episode " + it.ep : ""))
     var wide = cols - 4 - 8
     var tw = sub ? Math.floor(wide * 0.52) : wide
-    var line = " " + glyph + "  " + pad(it.title, tw)
-    if (sub) line += pad(sub, wide - tw - 21) + pad(viewText(it.views), 12) + pad(ageText(it.published), 9)
+    // a cut column ends in "…" right at its edge, so each keeps a gutter
+    var line = " " + glyph + "  " + pad(it.title, tw - 2) + "  "
+    if (sub) line += pad(sub, wide - tw - 23) + "  " + pad(viewText(it.views, it.provider === "soundcloud" ? "plays" : "views"), 12) + pad(ageText(it.published), 9)
     return line + lpad(right, 8)
   }
 
@@ -261,6 +263,7 @@ FloatingWindow {
   readonly property var providers: (api && api.providers) || ({ youtube: true })
   readonly property var vproviders: [
     { id: "youtube", label: "youtube", by: "yt-dlp" },
+    { id: "soundcloud", label: "soundcloud", by: "yt-dlp" },
     { id: "anime", label: "anime", by: "ani-cli" }
   ]
   onVproviderChanged: if (videoPage && !page.show) load()
@@ -387,25 +390,28 @@ FloatingWindow {
       setRows(section(prov, (d && d.results) || []))
     }
     if (prov === "anime") api.animeSearch(q, answer)
-    else api.ytSearch(q, answer)
+    else api.ytSearch(q, answer, prov)
   }
 
   // Typing goes to whichever search the page is showing.
   function searchNow() { if (videoPage) load(); else runSearch() }
 
-  // ⏎ on a video row. A series opens; everything else plays in the window.
+  // ⏎ on a video row. A series opens, a SoundCloud row has nothing to watch so
+  // it is listened to, and everything else plays in the window.
   function videoActivate(it) {
     if (it.kind === "show") { go({ type: "video", show: it, title: it.title }); return }
+    if (it.provider === "soundcloud") { listenHere(); return }
     say("opening ╱╱ " + it.title)
     api.watch(it, function(ok, d) { if (!ok) say(errText(d, "couldn't play that")) })
   }
 
-  // The other half of a YouTube row: the sound of it, through the music player,
+  // The other half of a yt-dlp row: the sound of it, through the music player,
   // with the rest of the results behind it as a queue.
   function listenHere() {
     var r = rows[list.currentIndex]
-    if (!r || !r.item || r.item.provider !== "youtube") { say("only youtube rows can be listened to"); return }
-    api.listen(pageTracks, r.trackIndex || 0, { kind: "youtube", title: "youtube · " + vquery.trim() })
+    var prov = r && r.item ? r.item.provider : ""
+    if (prov !== "youtube" && prov !== "soundcloud") { say("only youtube and soundcloud rows can be listened to"); return }
+    api.listen(pageTracks, r.trackIndex || 0, { kind: prov, title: prov + " · " + vquery.trim() })
     say("listening ╱╱ " + r.item.title)
   }
 
@@ -678,6 +684,7 @@ FloatingWindow {
       title: win.page.type === "detail" ? win.page.kind + " · " + (win.pageData ? win.pageData.title : win.page.title || "")
            : (win.page.title || win.page.type)
       keyHint: win.videoPage ? Tui.hints(win.page.show ? [["⏎", "watch"], ["esc", "back"]]
+                                                      : win.vprovider === "soundcloud" ? [["⇥", "provider"], ["⏎", "listen"]]
                                                       : [["⇥", "provider"], ["⏎", "watch"], ["a", "listen"], ["c", "curd"]],
                                        win.accentText, win.dim)
              : win.page.type === "search" ? Tui.hints([["/", "search"], ["⏎", "play"]], win.accentText, win.dim)
@@ -796,6 +803,7 @@ FloatingWindow {
             Text {
               visible: !parent.text
               text: win.videoPage ? (win.vprovider === "anime" ? "a series, by name"
+                                   : win.vprovider === "soundcloud" ? "tracks and mixes, or paste a soundcloud link"
                                                              : "videos, or paste a youtube link")
                                 : "artists, albums, tracks, playlists"
               font: parent.font
@@ -996,7 +1004,7 @@ FloatingWindow {
           text: win.loading ? Tui.decode("loading", (win.clock * 2) % 1, Math.floor(win.clock * 8))
               : win.videoPage ? (win.page.show ? "no episodes"
                              : win.vquery ? "nothing found on " + win.vprovider
-                             : "type to search " + win.vprovider + " · ⏎ watch · a listen")
+                             : "type to search " + win.vprovider + (win.vprovider === "soundcloud" ? " · ⏎ listen" : " · ⏎ watch · a listen"))
               : win.page.type === "search" ? (win.query ? "no results" : "type to search · ⏎ play · esc back")
               : "nothing here yet"
           font.family: win.family; font.pixelSize: Style.font.body
