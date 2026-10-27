@@ -634,6 +634,8 @@ Item {
   function statusText() {
     return JSON.stringify({ open: open, library: libraryOpen, widget: widget, style: style, railViz: railViz, miniPlayer: miniPlayer, placement: placement,
                             cava: hasCava, listening: listening,
+                            energy: Math.round(energy * 1000) / 1000, bass: Math.round(bass * 1000) / 1000,
+                            beat: Math.round(beat * 1000) / 1000,
                             tempo: Math.round(tempo), tempoConfidence: Math.round(tempoConfidence * 100) / 100,
                             peakLag: peakLag, peakCorr: Math.round(peakCorr * 100) / 100,
                             onsetRate: Math.round(onsetRate * 100) / 100, densityBpm: Math.round(densityBpm * 100) / 100,

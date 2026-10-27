@@ -8,6 +8,7 @@ transitions are gapless.
 import asyncio
 import json
 import logging
+import os
 import random
 import time
 from pathlib import Path
@@ -29,6 +30,15 @@ MPV_ARGS = [
     "--replaygain=track", "--replaygain-clip=no", "--keep-open=no",
     "--audio-client-name=Orpheus", "--media-controls=no", "--load-scripts=no",
 ]
+
+# The caps above did not stop it. Sampled from 2026-10-24 to 10-27, mpv's
+# anonymous heap grows about 4 MB per minute of playback, mostly in steps at
+# track changes, flat while paused, and is only returned when the process
+# exits (1.2 GB -> 90 MB). Rather than chase that inside mpv, the process is
+# recycled at a track change once it is over budget: the next track is not
+# prefetched, so the change is a plain load into a fresh mpv. One transition
+# every couple of hours loses gapless; nothing else notices.
+RECYCLE_MB = int(os.environ.get("ORPHEUS_RECYCLE_MB", "600"))
 
 
 class Player:
@@ -58,6 +68,7 @@ class Player:
         self._eq_chain = ""
 
         self._proc = None
+        self._clock_task = None
         self._reader = None
         self._writer = None
         self._req = 0
@@ -129,13 +140,32 @@ class Player:
                 break
             await asyncio.sleep(0.05)
         self._reader, self._writer = await asyncio.open_unix_connection(str(self.socket_path))
-        asyncio.create_task(self._read_loop())
+        asyncio.create_task(self._read_loop(self._reader))
         for i, prop in enumerate(["pause", "duration", "idle-active", "volume", "playlist-pos"]):
             await self._send(["observe_property", i + 1, prop])
         # Restore the saved curve before anything plays, so the first track is
         # already corrected rather than snapping into place a moment later.
         await self._apply_eq()
-        asyncio.create_task(self._clock_loop())
+        if not self._clock_task:
+            self._clock_task = asyncio.create_task(self._clock_loop())
+
+    def _heap_mb(self) -> int:
+        try:
+            with open(f"/proc/{self._proc.pid}/status") as f:
+                for line in f:
+                    if line.startswith("RssAnon:"):
+                        return int(line.split()[1]) // 1024
+        except (OSError, AttributeError, ValueError):
+            pass
+        return 0
+
+    async def _recycle(self):
+        mb, volume = self._heap_mb(), self.volume
+        self._reader = None  # retire the old read loop before mpv says goodbye
+        await self.stop()
+        await self.start()
+        await self._send(["set_property", "volume", volume])
+        log.info("recycled mpv at %d MB of heap", mb)
 
     async def stop(self):
         if self._proc and self._proc.returncode is None:
@@ -164,12 +194,14 @@ class Player:
             log.debug("mpv %s -> %s", command[0], msg.get("error"))
         return msg.get("data")
 
-    async def _read_loop(self):
+    async def _read_loop(self, reader):
         while True:
             try:
-                line = await self._reader.readline()
+                line = await reader.readline()
             except (ConnectionResetError, BrokenPipeError):
                 line = b""
+            if reader is not self._reader:
+                return  # an mpv we recycled on purpose: its last words are stale
             if not line:
                 log.error("mpv went away")
                 self.idle = True
@@ -189,6 +221,8 @@ class Player:
 
     async def _on_event(self, msg):
         ev = msg.get("event")
+        log.debug("mpv %s %s %s", ev, msg.get("name") or msg.get("reason") or "",
+                  msg.get("data") if ev == "property-change" else msg.get("playlist_entry_id", ""))
         if ev == "property-change":
             name, data = msg.get("name"), msg.get("data")
             if name == "pause":
@@ -291,6 +325,8 @@ class Player:
         if token != self._loading:
             return  # a newer request won
         self.stream_info = self._info(info)
+        if self._heap_mb() > RECYCLE_MB:
+            await self._recycle()
         self._entries.clear()
         self._entry_info.clear()
         await self._send(["playlist-clear"])
@@ -305,6 +341,8 @@ class Player:
         nxt = self.next_pos()
         if nxt < 0 or nxt == self.pos:
             return
+        if self._heap_mb() > RECYCLE_MB:
+            return  # let this track end into a plain load, and recycle there
         token = self._loading
         try:
             info = await self._resolve(self.queue[self.order[nxt]])
