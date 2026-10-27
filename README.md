@@ -87,6 +87,7 @@ Colours come from the active Omarchy theme, so it changes when your desktop does
 | **The bar** | A tiny always-on spectrum in the Omarchy bar. Click for the stage, scroll for the next style. |
 | **Five styles** | Prism, Skyline, Horizon, Tunnel, Orb — plus `mini` for bar-sized surfaces, and a GPU spectrum-history pass the first two build terrain from. |
 | **Hi-res** | Up to FLAC hi-res through the PKCE sign-in, lossless otherwise. The player shows which you got. |
+| **More than TIDAL** | Section `8` searches YouTube and SoundCloud through `yt-dlp`, and anime through `ani-cli`. Videos play in their own window; YouTube and SoundCloud also play as audio through the same queue, equalizer and visualizer. None of it needs a TIDAL sign-in. |
 | **Desktop integration** | MPRIS, so your bar, your media keys and the rest of the desktop see the track. Favourites from anywhere in the UI. The queue and position survive a service restart. |
 
 ![the desktop widget](docs/media/widget.png)
@@ -135,59 +136,45 @@ breakbeat locking to half-time.
 
 ## ╱╱ requirements
 
-- [Omarchy](https://omarchy.org) with Hyprland and its Quickshell-based shell
-  (`omarchy-shell` must be on `PATH`)
-- `cava` (the visualizers read the PipeWire monitor, so PipeWire is expected)
-- `mpv`
-- Python 3.12 or newer
-- [`uv`](https://docs.astral.sh/uv/)
-- A paid TIDAL subscription
+- **Linux with [Omarchy](https://omarchy.org)** (Hyprland and its Quickshell-based shell).
+  Orpheus is an Omarchy shell plugin: it does not run on Windows or macOS, or on another
+  Linux desktop without the Omarchy shell.
+- `mpv`, `cava`, `uv` and `jq`. The installer checks for them and offers to install
+  anything missing. PipeWire is expected (the visualizers read its monitor).
+- Optional: `yt-dlp` for YouTube and SoundCloud, `ani-cli` for anime, `curd` for anime
+  with AniList sync.
+- Optional: a paid TIDAL subscription, for the music library. Everything else works
+  without one.
 - To rebuild shaders only: `qsb` from Qt 6 shader tools. The compiled `shaders/*.qsb`
   files are committed, so a normal install does not need it.
 
-Orpheus has only been run on one machine (Arch-based Omarchy, Hyprland 0.56). If you get
-it working somewhere else, or it breaks, an issue is genuinely useful.
+Orpheus has been run on very few machines so far (Arch-based Omarchy, Hyprland 0.56). If
+you get it working somewhere else, or it breaks, an issue is genuinely useful.
 
 ---
 
 ## ╱╱ install
 
-`orpheusd.service` runs `%h/Work/orpheus/.venv/bin/orpheusd`, so the steps below clone
-there. **Clone somewhere else and you must edit the `ExecStart=` line.**
-
 ```sh
-# 1. get the source
-git clone https://github.com/GeneralDussDuss/orpheus ~/Work/orpheus
-cd ~/Work/orpheus
-
-# 2. python environment (creates .venv from pyproject.toml / uv.lock)
-uv sync
-
-# 3. the daemon, as a systemd *user* service
-mkdir -p ~/.config/systemd/user
-ln -s ~/Work/orpheus/orpheusd.service ~/.config/systemd/user/orpheusd.service
-systemctl --user daemon-reload
-systemctl --user enable --now orpheusd.service
-
-# 4. the shell plugin
-ln -s ~/Work/orpheus ~/.config/omarchy/plugins/orpheus
-
-# 5. optional: the launcher and its desktop entry
-ln -s ~/Work/orpheus/bin/orpheus ~/.local/bin/orpheus
-cp share/applications/orpheus.desktop ~/.local/share/applications/
-
-# 6. restart the shell -- plugins are not hot-reloaded
-omarchy restart shell
+omarchy plugin add https://github.com/GeneralDussDuss/orpheus
+~/.config/omarchy/plugins/orpheus/install.sh
 ```
 
-**Enable the bar widget.** The plugin is picked up from
-`~/.config/omarchy/plugins/orpheus`, and its manifest declares a bar widget. Add
-`{ "id": "orpheus" }` to the section you want in `~/.config/omarchy/shell.json`, then
-restart the shell again. Only the bar-layout entry has been verified on a clean install;
-if your Omarchy build needs anything else, please open an issue and say so.
+Or clone it anywhere and run `./install.sh` from the checkout. Either way the installer:
 
-The shell does not hot-reload plugins, so a restart is needed after install and after any
-change to the QML.
+- checks for Omarchy and the tools above, and offers `omarchy pkg add` for what is missing
+- links the plugin into `~/.config/omarchy/plugins/orpheus` (if it is not there already)
+- builds the Python environment with `uv` and starts `orpheusd` as a systemd user service
+- puts `orpheus` on your `PATH` and adds launcher entries
+- links `hypr/orpheus.lua` into `~/.config/hypr` and adds one `require` line to
+  `hyprland.lua` (backed up first) for the window rules and keys
+- enables the plugin, with the bar widget on the right, and restarts the shell
+
+It is safe to re-run, and that is also how you update: `git pull`, then `./install.sh`.
+`./install.sh --check` only reports what is missing. `./install.sh --uninstall` undoes
+all of it and keeps your sign-in and settings in `~/.local/state/orpheus`.
+
+The shell does not hot-reload plugins, so after changing any QML, run `omarchy restart shell`.
 
 ### Rebuilding the shaders
 
@@ -226,15 +213,10 @@ kept in `~/.local/state/orpheus/tidal-session.json` — treat that file as a cre
 
 ## ╱╱ keybinds and usage
 
-Orpheus does not install keybinds. Add them yourself; the author's
-`~/.config/hypr/bindings.lua` has:
-
-```lua
-o.bind("SUPER + SHIFT + M", "Music", "omarchy-shell -q orpheus library")
-o.bind("SUPER + CTRL + M", "Music visualizer", "omarchy-shell -q orpheus toggle")
-o.bind("SUPER + ALT + M", "Music widget", "omarchy-shell -q orpheus widget enabled toggle")
-o.bind("CTRL + SHIFT + O", "Orpheus sign-in", "omarchy-shell -q orpheus login")
-```
+The installer binds these through `hypr/orpheus.lua`. `Super+Shift+M` is Omarchy's own
+music key (Spotify by default), and Orpheus takes it over. To bring your own keys
+instead, put `orpheus_bindings = false` in `hyprland.lua` above the
+`require("hypr.orpheus")` line; the window rules stay.
 
 | key | |
 |---|---|
