@@ -22,6 +22,18 @@
 
 ![the player in motion](docs/media/player.gif)
 
+### Install
+
+On [Omarchy](https://omarchy.org), paste this into a terminal:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/GeneralDussDuss/orpheus/main/install.sh | bash
+```
+
+That is the whole install. It adds whatever is missing (it asks first), sets everything
+up, and opens the player when it is done. Run the same line again to update.
+[What it does, and how to undo it.](#-install)
+
 ---
 
 ## ╱╱ the idea
@@ -156,11 +168,22 @@ you get it working somewhere else, or it breaks, an issue is genuinely useful.
 ## ╱╱ install
 
 ```sh
-omarchy plugin add https://github.com/GeneralDussDuss/orpheus
-~/.config/omarchy/plugins/orpheus/install.sh
+curl -fsSL https://raw.githubusercontent.com/GeneralDussDuss/orpheus/main/install.sh | bash
 ```
 
-Or clone it anywhere and run `./install.sh` from the checkout. Either way the installer:
+Want to read it first? It is [one short script](install.sh). Prefer not to pipe into
+bash? Either of these does the same thing:
+
+```sh
+# through Omarchy's plugin manager
+omarchy plugin add https://github.com/GeneralDussDuss/orpheus
+~/.config/omarchy/plugins/orpheus/install.sh
+
+# or a clone anywhere
+git clone https://github.com/GeneralDussDuss/orpheus && ./orpheus/install.sh
+```
+
+The installer:
 
 - checks for Omarchy and the tools above, and offers `omarchy pkg add` for what is missing
 - links the plugin into `~/.config/omarchy/plugins/orpheus` (if it is not there already)
@@ -168,11 +191,12 @@ Or clone it anywhere and run `./install.sh` from the checkout. Either way the in
 - puts `orpheus` on your `PATH` and adds launcher entries
 - links `hypr/orpheus.lua` into `~/.config/hypr` and adds one `require` line to
   `hyprland.lua` (backed up first) for the window rules and keys
-- enables the plugin, with the bar widget on the right, and restarts the shell
+- enables the plugin, with the bar widget on the right, restarts the shell and opens the player
 
-It is safe to re-run, and that is also how you update: `git pull`, then `./install.sh`.
-`./install.sh --check` only reports what is missing. `./install.sh --uninstall` undoes
-all of it and keeps your sign-in and settings in `~/.local/state/orpheus`.
+It is safe to re-run, and that is how you update: the one-liner again, or `git pull` and
+`./install.sh`. Add `--yes` (`| bash -s -- --yes`) to skip the question before it installs
+packages. `install.sh --check` only reports what is missing, and `install.sh --uninstall`
+undoes all of it, keeping your sign-in and settings in `~/.local/state/orpheus`.
 
 The shell does not hot-reload plugins, so after changing any QML, run `omarchy restart shell`.
 
