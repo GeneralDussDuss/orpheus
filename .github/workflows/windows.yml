@@ -1,0 +1,37 @@
+# Boots the daemon on Windows. It only answers once mpv is up on its named
+# pipe, so a 200 from /status proves the Windows IPC path end to end.
+name: windows
+
+on:
+  push:
+    paths: ["orpheusd/**", "pyproject.toml", "uv.lock", ".github/workflows/windows.yml"]
+  workflow_dispatch:
+
+jobs:
+  daemon:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: mpv
+        run: choco install mpv --no-progress -y
+      - name: python environment
+        run: uv sync --frozen
+      - name: daemon answers, signed out, with mpv on a named pipe
+        shell: pwsh
+        run: |
+          $d = Start-Process -PassThru -NoNewWindow .venv\Scripts\orpheusd.exe `
+                 -ArgumentList '--port', '47999', '-v' `
+                 -RedirectStandardOutput out.log -RedirectStandardError err.log
+          $s = $null
+          foreach ($i in 1..60) {
+            try { $s = Invoke-RestMethod http://127.0.0.1:47999/status -TimeoutSec 2; break } catch { Start-Sleep 1 }
+          }
+          Stop-Process $d -ErrorAction SilentlyContinue
+          Get-Content err.log -Tail 40
+          if (-not $s) { throw "orpheusd never answered" }
+          $s | ConvertTo-Json -Depth 4 | Select-Object -First 30
+          if ($s.login.state -ne 'signed-out') { throw "expected signed-out, got $($s.login.state)" }
+          if ($s.player.error) { throw "player error: $($s.player.error)" }
+          if ($s.providers.anime) { throw "anime should be off on Windows" }
