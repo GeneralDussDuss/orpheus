@@ -498,12 +498,24 @@ class Color(QObject):
         return c if c.isValid() else QColor(fallback)
 
 
+def _mono_family() -> str:
+    """The first monospace font that is installed. The TUI lines up only in a
+    monospace face, and Qt quietly substitutes a proportional one for a missing name."""
+    from PySide6.QtGui import QFontDatabase
+    have = set(QFontDatabase.families())
+    for f in ("Cascadia Mono", "Cascadia Code", "JetBrainsMono Nerd Font", "JetBrains Mono",
+              "Consolas", "DejaVu Sans Mono", "Liberation Mono", "Courier New"):
+        if f in have:
+            return f
+    return QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont).family()
+
+
 class _Font(QObject):
     changed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._family = "Cascadia Mono" if sys.platform == "win32" else "monospace"
+        self._family = _mono_family()
 
     family = Property(str, lambda self: self._family, notify=changed)
     body = Property(int, lambda self: 13, notify=changed)

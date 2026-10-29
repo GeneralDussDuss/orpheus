@@ -678,7 +678,8 @@ Item {
   // non-visual that has a `running` switch (Timers, Processes), whether or not
   // it has an id.
   Component.onDestruction: {
-    ipc.enabled = false
+    // When the whole engine goes down (app quit) the handler may already be gone.
+    if (ipc) ipc.enabled = false
     for (var i = 0; i < root.data.length; i++) {
       var o = root.data[i]
       if (o && o.running !== undefined) o.running = false

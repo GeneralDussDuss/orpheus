@@ -52,6 +52,8 @@ jobs:
         run: uv sync --frozen --extra desktop
       - name: the player and the stage render off-screen
         shell: pwsh
+        env:
+          QT_QPA_FONTDIR: C:\Windows\Fonts   # the offscreen platform finds no fonts otherwise
         run: |
           .venv\Scripts\python.exe -m orpheusd.desktop --shot shots --no-daemon 2>&1 | Tee-Object -Variable lib
           .venv\Scripts\python.exe -m orpheusd.desktop --shot shots --no-daemon --open toggle --style orb 2>&1 | Tee-Object -Variable stage
