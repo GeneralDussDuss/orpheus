@@ -139,7 +139,7 @@ def hand_over(method: str) -> bool:
     from PySide6.QtNetwork import QLocalSocket
     sock = QLocalSocket()
     sock.connectToServer(INSTANCE)
-    if not sock.waitForConnected(300):
+    if not sock.waitForConnected(1500):
         return False
     sock.write(method.encode() + b"\n")
     sock.waitForBytesWritten(300)

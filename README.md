@@ -218,13 +218,15 @@ irm https://raw.githubusercontent.com/GeneralDussDuss/orpheus/main/install.ps1 |
 
 [The script](install.ps1) installs whatever is missing with winget (git, uv, mpv, cava,
 yt-dlp), fetches Orpheus into `%LOCALAPPDATA%\Orpheus\app`, builds its Python environment,
-adds **Orpheus** to the Start menu and opens it. It lives in the tray: click the icon for
-the player, right-click for the visualizer and the mini player. The player, the
-visualizers and the video section are the same code as on Linux; anime is Linux-only for
-now, and so are the global keybinds and the bar widget.
+adds **Orpheus** to the Start menu and Settings → Apps, and opens it. It lives in the tray:
+click the icon for the player, right-click for the visualizer, the mini player and
+**Start with Windows**. From anywhere, **Win+Alt+M** opens the player, **Win+Alt+V** the
+visualizer and **Win+Alt+P** the mini player, and the keyboard's media keys and the
+Windows media overlay control playback. The player, the visualizers and the video
+section are the same code as on Linux; anime and the bar widget are Linux-only for now.
 
-Run the same line again to update. To remove it, keeping your sign-in and settings in
-`%LOCALAPPDATA%\Orpheus\state`:
+Run the same line again to update. To remove it, use Uninstall in Settings → Apps, or
+this, either way keeping your sign-in and settings in `%LOCALAPPDATA%\Orpheus\state`:
 
 ```powershell
 & "$env:LOCALAPPDATA\Orpheus\app\install.ps1" -Uninstall

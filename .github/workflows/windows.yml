@@ -68,7 +68,7 @@ jobs:
 
   installer:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: install.ps1 under Windows PowerShell 5.1, from this checkout
@@ -94,10 +94,12 @@ jobs:
           if (-not (Test-Path $apps)) { throw "no Settings > Apps entry" }
           Write-Host "apps entry: $((Get-ItemProperty $apps).DisplayName) $((Get-ItemProperty $apps).DisplayVersion)"
           # A second launch hands over to the running app and exits.
-          $t = Measure-Command { Start-Process -Wait -FilePath "$app\.venv\Scripts\python.exe" -ArgumentList '-m','orpheusd.desktop','--open','library' }
-          if ($t.TotalSeconds -gt 15) { throw "second launch did not hand over ($($t.TotalSeconds) s)" }
-          Write-Host "second launch handed over in $([math]::Round($t.TotalSeconds,1)) s"
-          Get-Content "$env:LOCALAPPDATA\Orpheus\state\desktop.log" -ErrorAction SilentlyContinue | Select-Object -First 10
+          Write-Host "== desktop.log of the running app"
+          Get-Content "$env:LOCALAPPDATA\Orpheus\state\desktop.log" -ErrorAction SilentlyContinue | Select-Object -Last 20
+          Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'orpheusd.desktop' } | ForEach-Object { "running: $($_.ProcessId) $($_.CommandLine)" }
+          $p = Start-Process -PassThru -NoNewWindow -FilePath "$app\.venv\Scripts\python.exe" -ArgumentList '-m','orpheusd.desktop','--open','library' -RedirectStandardError second.log
+          if (-not $p.WaitForExit(20000)) { Stop-Process $p -Force; Get-Content second.log; throw "second launch did not hand over" }
+          Write-Host "second launch handed over and exited ($($p.ExitCode))"
           & "$app\install.ps1" -Uninstall
           if (Test-Path $app) { throw "uninstall left the app folder" }
           if (Test-Path $apps) { throw "uninstall left the Settings > Apps entry" }
