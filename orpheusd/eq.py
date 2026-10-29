@@ -18,9 +18,9 @@ and mpv is left with no filter at all rather than a unity-gain one.
 from __future__ import annotations
 
 import json
-import os
 import re
-from pathlib import Path
+
+from .system import STATE_DIR
 
 # Band centres. Ten octave-ish steps, the span people expect from a graphic EQ
 # and the grid published headphone corrections are easiest to sample onto.
@@ -41,8 +41,7 @@ SHELF_Q = 0.7       # gentler slope for the two shelves
 # others, none of whom have granted redistribution (the maintainer confirms this
 # in AutoEq issue #790). So Orpheus ships the importer and no curves. Point it at
 # a FixedBandEQ.txt and the numbers stay on your machine.
-_STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "orpheus"
-PRESETS_FILE = _STATE_DIR / "eq-presets.json"
+PRESETS_FILE = STATE_DIR / "eq-presets.json"
 
 DEFAULT: dict = {
     "enabled": False,

@@ -23,14 +23,11 @@ from .lyrics import Lyrics
 from .tidal import QUALITIES, Tidal
 from .video import Video
 from .soundcloud import SoundCloud
+from .system import CACHE_DIR, RUNTIME_DIR, STATE_DIR, WINDOWS
 from .youtube import YouTube, YouTubeError
 
 log = logging.getLogger("orpheus")
 
-HOME = Path.home()
-STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", HOME / ".local/state")) / "orpheus"
-CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", HOME / ".cache")) / "orpheus"
-RUNTIME_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "orpheus"
 PREFS = STATE_DIR / "daemon.json"
 RESUME = STATE_DIR / "resume.json"
 DEFAULT_PORT = 47837
@@ -518,9 +515,21 @@ async def serve(port: int):
     runner = await app.start(port)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
+    if WINDOWS:
+        # No add_signal_handler on Windows: Ctrl+C makes asyncio.run cancel this
+        # task, and the finally still saves the queue on the way out.
+        try:
+            await stop.wait()
+        finally:
+            await shutdown(app, runner)
+        return
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
     await stop.wait()
+    await shutdown(app, runner)
+
+
+async def shutdown(app, runner):
     await app.video.close()
     try:
         RESUME.write_text(json.dumps(app.player.snapshot()))

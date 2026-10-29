@@ -18,6 +18,7 @@ import json
 import logging
 from pathlib import Path
 
+from .system import ipc_address, ipc_clear, ipc_connect
 from .youtube import VIDEO_FORMAT, watch_url
 
 log = logging.getLogger("orpheus.video")
@@ -38,7 +39,7 @@ VIDEO_ARGS = [
 
 class Video:
     def __init__(self, runtime_dir: Path, on_change):
-        self.socket_path = runtime_dir / "orpheus-video.sock"
+        self.socket_path = ipc_address(runtime_dir, "orpheus-video")
         self.on_change = on_change
         self.entry: dict | None = None
         self.paused = False
@@ -68,16 +69,12 @@ class Video:
     async def _ensure(self):
         if self.running:
             return
-        self.socket_path.unlink(missing_ok=True)
+        ipc_clear(self.socket_path)
         self._proc = await asyncio.create_subprocess_exec(
             "mpv", *VIDEO_ARGS, f"--input-ipc-server={self.socket_path}",
             stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL)
-        for _ in range(100):
-            if self.socket_path.exists():
-                break
-            await asyncio.sleep(0.05)
-        self._reader, self._writer = await asyncio.open_unix_connection(str(self.socket_path))
+        self._reader, self._writer = await ipc_connect(self.socket_path)
         asyncio.create_task(self._read_loop())
         for i, prop in enumerate(["pause", "duration", "time-pos"]):
             await self._send(["observe_property", i + 1, prop], wait=False)
