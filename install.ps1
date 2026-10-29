@@ -49,7 +49,18 @@ if ($Uninstall) {
   if (Test-Path $Menu) { Remove-Item $Menu; Ok 'Start menu entry' }
   # Run from inside the folder it is deleting, so step out of it first.
   Set-Location $env:TEMP
-  if (Test-Path $App) { Remove-Item -Recurse -Force $App; Ok 'app folder' }
+  # Windows lets go of a killed process's files a moment later, and a virus scan
+  # of a freshly built folder can hold it too; give it a few tries.
+  foreach ($i in 1..10) {
+    if (-not (Test-Path $App)) { break }
+    try { Remove-Item -Recurse -Force $App -ErrorAction Stop } catch { Start-Sleep 1 }
+  }
+  if (Test-Path $App) {
+    $holders = Get-Process | Where-Object { try { $_.Modules.FileName -like "$App*" } catch { $false } } |
+               ForEach-Object { "$($_.ProcessName) ($($_.Id))" }
+    throw "could not remove $App; still in use by: $($holders -join ', '). Close those and run this again."
+  }
+  Ok 'app folder'
   Ok "done; $Home_\state is kept (delete it to forget your sign-in)"
   Note 'mpv, cava, uv and yt-dlp stay installed: winget uninstall <name> removes them'
   return
