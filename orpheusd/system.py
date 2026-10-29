@@ -43,6 +43,8 @@ def mpv_path() -> str:
                     rf"{env('LOCALAPPDATA')}\Microsoft\WinGet\Packages\*mpv*\**\mpv.exe",
                     rf"{env('ProgramFiles')}\mpv\mpv.exe",
                     rf"{env('LOCALAPPDATA')}\Programs\mpv\mpv.exe",
+                    rf"{env('LOCALAPPDATA')}\mpv\mpv.exe",
+                    rf"{env('ProgramFiles(x86)')}\mpv\mpv.exe",
                     rf"{env('USERPROFILE')}\scoop\shims\mpv.exe",
                     rf"{env('ProgramData')}\chocolatey\bin\mpv.exe",
                     rf"{env('ProgramData')}\chocolatey\lib\mpv*\**\mpv.exe"):

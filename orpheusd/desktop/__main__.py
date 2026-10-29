@@ -39,7 +39,8 @@ def find_tools():
     import glob
     import shutil
     env = os.environ.get
-    places = {"cava": [rf"{env('ProgramFiles', '')}\cava\cava.exe",
+    places = {"cava": [rf"{env('LOCALAPPDATA', '')}\cava\cava.exe",   # winget's default
+                       rf"{env('ProgramFiles', '')}\cava\cava.exe",
                        rf"{env('LOCALAPPDATA', '')}\Programs\cava\cava.exe"],
               "yt-dlp": [rf"{env('LOCALAPPDATA', '')}\Microsoft\WinGet\Links\yt-dlp.exe",
                          rf"{env('LOCALAPPDATA', '')}\Microsoft\WinGet\Packages\*yt-dlp*\**\yt-dlp.exe"]}

@@ -65,3 +65,25 @@ jobs:
         with:
           name: windows-shots
           path: shots
+
+  installer:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: install.ps1 under Windows PowerShell 5.1, from this checkout
+        shell: powershell
+        env:
+          ORPHEUS_REPO: ${{ github.workspace }}
+        run: |
+          if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { Write-Host "::warning::no winget on this runner"; exit 0 }
+          Get-Content .\install.ps1 -Raw | Invoke-Expression
+          $app = "$env:LOCALAPPDATA\Orpheus\app"
+          if (-not (Test-Path "$app\.venv\Scripts\pythonw.exe")) { throw "no environment" }
+          if (-not (Test-Path ([Environment]::GetFolderPath('Programs') + '\Orpheus.lnk'))) { throw "no Start menu entry" }
+          $s = $null
+          foreach ($i in 1..60) { try { $s = Invoke-RestMethod http://127.0.0.1:47837/status -TimeoutSec 2; break } catch { Start-Sleep 1 } }
+          if (-not $s) { throw "the app did not bring the daemon up" }
+          Write-Host "daemon up, version $($s.version), $($s.login.state)"
+          & "$app\install.ps1" -Uninstall
+          if (Test-Path $app) { throw "uninstall left the app folder" }
