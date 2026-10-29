@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 from . import eq as eqmod
-from .system import mpv_path, ipc_address, ipc_clear, ipc_connect
+from .system import WINDOWS, mpv_path, ipc_address, ipc_clear, ipc_connect
 
 log = logging.getLogger("orpheus.player")
 
@@ -29,8 +29,19 @@ MPV_ARGS = [
     # held 1.19 GB of anonymous heap, which these caps alone may not explain.
     "--demuxer-max-bytes=48MiB", "--demuxer-max-back-bytes=16MiB",
     "--replaygain=track", "--replaygain-clip=no", "--keep-open=no",
-    "--audio-client-name=Orpheus", "--media-controls=no", "--load-scripts=no",
+    "--audio-client-name=Orpheus", "--load-scripts=no",
+    # On Linux the daemon is the MPRIS player, so mpv's own must stay off. Windows
+    # has no MPRIS: there mpv's media controls are how the keyboard's media keys
+    # and the system media overlay reach Orpheus.
+    f"--media-controls={'yes' if WINDOWS else 'no'}",
 ]
+
+
+def _title_option(track: dict) -> str:
+    """What the system media overlay shows, as a loadfile option. Length-quoted
+    (%n%), because titles carry the commas and equals signs that separate options."""
+    t = " — ".join(x for x in (", ".join(track.get("artists") or []), track.get("title") or "") if x)
+    return f"force-media-title=%{len(t.encode())}%{t}" if t else ""
 
 # The caps above did not stop it. Sampled from 2026-10-24 to 10-27, mpv's
 # anonymous heap grows about 4 MB per minute of playback, mostly in steps at
@@ -141,6 +152,11 @@ class Player:
         asyncio.create_task(self._read_loop(self._reader))
         for i, prop in enumerate(["pause", "duration", "idle-active", "volume", "playlist-pos"]):
             await self._send(["observe_property", i + 1, prop])
+        if WINDOWS:
+            # mpv would step through its own playlist, which only ever holds the
+            # current and prefetched track; hand next/previous to the daemon instead.
+            for key, action in (("NEXT", "next"), ("PREV", "previous")):
+                await self._send(["keybind", key, f"script-message orpheus {action}"])
         # Restore the saved curve before anything plays, so the first track is
         # already corrected rather than snapping into place a moment later.
         await self._apply_eq()
@@ -267,6 +283,13 @@ class Player:
                         self.on_change()
         elif ev == "seek" or ev == "playback-restart":
             await self._refresh_position()
+        elif ev == "client-message" and msg.get("args", [None])[0] == "orpheus":
+            # Next / previous from the system media controls, through our queue.
+            action = (msg.get("args") + [""])[1]
+            if action == "next":
+                await self.next()
+            elif action == "previous":
+                await self.previous()
 
     async def _refresh_position(self):
         t = await self._send(["get_property", "time-pos"])
@@ -337,8 +360,9 @@ class Player:
         if paused:
             await self._send(["set_property", "pause", True])
         self._start_at = start
-        cmd = ["loadfile", info["source"], "replace"]
-        data = await self._send(cmd + [-1, f"start={start:.2f}"] if start else cmd)
+        opts = ",".join(o for o in (f"start={start:.2f}" if start else "",
+                                    _title_option(self.queue[self.order[order_pos]])) if o)
+        data = await self._send(["loadfile", info["source"], "replace", -1, opts])
         entry = (data or {}).get("playlist_entry_id", -1)
         self._entries[entry] = order_pos
         self._entry_info[entry] = self.stream_info
@@ -364,7 +388,8 @@ class Player:
             return
         # Drop anything already queued in mpv after the current entry, then append.
         await self._send(["playlist-clear"])
-        data = await self._send(["loadfile", info["source"], "append"])
+        data = await self._send(["loadfile", info["source"], "append", -1,
+                                 _title_option(self.queue[self.order[nxt]])])
         entry = (data or {}).get("playlist_entry_id")
         if entry is not None:
             self._entries = {k: v for k, v in self._entries.items() if k == self._current_entry}
