@@ -12,7 +12,7 @@
 
 [![licence](https://img.shields.io/badge/licence-GPL--3.0--or--later-2f5bff?style=flat-square)](LICENSE)
 [![version](https://img.shields.io/badge/version-0.1.0-5b8cff?style=flat-square)](manifest.json)
-[![platform](https://img.shields.io/badge/platform-Omarchy%20%2F%20Hyprland-84a9ff?style=flat-square)](https://omarchy.org)
+[![platform](https://img.shields.io/badge/platform-Omarchy%20%C2%B7%20Windows-84a9ff?style=flat-square)](#-install)
 [![stack](https://img.shields.io/badge/QML%20·%20GLSL%20·%20Python-0a1020?style=flat-square)](#-how-it-fits-together)
 [![stars](https://img.shields.io/github/stars/GeneralDussDuss/orpheus?style=flat-square&color=ffd98a&label=stars)](https://github.com/GeneralDussDuss/orpheus/stargazers)
 
@@ -24,15 +24,21 @@
 
 ### Install
 
-On [Omarchy](https://omarchy.org), paste this into a terminal:
+**Linux ([Omarchy](https://omarchy.org))** — paste this into a terminal:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/GeneralDussDuss/orpheus/main/install.sh | bash
 ```
 
-That is the whole install. It adds whatever is missing (it asks first), sets everything
-up, and opens the player when it is done. Run the same line again to update.
-[What it does, and how to undo it.](#-install)
+**Windows 10 / 11** — paste this into PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/GeneralDussDuss/orpheus/main/install.ps1 | iex
+```
+
+Either one is the whole install. It adds whatever is missing, sets everything up, and
+opens the player when it is done. Run the same line again to update.
+[What they do, and how to undo them.](#-install)
 
 ---
 
@@ -148,11 +154,13 @@ breakbeat locking to half-time.
 
 ## ╱╱ requirements
 
-- **Linux with [Omarchy](https://omarchy.org)** (Hyprland and its Quickshell-based shell).
-  Orpheus is an Omarchy shell plugin: it does not run on Windows or macOS, or on another
-  Linux desktop without the Omarchy shell.
-- `mpv`, `cava`, `uv` and `jq`. The installer checks for them and offers to install
+- **Linux with [Omarchy](https://omarchy.org)** (Hyprland and its Quickshell-based shell),
+  where Orpheus is a shell plugin, **or Windows 10 / 11**, where the same player runs as a
+  tray app. Not macOS, and not another Linux desktop without the Omarchy shell.
+- Linux: `mpv`, `cava`, `uv` and `jq`. The installer checks for them and offers to install
   anything missing. PipeWire is expected (the visualizers read its monitor).
+- Windows: `winget` (built into Windows 10 and 11 as App Installer). The installer uses it
+  for git, uv, mpv, cava and yt-dlp; mpv's installer asks for administrator approval once.
 - Optional: `yt-dlp` for YouTube and SoundCloud, `ani-cli` for anime, `curd` for anime
   with AniList sync.
 - Optional: a paid TIDAL subscription, for the music library. Everything else works
@@ -166,6 +174,8 @@ you get it working somewhere else, or it breaks, an issue is genuinely useful.
 ---
 
 ## ╱╱ install
+
+### Linux (Omarchy)
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/GeneralDussDuss/orpheus/main/install.sh | bash
@@ -199,6 +209,29 @@ packages. `install.sh --check` only reports what is missing, and `install.sh --u
 undoes all of it, keeping your sign-in and settings in `~/.local/state/orpheus`.
 
 The shell does not hot-reload plugins, so after changing any QML, run `omarchy restart shell`.
+
+### Windows
+
+```powershell
+irm https://raw.githubusercontent.com/GeneralDussDuss/orpheus/main/install.ps1 | iex
+```
+
+[The script](install.ps1) installs whatever is missing with winget (git, uv, mpv, cava,
+yt-dlp), fetches Orpheus into `%LOCALAPPDATA%\Orpheus\app`, builds its Python environment,
+adds **Orpheus** to the Start menu and opens it. It lives in the tray: click the icon for
+the player, right-click for the visualizer and the mini player. The player, the
+visualizers and the video section are the same code as on Linux; anime is Linux-only for
+now, and so are the global keybinds and the bar widget.
+
+Run the same line again to update. To remove it, keeping your sign-in and settings in
+`%LOCALAPPDATA%\Orpheus\state`:
+
+```powershell
+& "$env:LOCALAPPDATA\Orpheus\app\install.ps1" -Uninstall
+```
+
+Windows support is new: it is tested on every change in CI, but has run on few real
+machines so far. If something is off, an issue helps a lot.
 
 ### Rebuilding the shaders
 
