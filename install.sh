@@ -171,8 +171,11 @@ uninstall() {
     hyprctl reload >/dev/null; ok "hyprland rules and keys"
   fi
   [[ -L $HYPR/orpheus.lua ]] && rm -f "$HYPR/orpheus.lua"
-  # Only a link is ours to remove; a real folder came from `omarchy plugin add`.
+  # A link is ours to remove, and so is the clone the one-liner made, unless it
+  # has been edited. Anything else came from `omarchy plugin add`.
   if [[ -L $PLUGIN ]]; then rm -f "$PLUGIN"; ok "plugin link"
+  elif [[ $DIR == "$(readlink -f "$PLUGIN")" && -d $DIR/.git && -z $(git -C "$DIR" status --porcelain 2>/dev/null) ]]; then
+    rm -rf "$DIR"; ok "plugin folder"
   else note "remove the plugin itself with: omarchy plugin remove orpheus"; fi
   omarchy restart shell >/dev/null 2>&1 || true
   ok "done; ~/.local/state/orpheus is kept (delete it to forget your sign-in)"
