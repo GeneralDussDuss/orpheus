@@ -59,7 +59,13 @@ def start_daemon():
     if daemon_up():
         return None
     flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-    return subprocess.Popen([sys.executable, "-m", "orpheusd"], creationflags=flags)
+    # Started from the Start menu there is no console, so the log is the only
+    # place a failure can show up.
+    from orpheusd.system import STATE_DIR
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    log = open(STATE_DIR / "orpheusd.log", "w", encoding="utf-8")
+    return subprocess.Popen([sys.executable, "-m", "orpheusd"], creationflags=flags,
+                            stdout=log, stderr=subprocess.STDOUT)
 
 
 def call(target: str, method: str, *args) -> str:
@@ -105,6 +111,11 @@ def main():
     ap.add_argument("--no-daemon", action="store_true", help="do not start orpheusd")
     ap.add_argument("--style", help="visual style to switch to first (prism is slow to render off-screen)")
     args = ap.parse_args()
+    if sys.stderr is None or "pythonw" in Path(sys.executable).name.lower():
+        # pythonw has no console: keep this app's own errors too.
+        from orpheusd.system import STATE_DIR
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        sys.stdout = sys.stderr = open(STATE_DIR / "desktop.log", "w", encoding="utf-8", buffering=1)
 
     qt_argv = sys.argv[:1] + (["-platform", "offscreen"] if args.shot else [])
     if args.shot and "ORPHEUS_HOME" not in os.environ:

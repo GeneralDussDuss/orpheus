@@ -83,7 +83,11 @@ jobs:
           if (-not (Test-Path ([Environment]::GetFolderPath('Programs') + '\Orpheus.lnk'))) { throw "no Start menu entry" }
           $s = $null
           foreach ($i in 1..60) { try { $s = Invoke-RestMethod http://127.0.0.1:47837/status -TimeoutSec 2; break } catch { Start-Sleep 1 } }
-          if (-not $s) { throw "the app did not bring the daemon up" }
+          if (-not $s) {
+            Get-ChildItem "$env:LOCALAPPDATA\Orpheus\state\*.log" -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.Name)"; Get-Content $_ -Tail 30 }
+            Get-ChildItem $env:LOCALAPPDATA, $env:ProgramFiles -Recurse -Filter mpv.exe -ErrorAction SilentlyContinue | Select-Object -First 5 FullName
+            throw "the app did not bring the daemon up"
+          }
           Write-Host "daemon up, version $($s.version), $($s.login.state)"
           & "$app\install.ps1" -Uninstall
           if (Test-Path $app) { throw "uninstall left the app folder" }
