@@ -31,9 +31,16 @@ function Refresh-Path {
 }
 
 function Stop-Orpheus {
-  Get-CimInstance Win32_Process -Filter "Name='pythonw.exe' OR Name='python.exe'" |
-    Where-Object { $_.CommandLine -match 'orpheusd' -and $_.ExecutablePath -like "$App*" } |
-    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  # By command line, not path: a venv's pythonw.exe relaunches the base Python,
+  # so the running processes do not live under the app folder. Then what they
+  # started too, since mpv and cava keep the app folder as their working directory.
+  $all = @(Get-CimInstance Win32_Process)
+  $ids = @($all | Where-Object { $_.CommandLine -match 'orpheusd' } | ForEach-Object { $_.ProcessId })
+  $kids = @($all | Where-Object { $ids -contains $_.ParentProcessId } | ForEach-Object { $_.ProcessId })
+  $grand = @($all | Where-Object { $kids -contains $_.ParentProcessId } | ForEach-Object { $_.ProcessId })
+  foreach ($id in ($ids + $kids + $grand)) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
+  if ($ids.Count) { Start-Sleep -Milliseconds 800 }
+}
 }
 
 if ($Uninstall) {
