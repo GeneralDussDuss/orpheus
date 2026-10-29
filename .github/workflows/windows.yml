@@ -4,7 +4,7 @@ name: windows
 
 on:
   push:
-    paths: ["orpheusd/**", "pyproject.toml", "uv.lock", ".github/workflows/windows.yml"]
+    paths: ["orpheusd/**", "*.qml", "*.js", "shaders/**", "pyproject.toml", "uv.lock", ".github/workflows/windows.yml"]
   workflow_dispatch:
 
 jobs:
@@ -41,3 +41,25 @@ jobs:
           if ($s.login.state -ne 'signed-out') { throw "expected signed-out, got $($s.login.state)" }
           if ($s.player.error) { throw "player error: $($s.player.error)" }
           if ($s.providers.anime) { throw "anime should be off on Windows" }
+
+  desktop:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: python environment with the desktop extra
+        run: uv sync --frozen --extra desktop
+      - name: the player and the stage render off-screen
+        shell: pwsh
+        run: |
+          .venv\Scripts\python.exe -m orpheusd.desktop --shot shots --no-daemon 2>&1 | Tee-Object -Variable lib
+          .venv\Scripts\python.exe -m orpheusd.desktop --shot shots --no-daemon --open toggle --style orb 2>&1 | Tee-Object -Variable stage
+          if (-not (Test-Path shots\*Orpheus*.png)) { throw "the player window did not render" }
+          if (-not (Test-Path shots\*Stage*.png)) { throw "the stage did not render" }
+          if ("$lib $stage" -match "qml:") { throw "QML warnings on Windows" }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-shots
+          path: shots

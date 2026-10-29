@@ -30,6 +30,29 @@ def daemon_up() -> bool:
         return False
 
 
+def find_tools():
+    """cava's installer and winget only reach PATH in a new shell, so a first run
+    straight after installing would not find them. Put their folders on PATH for
+    this process and everything it starts."""
+    if sys.platform != "win32":
+        return
+    import glob
+    import shutil
+    env = os.environ.get
+    places = {"cava": [rf"{env('ProgramFiles', '')}\cava\cava.exe",
+                       rf"{env('LOCALAPPDATA', '')}\Programs\cava\cava.exe"],
+              "yt-dlp": [rf"{env('LOCALAPPDATA', '')}\Microsoft\WinGet\Links\yt-dlp.exe",
+                         rf"{env('LOCALAPPDATA', '')}\Microsoft\WinGet\Packages\*yt-dlp*\**\yt-dlp.exe"]}
+    for tool, patterns in places.items():
+        if shutil.which(tool):
+            continue
+        for pattern in patterns:
+            hits = glob.glob(pattern, recursive=True)
+            if hits:
+                os.environ["PATH"] = str(Path(hits[0]).parent) + os.pathsep + os.environ["PATH"]
+                break
+
+
 def start_daemon():
     """Without systemd, the app owns the daemon: started here, stopped on quit."""
     if daemon_up():
@@ -79,6 +102,7 @@ def main():
     ap.add_argument("--shot", metavar="DIR", help="render off-screen, save each window, quit")
     ap.add_argument("--open", default="library", help="IPC method to call once loaded")
     ap.add_argument("--no-daemon", action="store_true", help="do not start orpheusd")
+    ap.add_argument("--style", help="visual style to switch to first (prism is slow to render off-screen)")
     args = ap.parse_args()
 
     qt_argv = sys.argv[:1] + (["-platform", "offscreen"] if args.shot else [])
@@ -98,6 +122,7 @@ def main():
     for name in ("PanelWindow", "FloatingWindow"):
         qmlRegisterType(QUrl.fromLocalFile(str(HERE / "qml" / f"{name}.qml")), "Quickshell", 1, 0, name)
 
+    find_tools()
     daemon = None if args.no_daemon else start_daemon()
     engine = QQmlApplicationEngine()
     shims.refresh_screens(engine)
@@ -116,7 +141,8 @@ def main():
 
     keep = None
     if args.shot:
-        QTimer.singleShot(1500, lambda: call("orpheus", args.open))
+        QTimer.singleShot(1500, lambda: (args.style and call("orpheus", "style", args.style),
+                                         call("orpheus", args.open)))
         QTimer.singleShot(6000, lambda: (shoot(app, Path(args.shot), engine), app.quit()))
     else:
         keep = tray(app, quit_all)
