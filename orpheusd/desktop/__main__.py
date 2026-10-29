@@ -140,7 +140,11 @@ def hand_over(method: str) -> bool:
     sock = QLocalSocket()
     sock.connectToServer(INSTANCE)
     if not sock.waitForConnected(1500):
-        print(f"orpheus-desktop: no running instance at {INSTANCE}: {sock.errorString()}", file=sys.stderr)
+        # Not found (Windows says "Invalid name") or refused is the normal first launch.
+        quiet = (QLocalSocket.LocalSocketError.ServerNotFoundError,
+                 QLocalSocket.LocalSocketError.ConnectionRefusedError)
+        if sock.error() not in quiet:
+            print(f"orpheus-desktop: cannot reach {INSTANCE}: {sock.errorString()}", file=sys.stderr)
         return False
     sock.write(method.encode() + b"\n")
     sock.waitForBytesWritten(300)
