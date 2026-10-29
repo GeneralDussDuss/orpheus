@@ -155,6 +155,8 @@ uninstall() {
   if systemctl --user cat orpheusd.service >/dev/null 2>&1; then
     systemctl --user disable --now --quiet orpheusd.service || true
     rm -f "$UNIT"; systemctl --user daemon-reload; ok "orpheusd.service removed"
+    # Only if install was the one to create them; anything else in there stays.
+    rmdir "${UNIT%/*}" "${UNIT%/*/*}" 2>/dev/null || true
   fi
   [[ $(readlink -f ~/.local/bin/orpheus 2>/dev/null) == "$DIR/bin/orpheus" ]] && rm -f ~/.local/bin/orpheus && ok "launcher"
   for f in "$DIR"/share/applications/*.desktop; do rm -f ~/.local/share/applications/"${f##*/}"; done
