@@ -160,7 +160,13 @@ uninstall() {
   for f in "$DIR"/share/applications/*.desktop; do rm -f ~/.local/share/applications/"${f##*/}"; done
   if grep -qF "$REQUIRE" "$HYPR/hyprland.lua" 2>/dev/null; then
     cp "$HYPR/hyprland.lua" "$HYPR/hyprland.lua.bak.$(date +%s)"
-    grep -vF -e "$REQUIRE" -e "-- Added by Orpheus" "$HYPR/hyprland.lua" >"$HYPR/hyprland.lua.tmp"
+    # Also drop the blank line install put before the marker, or every round trip adds one.
+    awk -v req="$REQUIRE" '
+      index($0, req) || index($0, "-- Added by Orpheus") { held = 0; next }
+      held { print ""; held = 0 }
+      /^$/ { held = 1; next }
+      { print }
+      END { if (held) print "" }' "$HYPR/hyprland.lua" >"$HYPR/hyprland.lua.tmp"
     mv "$HYPR/hyprland.lua.tmp" "$HYPR/hyprland.lua"
     hyprctl reload >/dev/null; ok "hyprland rules and keys"
   fi
