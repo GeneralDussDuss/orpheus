@@ -19,6 +19,9 @@ Item {
   property var shell: null
   property var manifest: null
 
+  // orpheus-desktop runs this same file on Windows; the few Linux tools it calls
+  // have Windows stand-ins or are skipped there.
+  readonly property bool windows: Qt.platform.os === "windows"
   readonly property string home: Quickshell.env("HOME")
   readonly property string configDir: home + "/.config/orpheus"
   readonly property string configPath: configDir + "/config.json"
@@ -78,7 +81,8 @@ Item {
   }
 
   Process {
-    command: ["mkdir", "-p", root.configDir, root.stateDir]
+    // On Windows FileView.setText makes the folders itself.
+    command: root.windows ? ["cmd", "/c", "exit 0"] : ["mkdir", "-p", root.configDir, root.stateDir]
     running: true
     onExited: cavaConfigFile.setText(root.cavaConfig())
   }
@@ -193,7 +197,7 @@ Item {
 
   Process {
     id: cavaCheck
-    command: ["sh", "-c", "command -v cava"]
+    command: root.windows ? ["where", "cava"] : ["sh", "-c", "command -v cava"]
     running: true
     onExited: function(code) { root.hasCava = code === 0 }
   }
@@ -207,7 +211,7 @@ Item {
 
   function cavaConfig() {
     return "[general]\nbars = 32\nframerate = " + audioFps + "\nautosens = 1\n\n"
-      + "[input]\nmethod = pipewire\nsource = " + (sinkMonitor || "auto") + "\n\n"
+      + (windows ? "" : "[input]\nmethod = pipewire\nsource = " + (sinkMonitor || "auto") + "\n\n")
       + "[output]\nmethod = raw\nraw_target = /dev/stdout\ndata_format = ascii\nascii_max_range = 1000\n"
       + "bar_delimiter = 59\nframe_delimiter = 10\nchannels = mono\nmono_option = average\n\n"
       + "[smoothing]\nnoise_reduction = 70\n"
@@ -223,7 +227,8 @@ Item {
   // its monitor, and follow it when it moves.
   property string sinkMonitor: ""
 
-  function probeSink() { if (hasCava) sinkProbe.running = true }
+  // Windows cava captures the default output by itself.
+  function probeSink() { if (hasCava && !windows) sinkProbe.running = true }
 
   Process {
     id: sinkProbe
@@ -257,7 +262,7 @@ Item {
   Timer {
     interval: 5000
     repeat: true
-    running: root.hasCava && !sinkWatch.running
+    running: root.hasCava && !root.windows && !sinkWatch.running
     onTriggered: { sinkWatch.running = true; root.probeSink() }
   }
 

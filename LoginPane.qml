@@ -50,16 +50,22 @@ Rectangle {
     interval: 1200
     repeat: true
     running: pane.hires && !!pane.api && pane.login.state === "waiting" && pane.login.method === "pkce" && !pane.finishing
-    onTriggered: clip.running = true
+    onTriggered: pane.readClipboard()
+  }
+  // wl-paste works without focus on Wayland; Windows has a plain clipboard.
+  function readClipboard() {
+    if (Qt.platform.os === "windows") pane.clipboardRead(Quickshell.clipboardText)
+    else clip.running = true
+  }
+  function clipboardRead(text) {
+    if (!pane.tryUrl(text) && pane.manualPaste) paste.insert(paste.cursorPosition, text.trim())
+    pane.manualPaste = false
   }
   Process {
     id: clip
     command: ["wl-paste", "--no-newline", "--type", "text"]
     stdout: StdioCollector {
-      onStreamFinished: {
-        if (!pane.tryUrl(text) && pane.manualPaste) paste.insert(paste.cursorPosition, text.trim())
-        pane.manualPaste = false
-      }
+      onStreamFinished: pane.clipboardRead(text)
     }
   }
 
@@ -161,7 +167,7 @@ Rectangle {
           Keys.onPressed: function(e) {
             if ((e.key === Qt.Key_V && (e.modifiers & Qt.ControlModifier)) || (e.key === Qt.Key_Insert && (e.modifiers & Qt.ShiftModifier))) {
               pane.manualPaste = true
-              clip.running = true
+              pane.readClipboard()
               e.accepted = true
             }
           }

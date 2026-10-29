@@ -223,7 +223,8 @@ FloatingWindow {
     command: ["sh", "-c", "wpctl inspect @DEFAULT_AUDIO_SINK@ | sed -n 's/.*node.description = \"\\(.*\\)\"/\\1/p' | head -1"]
     stdout: StdioCollector { onStreamFinished: win.outputName = text.trim() }
   }
-  Timer { interval: 5000; repeat: true; triggeredOnStart: true; running: win.visible; onTriggered: sinkProc.running = true }
+  // wpctl names the output on Linux; Windows has no equivalent here yet.
+  Timer { interval: 5000; repeat: true; triggeredOnStart: true; running: win.visible && Qt.platform.os !== "windows"; onTriggered: sinkProc.running = true }
   function qualityText(s) {
     if (!s || !s.quality) return ""
     var q = { HI_RES_LOSSLESS: "HI-RES", LOSSLESS: "LOSSLESS", HIGH: "320K", LOW: "96K" }[s.quality] || s.quality
