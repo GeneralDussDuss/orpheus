@@ -124,16 +124,21 @@ class App:
             log.warning("MPRIS unavailable: %s", e)
         await self.tidal.restore()
         asyncio.create_task(self._liked_loop())
-        if self.tidal.signed_in and RESUME.exists():
-            try:
-                await self.player.restore(json.loads(RESUME.read_text()))
-            except Exception as e:
-                log.warning("couldn't resume: %s", e)
         runner = web.AppRunner(self.routes())
         await runner.setup()
         await web.TCPSite(runner, "127.0.0.1", port).start()
         log.info("orpheusd listening on 127.0.0.1:%d (%s)", port, self.tidal.login_state["state"])
+        # Resuming re-resolves the saved track's stream, which can take TIDAL
+        # 15 s. Do it after the port is up, so the player answers meanwhile.
+        if self.tidal.signed_in and RESUME.exists():
+            asyncio.create_task(self._resume())
         return runner
+
+    async def _resume(self):
+        try:
+            await self.player.restore(json.loads(RESUME.read_text()))
+        except Exception as e:
+            log.warning("couldn't resume: %s", e)
 
     def status(self) -> dict:
         player = self.player.state()

@@ -60,6 +60,7 @@ class Player:
         self.paused = True
         self.idle = True
         self.duration = 0.0
+        self._start_at = 0.0              # where the next loaded file opens
         self._pos_at = 0.0                # last known time-pos ...
         self._pos_clock = time.monotonic()  # ... and when we learned it
         self.volume = 100.0
@@ -237,7 +238,9 @@ class Player:
             if entry in self._entries:
                 self._current_entry = entry
                 self.pos = self._entries[entry]
-                self._pos_at, self._pos_clock = 0.0, time.monotonic()
+                # A paused start sends no playback-restart to correct this later.
+                self._pos_at, self._pos_clock = self._start_at, time.monotonic()
+                self._start_at = 0.0
                 self.duration = float((self.current or {}).get("duration") or 0)
                 if entry in self._entry_info:
                     self.stream_info = self._entry_info[entry]
@@ -297,7 +300,7 @@ class Player:
             return await source.stream(track["id"])
         return await self.tidal.stream(track["id"], self.cache_dir)
 
-    async def _load(self, order_pos: int):
+    async def _load(self, order_pos: int, start: float = 0, paused: bool = False):
         self._loading += 1
         token = self._loading
         self.pos = order_pos
@@ -327,12 +330,24 @@ class Player:
         self._entries.clear()
         self._entry_info.clear()
         await self._send(["playlist-clear"])
-        data = await self._send(["loadfile", info["source"], "replace"])
+        # A resumed track opens where it left off and already paused, rather than
+        # playing a moment from the top first. Pause stays a global property:
+        # as a loadfile option it would be file-local, and mpv would restore the
+        # old value when the file ends, pausing the next gapless track.
+        if paused:
+            await self._send(["set_property", "pause", True])
+        self._start_at = start
+        cmd = ["loadfile", info["source"], "replace"]
+        data = await self._send(cmd + [-1, f"start={start:.2f}"] if start else cmd)
         entry = (data or {}).get("playlist_entry_id", -1)
         self._entries[entry] = order_pos
         self._entry_info[entry] = self.stream_info
         self._current_entry = entry
-        await self._send(["set_property", "pause", False])
+        if start:
+            # start-file usually lands before this reply and is skipped as an
+            # unknown entry, so the clock is set here as well.
+            self._pos_at, self._pos_clock = start, time.monotonic()
+        await self._send(["set_property", "pause", paused])
 
     async def _prefetch_next(self):
         nxt = self.next_pos()
@@ -373,17 +388,17 @@ class Player:
     async def restore(self, snap: dict):
         """Rebuild the queue and pick up at the saved position."""
         queue, order, pos = snap.get("queue") or [], snap.get("order") or [], int(snap.get("pos", -1))
-        if not queue or not (0 <= pos < len(order)):
+        # It runs in the background, so anything played first wins.
+        if self.queue or not queue or not (0 <= pos < len(order)):
             return
+        # Idle mpv reports unpaused; say paused now, or the title shows with a
+        # play state for the moment before the paused load lands.
+        if not snap.get("playing"):
+            self.paused = True
         self.queue, self.order, self.context = queue, order, snap.get("context") or {}
         self.shuffle, self.repeat = bool(snap.get("shuffle")), snap.get("repeat") or "off"
-        await self._load(pos)
         at = float(snap.get("position") or 0)
-        if at > 2:
-            await asyncio.sleep(0.6)
-            await self.seek(at)
-        if not snap.get("playing"):
-            await self.set_paused(True)
+        await self._load(pos, start=at if at > 2 else 0, paused=not snap.get("playing"))
 
     # ---- public controls -----------------------------------------------------
 
