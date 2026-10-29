@@ -12,6 +12,12 @@ dependencies = [
 
 [project.scripts]
 orpheusd = "orpheusd.__main__:main"
+orpheus-desktop = "orpheusd.desktop.__main__:main"
+
+[project.optional-dependencies]
+desktop = [
+    "pyside6-essentials>=6.8",
+]
 
 [build-system]
 requires = ["hatchling"]
