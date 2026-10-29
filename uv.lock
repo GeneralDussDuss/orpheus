@@ -584,14 +584,14 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
-    { name = "dbus-next" },
+    { name = "dbus-next", marker = "sys_platform == 'linux'" },
     { name = "tidalapi" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.10" },
-    { name = "dbus-next", specifier = ">=0.2.3" },
+    { name = "dbus-next", marker = "sys_platform == 'linux'", specifier = ">=0.2.3" },
     { name = "tidalapi", specifier = ">=0.8.11" },
 ]
 

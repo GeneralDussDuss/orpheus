@@ -16,7 +16,10 @@ from pathlib import Path
 from aiohttp import web
 
 from .anime import PLAYER as ANI_PLAYER, Anime, AnimeError
-from .mpris import Mpris
+try:
+    from .mpris import Mpris
+except ImportError:  # no D-Bus on Windows
+    Mpris = None
 from .player import Player
 from . import eq as eqmod
 from .lyrics import Lyrics
@@ -33,6 +36,16 @@ RESUME = STATE_DIR / "resume.json"
 DEFAULT_PORT = 47837
 
 
+class NoMpris:
+    """Stands in where there is no D-Bus. Windows media keys will come from SMTC."""
+
+    async def start(self):
+        pass
+
+    def refresh(self):
+        pass
+
+
 class App:
     def __init__(self):
         for d in (STATE_DIR, CACHE_DIR, RUNTIME_DIR):
@@ -46,7 +59,7 @@ class App:
         self.video = Video(RUNTIME_DIR, self._changed)
         self.player.eq = eqmod.normalize(self.prefs.get("eq"))
         self.lyrics = Lyrics(self.tidal, CACHE_DIR)
-        self.mpris = Mpris(self, self.player)
+        self.mpris = Mpris(self, self.player) if Mpris else NoMpris()
 
         self.version = 0
         self._cache: OrderedDict[str, dict] = OrderedDict()

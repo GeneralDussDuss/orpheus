@@ -32,7 +32,10 @@ import asyncio
 import json
 import logging
 import os
-import pty
+try:
+    import pty
+except ImportError:  # Windows: ani-cli is a bash script and needs a tty anyway
+    pty = None
 import re
 import shutil
 import tempfile
@@ -77,11 +80,12 @@ class Anime:
 
     @property
     def available(self) -> bool:
-        return bool(shutil.which("ani-cli"))
+        return pty is not None and bool(shutil.which("ani-cli"))
 
     @property
     def curd(self) -> bool:
-        return bool(shutil.which("curd"))
+        # Curd is opened in a Linux terminal; on Windows it has no launcher yet.
+        return pty is not None and bool(shutil.which("curd"))
 
     def _scratch(self, suffix: str) -> Path:
         # One file per call: two searches at once must not read each other's

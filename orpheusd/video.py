@@ -18,7 +18,7 @@ import json
 import logging
 from pathlib import Path
 
-from .system import ipc_address, ipc_clear, ipc_connect
+from .system import WINDOWS, ipc_address, ipc_clear, ipc_connect
 from .youtube import VIDEO_FORMAT, watch_url
 
 log = logging.getLogger("orpheus.video")
@@ -28,13 +28,15 @@ VIDEO_ARGS = [
     "--idle=yes",            # the window stays up between videos
     "--force-window=yes",    # ... and appears immediately, before the stream resolves
     "--keep-open=no",
-    # Our own app id, so Hyprland places this window by its rule, not mpv's
-    # generic one; the window opens at its final size, and mpv must not undo it.
-    "--wayland-app-id=orpheus.video",
+    # The window opens at its final size, and mpv must not undo it.
     "--auto-window-resize=no",
     "--title=Orpheus ╱╱ ${media-title}",
     f"--ytdl-format={VIDEO_FORMAT}",
 ]
+if not WINDOWS:
+    # Our own app id, so Hyprland places this window by its rule, not mpv's
+    # generic one. A Windows mpv has no such option and would refuse to start.
+    VIDEO_ARGS.append("--wayland-app-id=orpheus.video")
 
 
 class Video:

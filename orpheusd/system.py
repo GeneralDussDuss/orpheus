@@ -59,3 +59,4 @@ async def ipc_connect(address: str, attempts: int = 100):
             if i == attempts - 1:
                 raise
             await asyncio.sleep(0.05)
+    raise ConnectionError(f"mpv IPC never appeared at {address}")
