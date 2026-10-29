@@ -4,7 +4,7 @@ name: windows
 
 on:
   push:
-    paths: ["orpheusd/**", "*.qml", "*.js", "shaders/**", "pyproject.toml", "uv.lock", ".github/workflows/windows.yml"]
+    paths: ["orpheusd/**", "*.qml", "*.js", "shaders/**", "install.ps1", "pyproject.toml", "uv.lock", ".github/workflows/windows.yml"]
   workflow_dispatch:
 
 jobs:
