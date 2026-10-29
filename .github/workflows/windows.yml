@@ -16,6 +16,11 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - name: mpv
         run: choco install mpv --no-progress -y
+      - name: where mpv landed
+        shell: pwsh
+        run: |
+          Get-Command mpv -ErrorAction SilentlyContinue | Format-List Source
+          Get-ChildItem C:\ProgramData\chocolatey -Recurse -Filter mpv*.exe -ErrorAction SilentlyContinue | Select-Object -First 5 FullName
       - name: python environment
         run: uv sync --frozen
       - name: daemon answers, signed out, with mpv on a named pipe
@@ -29,6 +34,7 @@ jobs:
             try { $s = Invoke-RestMethod http://127.0.0.1:47999/status -TimeoutSec 2; break } catch { Start-Sleep 1 }
           }
           Stop-Process $d -ErrorAction SilentlyContinue
+          .venv\Scripts\python.exe -c "from orpheusd.system import mpv_path; print('mpv_path:', mpv_path())"
           Get-Content err.log -Tail 40
           if (-not $s) { throw "orpheusd never answered" }
           $s | ConvertTo-Json -Depth 4 | Select-Object -First 30

@@ -8,7 +8,9 @@ knows which it got.
 from __future__ import annotations
 
 import asyncio
+import glob
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -27,6 +29,27 @@ def _dirs() -> tuple[Path, Path, Path]:
 
 
 STATE_DIR, CACHE_DIR, RUNTIME_DIR = _dirs()
+
+
+def mpv_path() -> str:
+    """mpv on PATH, or where Windows installers put it: winget and Chocolatey
+    only reach PATH in a new shell, so a fresh install would not be found.
+    ORPHEUS_MPV overrides both."""
+    found = os.environ.get("ORPHEUS_MPV") or shutil.which("mpv")
+    if found or not WINDOWS:
+        return found or "mpv"
+    env = lambda v: os.environ.get(v, "")
+    for pattern in (rf"{env('LOCALAPPDATA')}\Microsoft\WinGet\Links\mpv.exe",
+                    rf"{env('LOCALAPPDATA')}\Microsoft\WinGet\Packages\*mpv*\**\mpv.exe",
+                    rf"{env('ProgramFiles')}\mpv\mpv.exe",
+                    rf"{env('LOCALAPPDATA')}\Programs\mpv\mpv.exe",
+                    rf"{env('USERPROFILE')}\scoop\shims\mpv.exe",
+                    rf"{env('ProgramData')}\chocolatey\bin\mpv.exe",
+                    rf"{env('ProgramData')}\chocolatey\lib\mpv*\**\mpv.exe"):
+        hits = glob.glob(pattern, recursive=True)
+        if hits:
+            return hits[0]
+    return "mpv"
 
 
 def ipc_address(runtime_dir: Path, name: str) -> str:

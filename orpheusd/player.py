@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 from . import eq as eqmod
-from .system import ipc_address, ipc_clear, ipc_connect
+from .system import mpv_path, ipc_address, ipc_clear, ipc_connect
 
 log = logging.getLogger("orpheus.player")
 
@@ -134,7 +134,7 @@ class Player:
     async def start(self):
         ipc_clear(self.socket_path)
         self._proc = await asyncio.create_subprocess_exec(
-            "mpv", *MPV_ARGS, f"--input-ipc-server={self.socket_path}",
+            mpv_path(), *MPV_ARGS, f"--input-ipc-server={self.socket_path}",
             stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL)
         self._reader, self._writer = await ipc_connect(self.socket_path)

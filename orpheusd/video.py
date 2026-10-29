@@ -18,7 +18,7 @@ import json
 import logging
 from pathlib import Path
 
-from .system import WINDOWS, ipc_address, ipc_clear, ipc_connect
+from .system import mpv_path, WINDOWS, ipc_address, ipc_clear, ipc_connect
 from .youtube import VIDEO_FORMAT, watch_url
 
 log = logging.getLogger("orpheus.video")
@@ -73,7 +73,7 @@ class Video:
             return
         ipc_clear(self.socket_path)
         self._proc = await asyncio.create_subprocess_exec(
-            "mpv", *VIDEO_ARGS, f"--input-ipc-server={self.socket_path}",
+            mpv_path(), *VIDEO_ARGS, f"--input-ipc-server={self.socket_path}",
             stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL)
         self._reader, self._writer = await ipc_connect(self.socket_path)
