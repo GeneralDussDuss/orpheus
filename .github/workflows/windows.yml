@@ -98,7 +98,7 @@ jobs:
           Get-Content "$env:LOCALAPPDATA\Orpheus\state\desktop.log" -ErrorAction SilentlyContinue | Select-Object -Last 20
           Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'orpheusd.desktop' } | ForEach-Object { "running: $($_.ProcessId) $($_.CommandLine)" }
           $p = Start-Process -PassThru -NoNewWindow -FilePath "$app\.venv\Scripts\python.exe" -ArgumentList '-m','orpheusd.desktop','--open','library' -RedirectStandardError second.log
-          if (-not $p.WaitForExit(20000)) { Stop-Process $p -Force; Get-Content second.log; throw "second launch did not hand over" }
+          if (-not $p.WaitForExit(20000)) { Stop-Process $p -Force; "== second.log"; Get-Content second.log; "== desktop.log"; Get-Content "$env:LOCALAPPDATA\Orpheus\state\desktop.log"; throw "second launch did not hand over" }
           Write-Host "second launch handed over and exited ($($p.ExitCode))"
           & "$app\install.ps1" -Uninstall
           if (Test-Path $app) { throw "uninstall left the app folder" }

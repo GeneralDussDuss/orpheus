@@ -140,6 +140,7 @@ def hand_over(method: str) -> bool:
     sock = QLocalSocket()
     sock.connectToServer(INSTANCE)
     if not sock.waitForConnected(1500):
+        print(f"orpheus-desktop: no running instance at {INSTANCE}: {sock.errorString()}", file=sys.stderr)
         return False
     sock.write(method.encode() + b"\n")
     sock.waitForBytesWritten(300)
@@ -151,7 +152,10 @@ def listen_for_launches(app):
     from PySide6.QtNetwork import QLocalServer
     QLocalServer.removeServer(INSTANCE)  # a crashed run can leave a stale one on Linux
     server = QLocalServer(app)
-    server.listen(INSTANCE)
+    if not server.listen(INSTANCE):
+        print(f"orpheus-desktop: cannot listen on {INSTANCE}: {server.errorString()}", file=sys.stderr)
+    else:
+        print(f"orpheus-desktop: listening on {server.fullServerName()}", file=sys.stderr)
 
     def accept():
         conn = server.nextPendingConnection()
