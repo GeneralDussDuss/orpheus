@@ -83,6 +83,12 @@ Step 'building'
 Push-Location $App
 try { uv sync --frozen --extra desktop --quiet } finally { Pop-Location }
 Ok 'python environment'
+# Ask the app's own lookup, so a failure shows here and not as a silent tray icon.
+$mpv = & (Join-Path $App '.venv\Scripts\python.exe') -c 'from orpheusd.system import mpv_path; print(mpv_path())'
+if ($mpv -eq 'mpv' -and -not (Has mpv)) {
+  throw 'mpv is not installed where Orpheus can find it. Install it (winget install shinchiro.mpv) and run this again, or set ORPHEUS_MPV to mpv.exe.'
+}
+Ok "mpv at $mpv"
 
 Step 'start menu'
 $py = Join-Path $App '.venv\Scripts\pythonw.exe'

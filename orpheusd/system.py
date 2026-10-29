@@ -42,6 +42,7 @@ def mpv_path() -> str:
     for pattern in (rf"{env('LOCALAPPDATA')}\Microsoft\WinGet\Links\mpv.exe",
                     rf"{env('LOCALAPPDATA')}\Microsoft\WinGet\Packages\*mpv*\**\mpv.exe",
                     rf"{env('ProgramFiles')}\mpv\mpv.exe",
+                    rf"{env('ProgramFiles')}\MPV Player\mpv.exe",   # winget's shinchiro.mpv
                     rf"{env('LOCALAPPDATA')}\Programs\mpv\mpv.exe",
                     rf"{env('LOCALAPPDATA')}\mpv\mpv.exe",
                     rf"{env('ProgramFiles(x86)')}\mpv\mpv.exe",
