@@ -41,7 +41,6 @@ function Stop-Orpheus {
   foreach ($id in ($ids + $kids + $grand)) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
   if ($ids.Count) { Start-Sleep -Milliseconds 800 }
 }
-}
 
 if ($Uninstall) {
   Step 'removing'
