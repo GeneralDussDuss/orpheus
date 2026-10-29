@@ -18,6 +18,8 @@ $Repo = if ($env:ORPHEUS_REPO) { $env:ORPHEUS_REPO } else { 'https://github.com/
 $Home_ = Join-Path $env:LOCALAPPDATA 'Orpheus'
 $App = Join-Path $Home_ 'app'
 $Menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'Orpheus.lnk'
+$AppsKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Orpheus'
+$RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 
 function Ok($m)   { Write-Host "  + $m" -ForegroundColor Green }
 function Note($m) { Write-Host "  * $m" -ForegroundColor Yellow }
@@ -46,6 +48,8 @@ if ($Uninstall) {
   Step 'removing'
   Stop-Orpheus; Ok 'Orpheus stopped'
   if (Test-Path $Menu) { Remove-Item $Menu; Ok 'Start menu entry' }
+  if (Test-Path $AppsKey) { Remove-Item $AppsKey -Recurse; Ok 'Settings > Apps entry' }
+  Remove-ItemProperty -Path $RunKey -Name 'Orpheus' -ErrorAction SilentlyContinue
   # Run from inside the folder it is deleting, so step out of it first.
   Set-Location $env:TEMP
   # Windows lets go of a killed process's files a moment later, and a virus scan
@@ -114,10 +118,27 @@ $sh.TargetPath = $py
 $sh.Arguments = '-m orpheusd.desktop'
 $sh.WorkingDirectory = $App
 $sh.Description = 'Orpheus: hi-res TIDAL player and visualizers'
+$ico = Join-Path $Home_ 'orpheus.ico'
+& (Join-Path $App '.venv\Scripts\python.exe') -m orpheusd.desktop --write-icon $ico
+if (Test-Path $ico) { $sh.IconLocation = "$ico,0" }
 $sh.Save()
 Ok 'Orpheus in the Start menu'
 
+# So it shows in Settings > Apps like any other app, with a working Uninstall.
+New-Item -Path $AppsKey -Force | Out-Null
+$ver = (Select-String -Path (Join-Path $App 'pyproject.toml') -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+@{ DisplayName = 'Orpheus'; DisplayVersion = $ver; Publisher = 'GeneralDussDuss'
+   DisplayIcon = $ico; InstallLocation = $App; NoModify = 1; NoRepair = 1
+   URLInfoAbout = 'https://github.com/GeneralDussDuss/orpheus'
+   UninstallString = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$App\install.ps1`" -Uninstall"
+}.GetEnumerator() | ForEach-Object {
+  $type = if ($_.Value -is [int]) { 'DWord' } else { 'String' }
+  New-ItemProperty -Path $AppsKey -Name $_.Key -Value $_.Value -PropertyType $type -Force | Out-Null
+}
+Ok 'Orpheus in Settings > Apps'
+
 Step 'done'
 Start-Process -FilePath $py -ArgumentList '-m', 'orpheusd.desktop' -WorkingDirectory $App
-Write-Host '  Orpheus is in the tray: click it for the player, right-click for the visualizer.'
+Write-Host '  Orpheus is in the tray: click it for the player, right-click for the rest.'
+Write-Host '  Win+Alt+M opens the player, Win+Alt+V the visualizer; media keys work too.'
 Write-Host '  Sign in to TIDAL from the player; the video section (8) works without it.'

@@ -81,19 +81,45 @@ def call(target: str, method: str, *args) -> str:
                                     Q_RETURN_ARG(str), *[Q_ARG(str, str(a)) for a in args]) or ""
 
 
-def tray(app, quit_all):
+def make_icon(size: int = 256):
+    """Orpheus's mark, drawn rather than shipped: the /// of the wordmark in the
+    accent blue on the near-black ground, readable down to the 16 px tray."""
+    from PySide6.QtCore import QPointF, Qt
+    from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
+    pm = QPixmap(size, size)
+    pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor("#0b0d12"))
+    p.drawRoundedRect(0, 0, size, size, size * 0.22, size * 0.22)
+    pen = QPen(QColor("#5b8cff"), size * 0.11, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+    p.setPen(pen)
+    for i in range(3):
+        x = size * (0.30 + i * 0.20)
+        p.drawLine(QPointF(x - size * 0.10, size * 0.74), QPointF(x + size * 0.10, size * 0.26))
+    p.end()
+    return pm
+
+
+def tray(app, quit_all, hotkeys):
     from PySide6.QtGui import QAction, QIcon
     from PySide6.QtWidgets import QMenu, QSystemTrayIcon
-    icon = QIcon(str(ROOT / "docs" / "media" / "icon.png")) if (ROOT / "docs/media/icon.png").exists() \
-        else app.style().standardIcon(app.style().StandardPixmap.SP_MediaPlay)
-    t = QSystemTrayIcon(icon, app)
+    from . import winsys
+    t = QSystemTrayIcon(QIcon(make_icon()), app)
     t.setToolTip("Orpheus")
+    keys = {m: label for label, _, _, m in winsys.HOTKEYS if label in hotkeys.active}
     menu = QMenu()
     for label, method in (("Player", "library"), ("Visualizer", "toggle"), ("Mini player", "miniPlayer")):
-        a = QAction(label, menu)
+        a = QAction(label + (f"\t{keys[method]}" if method in keys else ""), menu)
         a.triggered.connect(lambda _=False, m=method: call("orpheus", m))
         menu.addAction(a)
     menu.addSeparator()
+    if winsys.WINDOWS:
+        auto = QAction("Start with Windows", menu, checkable=True)
+        auto.setChecked(winsys.starts_with_windows())
+        auto.toggled.connect(winsys.set_start_with_windows)
+        menu.addAction(auto)
     q = QAction("Quit", menu)
     q.triggered.connect(quit_all)
     menu.addAction(q)
@@ -104,10 +130,42 @@ def tray(app, quit_all):
     return t, menu
 
 
+INSTANCE = "orpheus-desktop-" + (os.environ.get("USERNAME") or os.environ.get("USER") or "me")
+
+
+def hand_over(method: str) -> bool:
+    """If Orpheus is already running, ask it to open `method` and say so: a second
+    launch from the Start menu should raise the player, not start a second app."""
+    from PySide6.QtNetwork import QLocalSocket
+    sock = QLocalSocket()
+    sock.connectToServer(INSTANCE)
+    if not sock.waitForConnected(300):
+        return False
+    sock.write(method.encode() + b"\n")
+    sock.waitForBytesWritten(300)
+    sock.disconnectFromServer()
+    return True
+
+
+def listen_for_launches(app):
+    from PySide6.QtNetwork import QLocalServer
+    QLocalServer.removeServer(INSTANCE)  # a crashed run can leave a stale one on Linux
+    server = QLocalServer(app)
+    server.listen(INSTANCE)
+
+    def accept():
+        conn = server.nextPendingConnection()
+        conn.readyRead.connect(lambda: [call("orpheus", m) for m in
+                                        bytes(conn.readAll().data()).decode().split() if m != "none"])
+    server.newConnection.connect(accept)
+    return server
+
+
 def main():
     ap = argparse.ArgumentParser(prog="orpheus-desktop")
     ap.add_argument("--shot", metavar="DIR", help="render off-screen, save each window, quit")
-    ap.add_argument("--open", default="library", help="IPC method to call once loaded")
+    ap.add_argument("--open", default="library", help="IPC method to call once loaded, or 'none'")
+    ap.add_argument("--write-icon", metavar="PATH", help="write the app icon (.ico/.png) and quit")
     ap.add_argument("--no-daemon", action="store_true", help="do not start orpheusd")
     ap.add_argument("--style", help="visual style to switch to first (prism is slow to render off-screen)")
     args = ap.parse_args()
@@ -128,6 +186,12 @@ def main():
     app = QApplication(qt_argv)
     app.setApplicationName("Orpheus")
     app.setQuitOnLastWindowClosed(False)
+    if args.write_icon:
+        sys.exit(0 if make_icon().save(args.write_icon) else 1)
+    if not args.shot and hand_over(args.open):
+        return
+    from PySide6.QtGui import QIcon
+    app.setWindowIcon(QIcon(make_icon()))
 
     from . import shims  # noqa: F401  registers the stand-in modules
     qmlRegisterType(QUrl.fromLocalFile(str(HERE / "qml" / "PanelEdges.qml")), "OrpheusDesktop", 1, 0, "PanelEdges")
@@ -152,14 +216,23 @@ def main():
         app.quit()
 
     keep = None
+    hotkeys = None
     if args.shot:
         QTimer.singleShot(1500, lambda: (args.style and call("orpheus", "style", args.style),
                                          call("orpheus", args.open)))
         QTimer.singleShot(6000, lambda: (shoot(app, Path(args.shot), engine), app.quit()))
     else:
-        keep = tray(app, quit_all)
-        QTimer.singleShot(800, lambda: call("orpheus", args.open))
+        from . import winsys
+        hotkeys = winsys.Hotkeys(lambda m: call("orpheus", m))
+        app.installNativeEventFilter(hotkeys)
+        if hotkeys.failed:
+            print("orpheus-desktop: hotkeys taken by another app:", ", ".join(hotkeys.failed), file=sys.stderr)
+        keep = (tray(app, quit_all, hotkeys), listen_for_launches(app))
+        if args.open != "none":
+            QTimer.singleShot(800, lambda: call("orpheus", args.open))
     code = app.exec()
+    if hotkeys:
+        hotkeys.release()
     if daemon:
         daemon.terminate()
     del keep

@@ -89,5 +89,15 @@ jobs:
             throw "the app did not bring the daemon up"
           }
           Write-Host "daemon up, version $($s.version), $($s.login.state)"
+          $apps = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Orpheus'
+          if (-not (Test-Path "$env:LOCALAPPDATA\Orpheus\orpheus.ico")) { throw "no icon" }
+          if (-not (Test-Path $apps)) { throw "no Settings > Apps entry" }
+          Write-Host "apps entry: $((Get-ItemProperty $apps).DisplayName) $((Get-ItemProperty $apps).DisplayVersion)"
+          # A second launch hands over to the running app and exits.
+          $t = Measure-Command { Start-Process -Wait -FilePath "$app\.venv\Scripts\python.exe" -ArgumentList '-m','orpheusd.desktop','--open','library' }
+          if ($t.TotalSeconds -gt 15) { throw "second launch did not hand over ($($t.TotalSeconds) s)" }
+          Write-Host "second launch handed over in $([math]::Round($t.TotalSeconds,1)) s"
+          Get-Content "$env:LOCALAPPDATA\Orpheus\state\desktop.log" -ErrorAction SilentlyContinue | Select-Object -First 10
           & "$app\install.ps1" -Uninstall
           if (Test-Path $app) { throw "uninstall left the app folder" }
+          if (Test-Path $apps) { throw "uninstall left the Settings > Apps entry" }
