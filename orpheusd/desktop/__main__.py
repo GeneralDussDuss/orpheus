@@ -157,9 +157,18 @@ def listen_for_launches(app):
     else:
         print(f"orpheus-desktop: listening on {server.fullServerName()}", file=sys.stderr)
 
+    def deliver(method, tries=40):
+        # It listens before the QML has loaded, so hold a request until the player can take it.
+        from PySide6.QtCore import QTimer
+        from .shims import IPC_HANDLERS
+        if "orpheus" in IPC_HANDLERS:
+            call("orpheus", method)
+        elif tries:
+            QTimer.singleShot(250, lambda: deliver(method, tries - 1))
+
     def accept():
         conn = server.nextPendingConnection()
-        conn.readyRead.connect(lambda: [call("orpheus", m) for m in
+        conn.readyRead.connect(lambda: [deliver(m) for m in
                                         bytes(conn.readAll().data()).decode().split() if m != "none"])
     server.newConnection.connect(accept)
     return server
@@ -194,6 +203,9 @@ def main():
         sys.exit(0 if make_icon().save(args.write_icon) else 1)
     if not args.shot and hand_over(args.open):
         return
+    # Listen straight away: a second launch during the few seconds the QML takes
+    # to load must still find this one.
+    launches = None if args.shot else listen_for_launches(app)
     from PySide6.QtGui import QIcon
     app.setWindowIcon(QIcon(make_icon()))
 
@@ -231,7 +243,7 @@ def main():
         app.installNativeEventFilter(hotkeys)
         if hotkeys.failed:
             print("orpheus-desktop: hotkeys taken by another app:", ", ".join(hotkeys.failed), file=sys.stderr)
-        keep = (tray(app, quit_all, hotkeys), listen_for_launches(app))
+        keep = (tray(app, quit_all, hotkeys), launches)
         if args.open != "none":
             QTimer.singleShot(800, lambda: call("orpheus", args.open))
     code = app.exec()

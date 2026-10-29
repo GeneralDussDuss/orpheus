@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import time
 from pathlib import Path
 
 from PySide6.QtCore import (Property, QFileSystemWatcher, QObject, QProcess, QSize,
@@ -216,7 +217,18 @@ class FileView(QObject):
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")
         tmp.write_text(text, encoding="utf-8")
-        os.replace(tmp, path)
+        # On Windows a watched file is held open, and replacing it is refused; a
+        # virus scan of the new file can hold it for a moment too. Unwatch, retry.
+        if self._watcher.files():
+            self._watcher.removePaths(self._watcher.files())
+        for attempt in range(10):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if attempt == 9:
+                    raise
+                time.sleep(0.05)
         self._text = text
         self._rewatch()
 
