@@ -95,7 +95,9 @@ Rectangle {
       visible: !pane.api || !pane.api.online
       spacing: host.ch * 0.3
       Text { text: "the player service isn't running"; font.family: host.family; font.pixelSize: Style.font.body; color: host.fg }
-      Text { text: "❯ systemctl --user start orpheusd"; font.family: host.family; font.pixelSize: Style.font.body; color: host.dim }
+      // On Windows orpheus-desktop starts the daemon itself, so a restart of the app is the fix.
+      Text { text: Qt.platform.os === "windows" ? "❯ quit Orpheus from the tray and open it again"
+                                               : "❯ systemctl --user start orpheusd"; font.family: host.family; font.pixelSize: Style.font.body; color: host.dim }
     }
 
     // Signed in (account page)
