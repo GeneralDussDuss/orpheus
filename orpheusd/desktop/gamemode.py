@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 WINDOWS = sys.platform == "win32"
-CONFIG = Path.home() / ".config" / "orpheus" / "config.json"
+CONFIG = Path(os.environ.get("ORPHEUS_HOME") or Path.home()) / ".config" / "orpheus" / "config.json"
 
 QUNS_NOT_PRESENT, QUNS_BUSY, QUNS_RUNNING_D3D_FULL_SCREEN = 1, 2, 3
 QUNS_PRESENTATION_MODE, QUNS_ACCEPTS_NOTIFICATIONS, QUNS_QUIET_TIME, QUNS_APP = 4, 5, 6, 7

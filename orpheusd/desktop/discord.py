@@ -34,7 +34,7 @@ from pathlib import Path
 
 OP_HANDSHAKE, OP_FRAME, OP_CLOSE, OP_PING, OP_PONG = 0, 1, 2, 3, 4
 PIPE = r"\\.\pipe\discord-ipc-"
-CONFIG = Path.home() / ".config" / "orpheus" / "config.json"
+CONFIG = Path(os.environ.get("ORPHEUS_HOME") or Path.home()) / ".config" / "orpheus" / "config.json"
 RETRY_S = 15                  # between connection attempts while there is something to show
 MIN_GAP_S = 4.5               # Discord allows 5 SET_ACTIVITY per 20 s
 
