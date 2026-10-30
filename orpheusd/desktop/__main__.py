@@ -614,16 +614,30 @@ def main():
         watch.start(1000)          # a poll() and a dict read: nothing
         keep = [tray_, launches, game, watch]
 
-        def later():
+        def later(tries=[0]):
             # Not needed for the first frame: the taskbar buttons, toasts and jump
             # list (COM, and files written), the in-game HUD (a second QML
-            # window) and Discord (a pipe and a thread).
+            # window) and Discord (a pipe and a thread). Once the daemon has
+            # answered (or 10 s on), so they start from what is loaded: the
+            # toast and the HUD take their first status as "not news".
             if ISOLATED:
                 return
+            tries[0] += 1
+            if not shims.STATUS["online"] and tries[0] < 18:
+                QTimer.singleShot(500, later)
+                return
             from . import discord, hud
+            before = len(shims.PLAYER_LISTENERS)
             keep.append(winshell.install(app, fire, tray_.t, make_icon()))
             keep.append(hud.install(engine, engine.rootObjects()[0]))
             keep.append(discord.install())
+            # The long poll only speaks on a change: give the late listeners
+            # what is playing now (Discord's presence, the taskbar's buttons).
+            for listener in shims.PLAYER_LISTENERS[before:]:
+                try:
+                    listener(dict(shims.STATUS.get("player") or {}))
+                except Exception as e:
+                    say("listener:", e)
             say(f"shell integrations up at {since_start()}")
         QTimer.singleShot(1500, later)
 

@@ -504,6 +504,7 @@ class OrpheusPlayer(QObject):
 
     def update(self, p: dict):
         self._p, self._at = p or {}, time.monotonic()
+        STATUS["player"] = self._p
         if THEME:
             THEME[0].album.track_art(self._track().get("art") or "")
         self.changed.emit()
