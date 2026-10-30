@@ -240,7 +240,8 @@ FloatingWindow {
     { key: "5", label: "albums", page: { type: "collection", what: "albums", title: "albums" } },
     { key: "6", label: "tracks", page: { type: "collection", what: "tracks", title: "liked tracks" } },
     { key: "7", label: "artists", page: { type: "collection", what: "artists", title: "artists" } },
-    { key: "8", label: "video", page: { type: "video", title: "video" } }
+    { key: "8", label: "video", page: { type: "video", title: "video" } },
+    { key: ",", label: "settings", page: { type: "settings", title: "settings" } }
   ]
   property var page: navItems[0].page
   property var history: []
@@ -304,11 +305,15 @@ FloatingWindow {
   function showLyrics() {
     if (page.type !== "lyrics") go({ type: "lyrics", title: "lyrics" })
   }
+  function showSettings() {
+    if (page.type !== "settings") go({ type: "settings", title: "settings" })
+  }
   Connections {
     target: win.engine
     function onLoginRequestsChanged() { win.engine.loginHandled = win.engine.loginRequests; win.showLogin() }
     function onEqRequestsChanged() { win.engine.eqHandled = win.engine.eqRequests; win.showEq() }
     function onLyricsRequestsChanged() { win.engine.lyricsHandled = win.engine.lyricsRequests; win.showLyrics() }
+    function onSettingsRequestsChanged() { win.engine.settingsHandled = win.engine.settingsRequests; win.showSettings() }
   }
   Connections {
     target: win.api
@@ -337,6 +342,8 @@ FloatingWindow {
   }
 
   function load() {
+    // Settings need no TIDAL session and nothing loaded behind them.
+    if (page.type === "settings") { rows = []; loading = false; return }
     // The video section needs no TIDAL session: YouTube and ani-cli are not
     // TIDAL, and making someone sign in to watch something would be a lie.
     if (!api || (!api.signedIn && page.type !== "video")) return
@@ -520,6 +527,8 @@ FloatingWindow {
     if (t === "/") { go({ type: "search", title: "search" }); return true }
     if (t === "e") { go({ type: "eq", title: "equalizer" }); return true }
     if (t === "L") { go({ type: "lyrics", title: "lyrics" }); return true }
+    if (t === ",") { showSettings(); return true }
+    if (t === "?") { keysSheet.open(); return true }
     if (t >= "1" && t <= "8") { go(navItems[Number(t) - 1].page); return true }
     // On the video page the transport reaches the video window instead: it is
     // the thing you are looking at, and the music is paused behind it anyway.
@@ -594,9 +603,16 @@ FloatingWindow {
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.StyledText
-        text: Tui.hints([["q", "close"]], closeArea.containsMouse ? win.fg : win.accentText, win.dim)
+        text: Tui.hints([["^K", "commands"], ["?", "keys"], ["q", "close"]], closeArea.containsMouse ? win.fg : win.accentText, win.dim)
         font.family: win.family; font.pixelSize: Style.font.caption
-        MouseArea { id: closeArea; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: win.engine.libraryOpen = false }
+        MouseArea {
+          id: closeArea; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+          // the three hints are one line of text: split the clicks by where they land
+          onClicked: function(m) {
+            var f = m.x / width
+            if (f < 0.45) cmdPalette.open(); else if (f < 0.72) keysSheet.open(); else win.engine.libraryOpen = false
+          }
+        }
       }
     }
 
@@ -700,10 +716,11 @@ FloatingWindow {
                                                       : win.vprovider === "soundcloud" ? [["⇥", "provider"], ["⏎", "listen"]]
                                                       : [["⇥", "provider"], ["⏎", "watch"], ["a", "listen"], ["c", "curd"]],
                                        win.accentText, win.dim)
+             : win.page.type === "settings" ? Tui.hints([["⇥", "section"], ["h/l", "change"], ["⏎", "set"]], win.accentText, win.dim)
              : win.page.type === "search" ? Tui.hints([["/", "search"], ["⏎", "play"]], win.accentText, win.dim)
                                           : Tui.hints([["⏎", "open"], ["a", "queue"], ["f", "♥ like"], ["P", "play all"]], win.accentText, win.dim)
       footer: win.history.length ? "esc back" : ""
-      focused: list.activeFocus || searchInput.activeFocus
+      focused: list.activeFocus || searchInput.activeFocus || (settingsLoader.item && settingsLoader.item.activeFocus) || false
       clock: win.clock
 
       // Detail header: art + title + actions.
@@ -1039,6 +1056,7 @@ FloatingWindow {
       // Equalizer cover. Above the list, below the sign-in cover: there is
       // nothing to equalize if we are not signed in.
       Loader {
+        id: eqLoader
         anchors.fill: parent
         active: win.page.type === "eq"
         sourceComponent: EqPane { host: win }
@@ -1046,9 +1064,21 @@ FloatingWindow {
       }
 
       Loader {
+        id: lyricsLoader
         anchors.fill: parent
         active: win.page.type === "lyrics"
         sourceComponent: LyricsPane { host: win }
+        onLoaded: item.forceActiveFocus()
+      }
+
+      // Settings: above everything, the sign-in cover included, since nothing
+      // here needs TIDAL (quality just waits for the service).
+      Loader {
+        id: settingsLoader
+        anchors.fill: parent
+        z: 2
+        active: win.page.type === "settings"
+        sourceComponent: SettingsPane { host: win }
         onLoaded: item.forceActiveFocus()
       }
 
@@ -1056,8 +1086,8 @@ FloatingWindow {
       Loader {
         anchors.fill: parent
         // The video section is not TIDAL's, so it stays reachable signed out.
-        active: !win.api || !win.api.online || win.page.type === "login"
-             || (!win.api.signedIn && !win.videoPage)
+        active: (!win.api || !win.api.online || win.page.type === "login"
+             || (!win.api.signedIn && !win.videoPage)) && win.page.type !== "settings"
         sourceComponent: LoginPane { host: win }
       }
     }
@@ -1403,11 +1433,113 @@ FloatingWindow {
     }
   }
 
+  // ---- command palette, cheat sheet ---------------------------------------------
+  //
+  // Ctrl+K reaches every action by name; `?` lists every key. The palette's
+  // list is built here, where the actions live, and rebuilt on each open so a
+  // toggle offers the opposite of what it is now.
+  function commands() {
+    var c = [], e = engine, a = api
+    function add(group, label, key, run) { c.push({ group: group, label: label, key: key || "", run: run }) }
+    function onOff(v) { return v ? "turn off" : "turn on" }
+    if (a) {
+      add("playback", st.playing ? "pause" : "play", "space", function() { a.control("toggle") })
+      add("playback", "next track", "n", function() { a.control("next") })
+      add("playback", "previous track", "p", function() { a.control("previous") })
+      add("playback", "shuffle " + (st.shuffle ? "off" : "on"), "s", function() { a.control("shuffle") })
+      add("playback", "repeat: cycle (now " + (st.repeat || "off") + ")", "r", function() { a.control("repeat") })
+      add("playback", "volume up", "+", function() { a.control("volume", { volume: Math.min(100, (st.volume || 0) + 5) }) })
+      add("playback", "volume down", "-", function() { a.control("volume", { volume: Math.max(0, (st.volume || 0) - 5) }) })
+      if (track) add("playback", "like / unlike what is playing", "F", function() { a.toggleLike("track", track.id) })
+      if (pageTracks.length) {
+        add("playback", "play this page", "P", function() { playPage(false) })
+        add("playback", "shuffle this page", "S", function() { playPage(true) })
+      }
+      add("share", "copy link", "y", function() { share(false) })
+      add("share", "copy universal link", "Y", function() { share(true) })
+    }
+    for (var n = 0; n < navItems.length; n++)
+      (function(it) { add("go", it.label, it.key, function() { go(it.page) }) })(navItems[n])
+    add("go", "equalizer", "e", showEq)
+    add("go", "lyrics", "L", showLyrics)
+    add("go", "sign in", "", showLogin)
+    add("go", "keys cheat sheet", "?", function() { keysSheet.open() })
+    add("go", "close the player", "q", function() { e.libraryOpen = false })
+    if (e) {
+      add("visualizer", (e.open ? "close" : "open") + " the visualizer", "V", function() { e.open = !e.open })
+      add("visualizer", "next style", "", function() { e.nextStyle(1) })
+      for (var i = 0; i < e.styles.length; i++)
+        (function(s) {
+          add("visualizer", "style · " + e.styleLabels[s] + (e.style === s ? "  (now)" : ""), "", function() { e.setStyle(s) })
+          add("rail", "player rail · " + e.styleLabels[s] + (e.railViz === s ? "  (now)" : ""), "", function() { e.setRailViz(s) })
+        })(e.styles[i])
+      add("rail", "player rail · album art" + (e.railViz === "off" ? "  (now)" : ""), "", function() { e.setRailViz("off") })
+      add("rail", "player rail · next", "v", function() { e.cycleRailViz(1) })
+      var fpsList = [30, 60, 120]
+      for (var f = 0; f < fpsList.length; f++)
+        (function(v) { add("visualizer", "frame rate · " + v + " fps" + (e.fps === v ? "  (now)" : ""), "", function() { e.updateConfig(function(cf) { cf.fps = v }) }) })(fpsList[f])
+      add("visualizer", "widget follows the visualizer · " + onOff(e.syncViz), "", function() { var v = !e.syncViz; e.updateConfig(function(cf) { cf.syncViz = v }) })
+      var w = e.widget
+      add("widget", (w.enabled !== false ? "hide" : "show") + " the widget", "", function() { e.setWidget("enabled", "toggle") })
+      add("widget", "widget style · " + (w.style === "full" ? "compact" : "full"), "", function() { e.setWidget("style", w.style === "full" ? "compact" : "full") })
+      var corners = ["top-left", "top-right", "bottom-left", "bottom-right"]
+      for (var k = 0; k < corners.length; k++)
+        (function(cn) { add("widget", "widget corner · " + cn + (w.corner === cn ? "  (now)" : ""), "", function() { e.setWidget("corner", cn) }) })(corners[k])
+      add("widget", "mini player · " + onOff(e.miniPlayer), "", function() { e.setMiniPlayer(e.miniPlayer ? "off" : "on") })
+      add("show", "wallpaper mode · " + onOff(e.placement === "desktop"), "", function() { e.setPlacement(e.placement === "desktop" ? "overlay" : "desktop") })
+      var flags = [["autoStyle", "switch styles on drops"], ["trackTitle", "track title fades in"],
+                   ["lyricsOverViz", "lyrics over the visualizer"], ["autoQuality", "lower resolution when fps drops"]]
+      for (var g = 0; g < flags.length; g++)
+        (function(fl) {
+          var on = e.config[fl[0]] === true
+          add("show", fl[1] + " · " + onOff(on), "", function() { e.updateConfig(function(cf) { cf[fl[0]] = !on }) })
+        })(flags[g])
+    }
+    if (a) {
+      var qs = [["high", "320k"], ["lossless", "lossless"], ["hires", "hi-res"]]
+      for (var q = 0; q < qs.length; q++)
+        (function(x) {
+          add("quality", x[1] + (a.status && a.status.quality === x[0] ? "  (now)" : ""), "", function() {
+            if (x[0] === "hires" && !(a.login && a.login.hires)) go({ type: "login", title: "sign in", hires: true })
+            else a.post("/quality", { quality: x[0] })
+          })
+        })(qs[q])
+      add("equalizer", "equalizer · " + (eqActive ? "bypass" : "turn on"), "", function() { a.post("/eq", { enabled: !eqActive }, function() {}) })
+    }
+    if (typeof Color.themeList !== "undefined" && Color.themeList) {
+      add("theme", "theme builder…", "", function() { Color.openBuilder() })
+      add("theme", "next theme", "", function() { Color.cycle(1) })
+      var tl = Color.themeList
+      for (var t = 0; t < tl.length; t++)
+        (function(th) { add("theme", th.label + (Color.name === th.name ? "  (now)" : ""), "", function() { Color.setTheme(th.name); say("theme ╱╱ " + th.label) }) })(tl[t])
+    }
+    add("settings", "settings", ",", showSettings)
+    if (typeof OrpheusKeys !== "undefined" && OrpheusKeys.windows)
+      add("settings", "start with Windows · " + onOff(OrpheusKeys.startWithWindows), "", function() { OrpheusKeys.setStartWithWindows(!OrpheusKeys.startWithWindows) })
+    return c
+  }
+
+  // Where the keys go once an overlay closes: the pane on screen, else the list.
+  function refocus() {
+    var l = page.type === "settings" ? settingsLoader : page.type === "eq" ? eqLoader : page.type === "lyrics" ? lyricsLoader : null
+    if (l && l.item) l.item.forceActiveFocus()
+    else list.forceActiveFocus()
+  }
+
+  Shortcut {
+    sequences: ["Ctrl+K"]
+    onActivated: cmdPalette.shown ? cmdPalette.close() : cmdPalette.open()
+  }
+
+  CommandPalette { id: cmdPalette; host: win }
+  KeysSheet { id: keysSheet; host: win }
+
   Component.onCompleted: {
     list.forceActiveFocus()
     if (engine && engine.loginRequests > 0 && engine.loginRequests !== engine.loginHandled) { engine.loginHandled = engine.loginRequests; showLogin() }
     else if (engine && engine.eqRequests > 0 && engine.eqRequests !== engine.eqHandled) { engine.eqHandled = engine.eqRequests; load(); showEq() }
     else if (engine && engine.lyricsRequests > 0 && engine.lyricsRequests !== engine.lyricsHandled) { engine.lyricsHandled = engine.lyricsRequests; load(); showLyrics() }
+    else if (engine && engine.settingsRequests > 0 && engine.settingsRequests !== engine.settingsHandled) { engine.settingsHandled = engine.settingsRequests; load(); showSettings() }
     else load()
   }
 }
