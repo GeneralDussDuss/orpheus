@@ -27,8 +27,12 @@ Item {
   property int quality: 2
 
   readonly property int div: quality >= 2 ? 4 : 8
-  readonly property real strength: intensity * (1.0 + 1.5 * swell + 1.1 * kick)
-  readonly property real threshold: 0.48 - 0.12 * swell - 0.05 * kick
+  // The kick's flare is compressed (1 - e^-x) so a hard hit adds about half what
+  // the raw value used to, and it no longer drags the threshold down: the
+  // composite rolls highlights off (bloom_mix.frag) instead of clipping them.
+  readonly property real kickFlare: 0.55 * (1.0 - Math.exp(-2.4 * Math.max(0, kick)))
+  readonly property real strength: intensity * (1.0 + 1.5 * swell + kickFlare)
+  readonly property real threshold: 0.48 - 0.12 * swell
   readonly property real knee: 0.22
 
   function px(d) {

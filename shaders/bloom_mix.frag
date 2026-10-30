@@ -31,6 +31,16 @@ void main() {
     }
     vec3 add = 1.0 - exp(-b * strength);
     vec3 rgb = c.rgb + add * (1.0 - c.rgb);                  // screen
+    // Highlight roll-off: the light bloom adds may approach, never reach, white.
+    // Per channel, above `soft` the screened value decays exponentially towards
+    // `ceil_` (below it, untouched); a channel the source already drove past that
+    // keeps its own value. Because the bloom lift is what gets compressed, a
+    // saturated pixel stays tinted instead of washing to white.
+    const float ceil_ = 0.93;
+    const float soft = 0.8;
+    vec3 over = max(rgb - soft, 0.0);
+    vec3 rolled = min(rgb, vec3(soft)) + (ceil_ - soft) * (1.0 - exp(-over / (ceil_ - soft)));
+    rgb = max(rolled, c.rgb);
     float a = clamp(c.a + max(add.r, max(add.g, add.b)) * 0.6 * (1.0 - c.a), 0.0, 1.0);
     fragColor = vec4(rgb, a) * qt_Opacity;
 }
