@@ -36,6 +36,7 @@ Item {
   readonly property bool playing: !!(player && player.isPlaying)
   readonly property real beat: engine && playing ? Math.max(0, Math.min(1, engine.beat || 0)) : 0
   readonly property real breath: clk >= 0 ? 0.5 + 0.5 * Math.sin(clk * 1.6) : 1
+  readonly property real bloom: Tui.bloom(engine)
   readonly property string title: player ? (player.trackTitle || "unknown track") : "nothing playing"
 
   // The title decodes in whenever the track changes.
@@ -138,7 +139,7 @@ Item {
           { glyph: root.player && root.player.isPlaying ? "󰏤" : "󰐊", action: "toggle" },
           { glyph: "󰒭", action: "next" }
         ]
-        Text {
+        GlowText {
           required property var modelData
           text: modelData.glyph
           font.family: Style.font.family
@@ -148,6 +149,9 @@ Item {
           color: hover.containsMouse ? root.accentText
                  : (isPlay && root.playing ? Tui.mix(root.fg, root.accentText, 0.45 + 0.55 * root.beat) : root.fg)
           Behavior on color { ColorAnimation { duration: 120 } }
+          // ... and its halo pulses with the same beat.
+          glowLive: isPlay && root.playing && root.bloom > 0
+          glow: glowLive ? root.bloom * (0.3 + 0.7 * root.beat) : 0
           opacity: root.player ? 1 : 0.4
           MouseArea {
             id: hover

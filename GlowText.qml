@@ -14,7 +14,7 @@ Text {
   id: t
 
   property real glow: 0
-  property color glowColor: Color.accent
+  property color glowColor: Color.accent || "transparent"   // (undefined while the app tears down)
   property int glowRadius: 10            // px; fixed per instance (changing it recompiles the blur)
   property bool glowLive: glow > 0.002
 

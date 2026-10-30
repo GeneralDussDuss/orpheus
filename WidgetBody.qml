@@ -35,6 +35,11 @@ TuiBox {
   onPlayerChanged: { mprisBase = 0; mprisAt = Date.now(); mprisPos = 0 }
   readonly property color fg: Tui.ensure(Color.foreground, Color.background, 7)
   readonly property color dim: Tui.muted(Color.foreground, Color.background, 4.5)
+  // Glow on the accents only: the play key on the beat, a faint halo on the
+  // seek line and a liked heart.
+  readonly property real bloom: Tui.bloom(engine)
+  readonly property bool playing: !!(player && player.isPlaying)
+  readonly property real beat: engine && playing ? Math.max(0, Math.min(1, engine.beat || 0)) : 0
 
   function clock(s) {
     s = Math.max(0, Math.floor(s || 0))
@@ -117,9 +122,11 @@ TuiBox {
           text: box.player ? (box.player.trackArtist || "") : "super+shift+m to pick something"
           font.family: Style.font.family; font.pixelSize: Style.font.body; color: box.dim
         }
-        Text {
+        GlowText {
           id: seek
           width: parent.width
+          glow: box.player ? box.bloom * 0.35 : 0
+          glowRadius: 6
           readonly property int cells: Math.max(6, Math.floor(width / box.cw) - 12)
           text: Tui.meter(box.position / Math.max(1, box.length), cells, "━", "─", "●") + " " + box.clock(box.position)
           font.family: Style.font.family; font.pixelSize: Style.font.caption; color: Color.accent
@@ -142,11 +149,15 @@ TuiBox {
               { g: box.liked ? "󰋑" : "󰋕", a: "like" },
               { g: "󰺢", a: "stage" }
             ]
-            Text {
+            GlowText {
               required property var modelData
+              readonly property bool isPlay: modelData.a === "toggle"
               text: modelData.g
               font.family: Style.font.family; font.pixelSize: Style.font.body + 3
-              color: (modelData.a === "like" && box.liked) || cm.containsMouse ? Color.accent : box.fg
+              color: (modelData.a === "like" && box.liked) || cm.containsMouse ? Color.accent
+                     : isPlay && box.playing ? Tui.mix(box.fg, Color.accent, 0.45 + 0.55 * box.beat) : box.fg
+              glowLive: box.bloom > 0 && ((isPlay && box.playing) || (modelData.a === "like" && box.liked))
+              glow: !glowLive ? 0 : isPlay ? box.bloom * (0.3 + 0.7 * box.beat) : box.bloom * 0.4
               visible: modelData.a !== "like" || box.orpheusTrack !== null
               MouseArea {
                 id: cm
