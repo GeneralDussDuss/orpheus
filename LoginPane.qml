@@ -95,10 +95,20 @@ Rectangle {
     Column {
       visible: !pane.api || !pane.api.online
       spacing: host.ch * 0.3
-      Text { text: "the player service isn't running"; font.family: host.family; font.pixelSize: Style.font.body; color: host.fg }
-      // On Windows orpheus-desktop starts the daemon itself, so a restart of the app is the fix.
-      Text { text: Qt.platform.os === "windows" ? "❯ quit Orpheus from the tray and open it again"
-                                               : "❯ systemctl --user start orpheusd"; font.family: host.family; font.pixelSize: Style.font.body; color: host.dim }
+      Text {
+        text: pane.api && pane.api.connecting ? "starting the player service…"
+              : pane.api && pane.api.reconnecting ? "lost the player service, reconnecting…"
+              : "the player service isn't running"
+        font.family: host.family; font.pixelSize: Style.font.body; color: host.fg
+      }
+      // On Windows the app restarts the daemon itself, so there is nothing to tell
+      // the user to do unless that has given up (connecting stops after 12 tries).
+      Text {
+        visible: Qt.platform.os !== "windows" || !(pane.api && (pane.api.connecting || pane.api.reconnecting))
+        text: Qt.platform.os === "windows" ? "❯ quit Orpheus from the tray and open it again"
+                                           : "❯ systemctl --user start orpheusd"
+        font.family: host.family; font.pixelSize: Style.font.body; color: host.dim
+      }
       // it is already trying again on its own; say so, so the page isn't a dead end
       Text {
         topPadding: host.ch * 0.4
