@@ -13,8 +13,10 @@ Two signals, polled every two seconds:
 While it is on, the widget is hidden (a runtime override, nothing is written to
 config.json), toasts are skipped, the stage steps back (it is a topmost window)
 and nothing of ours takes focus; the in-game HUD (hud.py) is the one thing that
-may show, and it never activates. It turns on at once and off only after two
-quiet polls, so an alt-tab blip does not bring everything back.
+may show, and it never activates. It turns on at once and off only once the
+condition has been false for HOLD_S seconds of wall-clock time (not a poll count),
+so alt-tab, a Steam/Discord overlay, a loading screen or a toast taking the
+foreground does not bring everything back.
 
 config.json `gameMode`: "auto" (default) or "off".
 """
@@ -24,6 +26,7 @@ import ctypes
 import json
 import os
 import sys
+import time
 from ctypes import wintypes
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -209,35 +212,43 @@ class Detector:
     `listeners` are called with (active: bool) on every change. Plain Python so
     it can be driven by a test; GameMode below puts it on a QTimer."""
 
-    OFF_AFTER = 2          # quiet polls before game mode ends
+    HOLD_S = 8.0           # seconds the condition must stay false before game mode ends
 
-    def __init__(self, api=None, own_pid: int | None = None, config=setting):
+    def __init__(self, api=None, own_pid: int | None = None, config=setting, clock=time.monotonic):
         self.api = api if api is not None else (Win32() if WINDOWS else None)
         self.own_pid = os.getpid() if own_pid is None else own_pid
         self.config = config
+        self.clock = clock
         self.active = False
         self.verdict = Verdict(False)
         self.last_monitor: tuple = (0, 0, 0, 0)
-        self._quiet = 0
+        self._off_since: float | None = None    # when the current run of "no game" began
         self.listeners: list = []
 
     def poll(self) -> bool:
         if self.api is None or self.config() == "off":
-            v = Verdict(False, "off in config" if self.api is not None else "")
-        else:
-            try:
-                v = assess(self.api, self.own_pid)
-            except OSError as e:          # a window that vanished mid-question
-                v = Verdict(self.active, f"probe failed: {e}")
+            self.verdict = Verdict(False, "off in config" if self.api is not None else "")
+            self._off_since = None
+            self._set(False)               # the user's switch is not subject to the hold
+            return self.active
+        try:
+            v = assess(self.api, self.own_pid)
+        except Exception as e:             # a window that vanished mid-question, a ctypes hiccup:
+            # no information, so change nothing (and do not let it start the off clock).
+            self.verdict = Verdict(self.active, f"probe failed: {e}")
+            return self.active
         self.verdict = v
         if v.active:
-            self._quiet = 0
+            self._off_since = None
             if v.monitor[2] > v.monitor[0]:
                 self.last_monitor = v.monitor
             self._set(True)
-        else:
-            self._quiet += 1
-            if self._quiet >= self.OFF_AFTER or v.reason == "off in config":
+        elif self.active:
+            now = self.clock()
+            if self._off_since is None:
+                self._off_since = now
+            if now - self._off_since >= self.HOLD_S:
+                self._off_since = None
                 self._set(False)
         return self.active
 
