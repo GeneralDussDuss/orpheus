@@ -356,6 +356,14 @@ Item {
   // Seconds since each of the last three kicks (newest first, capped at 8),
   // w = the newest kick's strength. Refreshed every clock tick.
   property vector4d kickAge: Qt.vector4d(8, 8, 8, 0)
+  // ---- Director outputs (beat grid + structure; see the Director section) ----
+  property real beatPhase: 0       // 0..1 within the beat, 0 = on the beat (lookahead-compensated)
+  property real barPhase: 0        // 0..1 within the 4-beat bar, 0 = downbeat
+  property real downbeat: 0        // 0..1 pulse on beat 1
+  property real beatConfidence: 0  // 0..1
+  property real build: 0           // 0..1 build-up tension
+  property real drop: 0            // 0..1 pulse when a build resolves
+  property int sectionCode: 4      // 0 intro, 1 build, 2 drop, 3 breakdown, 4 steady
 
   // Onset strength 0..1 of `f` against its running average and peak.
   function onsetOf(f, avg, pk) {

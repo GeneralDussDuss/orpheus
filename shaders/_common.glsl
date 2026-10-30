@@ -29,6 +29,15 @@ layout(std140, binding = 0) uniform buf {
     vec4 kickAge;    // seconds since each of the last three kicks, newest first (x, y, z), capped
                      // at 8.0; w = strength (0..1) of the newest. Lets kick effects layer.
     float bloomAmt;  // 0 = no post bloom over this view, 0.6 subtle, 1.0 full (Viz.qml / Bloom.qml)
+    // ---- the director (Service.qml): beat grid and song structure ----
+    float beatPhase;      // 0..1 position inside the current beat, 0 = ON the beat. Predicted
+                          // (lookahead-compensated), so effects keyed to it land with the music
+    float barPhase;       // 0..1 position inside the 4-beat bar, 0 = the downbeat
+    float downbeat;       // 0..1 pulse on beat 1 of each bar: 1 at the downbeat, ~0.25 s release
+    float beatConfidence; // 0..1 how sure the beat grid is; fade phase-driven effects by it
+    float build;          // 0..1 tension of a build-up (rising energy and hats, sub-bass gone)
+    float drop;           // 0..1 pulse when a build resolves on a downbeat: 1 at the drop, ~1.5 s release
+    float section;        // 0 intro, 1 build, 2 drop, 3 breakdown, 4 steady (whole numbers)
 };
 
 // 32 cava bands packed as 8 vec4s; band(x) samples them smoothly over 0..1.

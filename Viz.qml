@@ -89,6 +89,15 @@ ShaderEffect {
   property vector4d kickAge: engine ? engine.kickAge : Qt.vector4d(8, 8, 8, 0)
   // How much real bloom sits over this view: the shaders dial their own halos down by it.
   property real bloomAmt: bloomOn ? bloomIntensity : 0
+  // The director's beat grid and song structure (see _common.glsl). Defaults
+  // read as "no grid, no structure": phase 0, nothing confident, steady.
+  property real beatPhase: engine ? engine.beatPhase : 0
+  property real barPhase: engine ? engine.barPhase : 0
+  property real downbeat: engine ? engine.downbeat : 0
+  property real beatConfidence: engine ? engine.beatConfidence : 0
+  property real build: engine ? engine.build : 0
+  property real drop: engine ? engine.drop : 0
+  property real section: engine ? engine.sectionCode : 4
 
   // Spectrum history for Prism, Horizon, Scope and Skyline, kept on the GPU: histFx renders a 32x40 target
   // from its own previous frame (rows shift back one step, row 0 = now).
