@@ -119,7 +119,7 @@ class App:
 
     async def wait_change(self, since: int, timeout: float = 25):
         """Wait until the state moves past `since`, or `timeout` passes."""
-        if since != self.version:
+        if since != self.version or self.stop.is_set():
             return
         fut = asyncio.get_running_loop().create_future()
         self._waiters.append(fut)
@@ -829,6 +829,13 @@ async def serve(port: int):
 
 
 async def shutdown(app, runner):
+    # Answer the long polls now: runner.cleanup() would otherwise wait out
+    # their 25 s before the process could end.
+    app.stop.set()
+    waiters, app._waiters = app._waiters, []
+    for w in waiters:
+        if not w.done():
+            w.set_result(True)
     await app.video.close()
     try:
         app.tracker.finish(app.player.crossfade)
