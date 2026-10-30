@@ -15,6 +15,8 @@ import time
 from collections import OrderedDict
 from pathlib import Path
 
+from urllib.parse import urlsplit
+
 from aiohttp import web
 
 from .anime import PLAYER as ANI_PLAYER, Anime, AnimeError
@@ -818,10 +820,43 @@ class App:
                 raise web.HTTPNotFound(text=f"unknown action {a}")
             return J(self.status())
 
-        app = web.Application()
+        app = web.Application(middlewares=[guard_middleware])
         app.add_routes(r)
         self.remote.add_routes(app)   # /remote and /remote/api, token-gated
         return app
+
+
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
+
+
+def _loopback_host(hostport: str) -> bool:
+    """True for 127.0.0.1 / localhost / [::1] with an optional :port."""
+    h = hostport.strip().lower()
+    if h.startswith("["):
+        h = h.split("]", 1)[0] + "]"
+    else:
+        h = h.rsplit(":", 1)[0] if h.count(":") == 1 else h
+    return h in _LOOPBACK_HOSTS
+
+
+@web.middleware
+async def guard_middleware(req: web.Request, handler):
+    """Refuse DNS-rebinding and cross-site (CSRF) requests to the loopback API.
+    Native clients (Qt, curl) send no Origin or Sec-Fetch-Site and pass."""
+    if not _loopback_host(req.headers.get("Host", "")):
+        raise web.HTTPForbidden(text="bad host")
+    if req.headers.get("Sec-Fetch-Site", "").lower() in ("cross-site", "same-site"):
+        raise web.HTTPForbidden(text="cross-site request refused")
+    origin = req.headers.get("Origin")
+    if origin is not None and origin.strip().lower() != "null":
+        try:
+            u = urlsplit(origin.strip())
+            ok = u.scheme in ("http", "https") and _loopback_host(u.netloc)
+        except ValueError:
+            ok = False
+        if not ok:
+            raise web.HTTPForbidden(text="bad origin")
+    return await handler(req)
 
 
 async def serve(port: int):
