@@ -236,7 +236,7 @@ Item {
   // "Can we hear the music": cava installed, or audiocap standing in for it.
   readonly property bool hasCava: cavaFound || useAudiocap
   readonly property bool listening: hasCava && wanted && playing
-  onUseAudiocapChanged: if (cava.running) { cava.running = false; cavaRestart.restart() }
+  onUseAudiocapChanged: if (cava.running) restartCava()
 
   Process {
     id: cavaCheck
@@ -251,8 +251,14 @@ Item {
 
   // Small visualizers (bar, widget) get 30 Hz; the big stage gets the full rate.
   readonly property int audioFps: open ? fps : 30
-  onAudioFpsChanged: if (cava.running) { cavaConfigFile.setText(cavaConfig()); cava.running = false; cavaRestart.restart() }
-  Timer { id: cavaRestart; interval: 50; onTriggered: if (root.listening) cava.running = true }
+  onAudioFpsChanged: if (cava.running) { cavaConfigFile.setText(cavaConfig()); restartCava() }
+  // A restart (new rate, new source, a crash) is a 50 ms dip in this flag.
+  // Writing cava.running instead broke its `running: root.listening` binding,
+  // and from then on cava/audiocap ran on through pause and with every
+  // window closed.
+  property bool cavaHeld: false
+  function restartCava() { cavaHeld = true; cavaRestart.restart() }
+  Timer { id: cavaRestart; interval: 50; onTriggered: root.cavaHeld = false }
 
   function cavaConfig() {
     return "[general]\nbars = 32\nframerate = " + audioFps + "\nautosens = 1\n\n"
@@ -313,7 +319,7 @@ Item {
 
   onSinkMonitorChanged: {
     cavaConfigFile.setText(cavaConfig())
-    if (cava.running) { cava.running = false; cavaRestart.restart() }
+    if (cava.running) restartCava()
   }
 
   FileView { id: cavaConfigFile; path: root.cavaConfigPath; printErrors: false }
@@ -321,7 +327,7 @@ Item {
   property real audioStartedMs: 0
   Process {
     id: cava
-    running: root.listening
+    running: root.listening && !root.cavaHeld
     command: root.useAudiocap
              ? [root.audiocapPython, "-m", "orpheusd.desktop.audiocap", "--fps", String(root.audioFps), "--bars", "32",
                 "--noise-reduction", "70"]
@@ -336,7 +342,7 @@ Item {
         console.warn("orpheus: audiocap exited with", code, "- falling back to cava")
         // Later, not now: a command that never started lands here from inside
         // the `running` binding, and flipping the source there loops it.
-        Qt.callLater(function() { root.audiocapFailed = true; cavaRestart.restart() })
+        Qt.callLater(function() { root.audiocapFailed = true; root.restartCava() })
       } else {
         console.warn("orpheus: " + (root.useAudiocap ? "audiocap" : "cava") + " exited with", code)
       }
@@ -348,7 +354,7 @@ Item {
     interval: 2000
     repeat: true
     running: root.listening && !!cava && !cava.running   // cava can be gone first at teardown
-    onTriggered: { cavaConfigFile.setText(root.cavaConfig()); cava.running = true }
+    onTriggered: { cavaConfigFile.setText(root.cavaConfig()); root.restartCava() }
   }
   onFpsChanged: if (configFile.loaded) cavaConfigFile.setText(cavaConfig())
 
