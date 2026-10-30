@@ -109,12 +109,14 @@ there is no console, so everything goes there.
   application:
   1. <https://discord.com/developers/applications>, then **New Application**, and name
      it **Orpheus**, since Discord shows that name.
-  2. Copy the **Application ID** into `config.json`: `"discordClientId": "1234..."`.
+  2. Paste the **Application ID** into settings ▸ integrations ▸ discord application id
+     (it is `"discordClientId": "1234..."` in `config.json`).
      Empty or missing means off.
   3. Optional: under **Rich Presence -> Art Assets**, upload Orpheus's icon with the key
      `orpheus` (`python -m orpheusd.desktop --write-icon orpheus.png` writes it at 1024
      px). It becomes the small badge on the cover.
-  The settings page's *gaming* section shows what game mode sees and Discord's state.
+  Settings ▸ behaviour ▸ gaming shows what game mode sees; settings ▸ integrations shows
+  Discord's state.
 
 ## Gotchas already paid for
 
