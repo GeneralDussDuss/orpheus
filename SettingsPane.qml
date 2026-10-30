@@ -38,6 +38,7 @@ Rectangle {
     { id: "show", label: "show mode" },
     { id: "hotkeys", label: "hotkeys" }
   ].concat(hasGame ? [{ id: "gaming", label: "gaming" }] : []).concat([
+    { id: "listening", label: "listening" },
     { id: "system", label: "system" }
   ])
   property int section: 0
@@ -103,6 +104,32 @@ Rectangle {
       r.push({ kind: "choice", id: "hudCorner", label: "HUD corner", options: ["top-left", "top-right", "bottom-left", "bottom-right"] })
       r.push({ kind: "action", id: "hudShow", label: "show the HUD now", hint: "the hud:show hotkey does this in game" })
       r.push({ kind: "note", label: "discord: " + OrpheusGame.discord })
+    } else if (id === "listening") {
+      // Playback keys the daemon reads from config.json, and what it reports
+      // about the phone remote and scrobbling (refreshed while this is open).
+      r.push({ kind: "toggle", id: "endless", label: "endless play", hint: "radio when the queue ends" })
+      r.push({ kind: "choice", id: "crossfade", label: "crossfade", options: [0, 2, 4, 6, 8, 10, 12], hint: "never within an album" })
+      r.push({ kind: "choice", id: "sleep", label: "sleep timer", options: ["off", 15, 30, 60, "end"] })
+      r.push({ kind: "header", label: "phone remote" })
+      r.push({ kind: "choice", id: "remote", label: "phone remote", options: ["off", "lan"] })
+      if (pair.listening && pair.qr && pair.qr.length) {
+        r.push({ kind: "qr", label: pair.url, rows: pair.qr })
+        r.push({ kind: "action", id: "remoteReset", label: "new pairing code", hint: "unpairs every phone" })
+      } else if (value({ id: "remote" }) === "lan") {
+        r.push({ kind: "note", label: pair.error || "starting the listener…" })
+      } else {
+        r.push({ kind: "note", label: "a page for your phone on this network · every request needs the pairing code" })
+      }
+      r.push({ kind: "header", label: "scrobbling" })
+      var lb = scrobble.listenbrainz || {}, lf = scrobble.lastfm || {}
+      r.push({ kind: "action", id: "listenbrainz", label: "listenbrainz",
+               hint: lb.enabled ? "● " + (lb.user || "token set") + (lb.pending ? " · " + lb.pending + " queued" : "") + (lb.error ? " · " + lb.error : "")
+                                : "○ off · listenbrainzToken in config.json" })
+      if (!lf.configured) r.push({ kind: "action", id: "openConfig", label: "last.fm", hint: "○ off · lastfmKey + lastfmSecret in config.json" })
+      else if (lf.enabled) r.push({ kind: "action", id: "lastfmDisconnect", label: "last.fm",
+                                    hint: "● " + lf.user + (lf.pending ? " · " + lf.pending + " queued" : "") + (lf.error ? " · " + lf.error : "") + " · ⏎ disconnect" })
+      else if (lf.authorising) r.push({ kind: "action", id: "lastfmFinish", label: "last.fm", hint: "approved in the browser? ⏎ finish" })
+      else r.push({ kind: "action", id: "lastfmConnect", label: "last.fm", hint: "⏎ connect · opens the browser" })
     } else if (id === "system") {
       r.push({ kind: "choice", id: "quality", label: "streaming quality", options: ["high", "lossless", "hires"] })
       if (hasKeys && keys.windows) r.push({ kind: "toggle", id: "startWithWindows", label: "start with Windows" })
@@ -110,7 +137,19 @@ Rectangle {
     }
     return r
   }
-  function selectable(r) { return r && r.kind !== "header" && r.kind !== "note" }
+  function selectable(r) { return r && r.kind !== "header" && r.kind !== "note" && r.kind !== "qr" }
+
+  // ---- listening: what the daemon says about the remote and scrobbling ------
+  property var pair: ({})
+  property var scrobble: ({})
+  readonly property bool onListening: sections[section] && sections[section].id === "listening"
+  function refreshListening() {
+    if (!api || !onListening) return
+    api.get("/remote/pair", function(ok, d) { if (ok && d && typeof d === "object") pane.pair = d })
+    api.get("/scrobble", function(ok, d) { if (ok && d && typeof d === "object") pane.scrobble = d })
+  }
+  Timer { interval: 3000; repeat: true; triggeredOnStart: true; running: pane.visible && pane.onListening; onTriggered: pane.refreshListening() }
+  readonly property var sleepState: (api && api.status && api.status.listening && api.status.listening.sleep) || ({ active: false })
 
   onRowsChanged: if (!selectable(rows[cursor])) cursor = firstRow()
   onSectionChanged: { cursor = firstRow(); editing = "" }
@@ -125,7 +164,7 @@ Rectangle {
   }
 
   // ---- values --------------------------------------------------------------
-  readonly property var defaultsOn: ({ syncViz: true, miniPlayer: true })
+  readonly property var defaultsOn: ({ syncViz: true, miniPlayer: true, endless: true })
   function value(r) {
     if (!r || !engine) return undefined
     var c = cfg
@@ -144,6 +183,9 @@ Rectangle {
     case "showMonitor": return c.showMonitor || ""
     case "quality": return api && api.status ? api.status.quality : ""
     case "startWithWindows": return keys ? keys.startWithWindows : false
+    case "crossfade": return Number(c.crossfade) || 0
+    case "remote": return c.remote === "lan" ? "lan" : "off"
+    case "sleep": return !sleepState.active ? "off" : sleepState.endOfTrack ? "end" : Math.ceil((sleepState.remaining || 0) / 60)
     case "gameMode": return c.gameMode === "off" || c.gameMode === false ? "off" : "auto"
     case "hud": return c.hud === "off" || c.hud === false ? "off" : "on"
     case "hudCorner": return ["top-left", "top-right", "bottom-left", "bottom-right"].indexOf(c.hudCorner) >= 0 ? c.hudCorner : "top-left"
@@ -161,6 +203,9 @@ Rectangle {
     if (r.id === "placement") return ({ desktop: "wallpaper", fullscreen: "fullscreen show", overlay: "window on top" })[v] || v
     if (r.id === "showMonitor") return v || "the current one"
     if (r.id === "quality") return ({ high: "320k", lossless: "lossless", hires: "hi-res" })[v] || "unknown"
+    if (r.id === "crossfade") return v ? v + " s" : "off · gapless"
+    if (r.id === "remote") return v === "lan" ? "on · this network" : "off"
+    if (r.id === "sleep") return v === "off" ? "off" : v === "end" ? "☾ at the end of this track" : "☾ " + v + " min left"
     return String(v === undefined ? "" : v)
   }
 
@@ -181,6 +226,9 @@ Rectangle {
     case "showMonitor": if (engine.setShowMonitor) { engine.setShowMonitor(v); return } break
     case "miniPlayer": engine.setMiniPlayer(v ? "on" : "off"); return
     case "startWithWindows": if (keys) keys.setStartWithWindows(!!v); return
+    case "sleep":
+      if (api) api.post("/sleep", v === "off" ? { cancel: true } : v === "end" ? { endOfTrack: true } : { minutes: v })
+      return
     case "quality":
       if (v === "hires" && api && api.login && !api.login.hires) { host.go({ type: "login", title: "sign in", hires: true }); return }
       if (api) api.post("/quality", { quality: v })
@@ -208,6 +256,20 @@ Rectangle {
     if (r.kind === "hotkey") { startEdit(r); return }
     if (r.id === "builder") { Color.openBuilder(); return }
     if (r.id === "hudShow") { OrpheusGame.showHud(); host.say("HUD ╱╱ shown on the screen in front"); return }
+    if (r.id === "listenbrainz") { Qt.openUrlExternally("file:///" + String(engine.configPath).replace(/\\/g, "/").replace(/^\/+/, "")); return }
+    if (r.id === "remoteReset") { api.post("/remote/pair/reset", {}, function(ok, d) { if (ok && d) pane.pair = d; host.say(ok ? "new pairing code · scan it again" : "couldn't reset the code") }); return }
+    if (r.id === "lastfmConnect")
+      return api.post("/lastfm/auth/start", {}, function(ok, d) {
+        if (ok && d && d.url) { Qt.openUrlExternally(d.url); host.say("approve Orpheus on last.fm, then ⏎ finish here") }
+        else host.say("last.fm · " + host.errText(d, "couldn't start the sign-in"))
+        pane.refreshListening()
+      })
+    if (r.id === "lastfmFinish")
+      return api.post("/lastfm/auth/finish", {}, function(ok, d) {
+        host.say(ok && d ? "last.fm ╱╱ scrobbling as " + d.user : "last.fm · " + host.errText(d, "not approved yet"))
+        pane.refreshListening()
+      })
+    if (r.id === "lastfmDisconnect") { api.post("/lastfm/disconnect", {}, function() { pane.refreshListening() }); host.say("last.fm disconnected"); return }
     if (r.id === "openConfig") { Qt.openUrlExternally("file:///" + String(engine.configPath).replace(/\\/g, "/").replace(/^\/+/, "")); return }
     if (r.id === "hotkeysReset") { engine.updateConfig(function(c) { delete c.hotkeys }); host.say("hotkeys back to defaults"); return }
   }
@@ -372,7 +434,54 @@ Rectangle {
       }
       property alias editor: edit
       width: ListView.view.width
-      height: pane.ch * (r.kind === "header" ? 1.7 : 1.3) + (misses ? pane.ch * 1.1 : 0)
+      height: r.kind === "qr" ? qrCode.height + pane.ch * 0.8
+            : pane.ch * (r.kind === "header" ? 1.7 : 1.3) + (misses ? pane.ch * 1.1 : 0)
+
+      // The phone remote's pairing link as a QR code: dark on light with its
+      // quiet zone, whatever the theme, because that is what cameras read.
+      Canvas {
+        id: qrCode
+        visible: rowItem.r.kind === "qr"
+        readonly property var m: rowItem.r.kind === "qr" ? (rowItem.r.rows || []) : []
+        readonly property int cell: Math.max(3, Math.round(pane.ch * 0.3))
+        x: pane.cw
+        y: pane.ch * 0.4
+        width: visible ? (m.length + 8) * cell : 0
+        height: width
+        onMChanged: requestPaint()
+        onPaint: {
+          var ctx = getContext("2d")
+          ctx.fillStyle = "#ffffff"
+          ctx.fillRect(0, 0, width, height)
+          ctx.fillStyle = "#000000"
+          for (var y = 0; y < m.length; y++)
+            for (var x = 0; x < m[y].length; x++)
+              if (m[y].charAt(x) === "1") ctx.fillRect((x + 4) * cell, (y + 4) * cell, cell, cell)
+        }
+      }
+      Column {
+        visible: rowItem.r.kind === "qr"
+        x: qrCode.x + qrCode.width + pane.cw * 2
+        y: qrCode.y + pane.ch * 0.2
+        width: parent.width - x
+        spacing: pane.ch * 0.3
+        Text {
+          width: parent.width; elide: Text.ElideRight
+          textFormat: Text.StyledText
+          text: '<font color="' + Tui.hex(host.accent) + '">╱╱</font> scan with the phone\'s camera'
+          font.family: host.family; font.pixelSize: Style.font.body; color: host.fg
+        }
+        Text {
+          width: parent.width; wrapMode: Text.WrapAnywhere
+          text: rowItem.r.label || ""
+          font.family: host.family; font.pixelSize: Style.font.caption; color: host.dim
+        }
+        Text {
+          width: parent.width; wrapMode: Text.WordWrap
+          text: "same network only · the code is the key: anyone with it can drive the player"
+          font.family: host.family; font.pixelSize: Style.font.caption; color: host.dim
+        }
+      }
 
       Text {
         visible: rowItem.r.kind === "header" || rowItem.r.kind === "note"
