@@ -832,3 +832,89 @@ class Style(QObject):
     bar = Property(QObject, lambda self: self._bar, constant=True)
     space = Property(int, lambda self: 8, notify=changed)
     gapsOut = Property(int, lambda self: 10, notify=changed)
+
+
+# ---- qs.Commons: global hotkeys, for the settings page and the cheat sheet --------
+
+QML_IMPORT_NAME = "qs.Commons"
+
+HOTKEYS_LIVE: list = []        # the winsys.Hotkeys of this run, once __main__ has made it
+_HOTKEY_CONFIG: list = [None]  # config.json's `hotkeys`, as Service.qml last pushed it
+_KEYS: list = []               # the OrpheusKeys singleton(s), to tell about a rebind
+
+
+def attach_hotkeys(hk):
+    """Hand the live hotkeys to the QML. Service.qml may have pushed the config's
+    overrides before they existed; apply those now."""
+    HOTKEYS_LIVE[:] = [hk]
+    hk.listeners.append(lambda: [k.changed.emit() for k in _KEYS])
+    if _HOTKEY_CONFIG[0] is not None:
+        hk.register(_HOTKEY_CONFIG[0])
+    for k in _KEYS:
+        k.changed.emit()
+
+
+@QmlElement
+@QmlSingleton
+class OrpheusKeys(QObject):
+    """What the global hotkeys are, which combo each one got and why the others
+    did not. Desktop only: QML checks `typeof OrpheusKeys` before using it."""
+    changed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        _KEYS.append(self)
+
+    def _bindings(self):
+        if HOTKEYS_LIVE:
+            return HOTKEYS_LIVE[0].status
+        from . import winsys
+        why = "not registered in this run"
+        return [{"action": a, "label": winsys.ACTION_LABELS.get(a, a), "combo": "", "state": "off",
+                 "tried": [{"combo": c, "source": s, "ok": False, "reason": why} for c, s in combos]}
+                for a, combos in winsys.plan(_HOTKEY_CONFIG[0])]
+
+    bindings = Property("QVariantList", _bindings, notify=changed)
+    live = Property(bool, lambda self: bool(HOTKEYS_LIVE), notify=changed)
+
+    @Slot("QVariant")
+    def apply(self, overrides):
+        if isinstance(overrides, QJSValue):
+            overrides = overrides.toVariant()
+        _HOTKEY_CONFIG[0] = dict(overrides) if isinstance(overrides, dict) else {}
+        if HOTKEYS_LIVE:
+            if HOTKEYS_LIVE[0].overrides != _HOTKEY_CONFIG[0]:
+                HOTKEYS_LIVE[0].register(_HOTKEY_CONFIG[0])   # its listener emits changed
+        else:
+            self.changed.emit()
+
+    @Slot(str, result=str)
+    def check(self, combo):
+        """"" if `combo` can be a hotkey, else what is wrong with it."""
+        from . import winsys
+        try:
+            winsys.parse_combo(combo)
+            return ""
+        except ValueError as e:
+            return str(e)
+
+    @Slot(str, result=str)
+    def normalize(self, combo):
+        from . import winsys
+        try:
+            return winsys.normalize(combo)
+        except ValueError:
+            return combo
+
+    def _starts(self):
+        from . import winsys
+        return winsys.starts_with_windows()
+
+    @Slot(bool)
+    def setStartWithWindows(self, on):
+        from . import winsys
+        winsys.set_start_with_windows(bool(on))
+        self.changed.emit()
+
+    windows = Property(bool, lambda self: sys.platform == "win32", constant=True)
+    startWithWindows = Property(bool, _starts, notify=changed)
