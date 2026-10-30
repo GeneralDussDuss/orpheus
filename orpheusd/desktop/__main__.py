@@ -81,6 +81,37 @@ def call(target: str, method: str, *args) -> str:
                                     Q_RETURN_ARG(str), *[Q_ARG(str, str(a)) for a in args]) or ""
 
 
+def tell_daemon(kind: str, arg: str):
+    """A transport or volume hotkey: straight to orpheusd, off the UI thread."""
+    base = f"http://127.0.0.1:{PORT}"
+    try:
+        if kind == "volume":
+            with urllib.request.urlopen(base + "/status", timeout=2) as r:
+                vol = json.load(r)["player"]["volume"]
+            path, body = "/control/volume", {"volume": max(0, min(100, vol + int(arg)))}
+        else:
+            path, body = f"/control/{arg}", {}
+        req = urllib.request.Request(base + path, data=json.dumps(body).encode(),
+                                     headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=2).close()
+    except (OSError, ValueError, KeyError) as e:
+        print(f"orpheus-desktop: hotkey {kind}:{arg} failed: {e}", file=sys.stderr)
+
+
+def fire(action: str):
+    kind, _, arg = action.partition(":")
+    if not arg:
+        call("orpheus", action)
+        return
+    if kind == "theme":
+        from .shims import THEME
+        if THEME:
+            THEME[0].cycle(1 if arg == "next" else -1)
+        return
+    import threading
+    threading.Thread(target=tell_daemon, args=(kind, arg), daemon=True).start()
+
+
 def make_icon(size: int = 256):
     """Orpheus's mark, drawn rather than shipped: the /// of the wordmark in the
     accent blue on the near-black ground, readable down to the 16 px tray."""
@@ -102,6 +133,29 @@ def make_icon(size: int = 256):
     return pm
 
 
+def theme_menu(parent, key=None):
+    """One entry per palette, ticked on the live one. Rebuilt on every open, so a
+    hotkey switch or a .toml dropped into ~/.config/orpheus/themes shows up."""
+    from PySide6.QtGui import QAction, QActionGroup
+    from PySide6.QtWidgets import QMenu
+    from .shims import THEME, theme_label, theme_names
+    m = QMenu("Theme" + (f"\t{key}" if key else ""), parent)
+
+    def fill():
+        m.clear()
+        group = QActionGroup(m)
+        current = THEME[0].property("name") if THEME else ""
+        for name in theme_names():
+            a = QAction(theme_label(name), m, checkable=True)
+            a.setChecked(name == current)
+            a.triggered.connect(lambda _=False, n=name: THEME and THEME[0].set_theme(n))
+            group.addAction(a)
+            m.addAction(a)
+    m.aboutToShow.connect(fill)
+    fill()
+    return m
+
+
 def tray(app, quit_all, hotkeys):
     from PySide6.QtGui import QAction, QIcon
     from PySide6.QtWidgets import QMenu, QSystemTrayIcon
@@ -115,6 +169,7 @@ def tray(app, quit_all, hotkeys):
         a.triggered.connect(lambda _=False, m=method: call("orpheus", m))
         menu.addAction(a)
     menu.addSeparator()
+    menu.addMenu(theme_menu(menu, keys.get("theme:next")))
     if winsys.WINDOWS:
         auto = QAction("Start with Windows", menu, checkable=True)
         auto.setChecked(winsys.starts_with_windows())
@@ -243,7 +298,7 @@ def main():
         QTimer.singleShot(6000, lambda: (shoot(app, Path(args.shot), engine), app.quit()))
     else:
         from . import winsys
-        hotkeys = winsys.Hotkeys(lambda m: call("orpheus", m))
+        hotkeys = winsys.Hotkeys(fire)
         app.installNativeEventFilter(hotkeys)
         if hotkeys.failed:
             print("orpheus-desktop: hotkeys taken by another app:", ", ".join(hotkeys.failed), file=sys.stderr)

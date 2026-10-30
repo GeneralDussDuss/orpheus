@@ -1,0 +1,3 @@
+﻿Palettes copied from Omarchy (https://github.com/basecamp/omarchy, themes/*/colors.toml at 7f4b1dd).
+MIT License, Copyright (c) David Heinemeier Hansson. Drop your own <name>.toml in
+~/.config/orpheus/themes to add a theme; it overrides a bundled one of the same name.

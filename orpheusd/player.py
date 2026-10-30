@@ -506,7 +506,11 @@ class Player:
         return s
 
     async def set_volume(self, vol: float):
-        await self._send(["set_property", "volume", max(0.0, min(130.0, float(vol)))])
+        vol = max(0.0, min(130.0, float(vol)))
+        await self._send(["set_property", "volume", vol])
+        # mpv's property-change event lands after this returns, so the reply the UI
+        # gets (and the saved prefs) would still carry the old volume.
+        self.volume = vol
 
     async def set_shuffle(self, on: bool):
         if on == self.shuffle:

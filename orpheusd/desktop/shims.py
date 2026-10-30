@@ -458,12 +458,131 @@ class Hyprland(QObject):
 QML_IMPORT_NAME = "Quickshell.Services.Mpris"
 
 
+class OrpheusPlayer(QObject):
+    """orpheusd as an MPRIS player. On Linux the daemon publishes itself on the
+    bus and the QML finds it there; whether anything is playing, and so whether
+    cava runs and the visualizer moves, hangs off it. Here it is fed from /status."""
+    changed = Signal()
+    positionChanged = Signal()   # the QML calls this to re-read a position that does not tick
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._p: dict = {}
+        self._at = time.monotonic()
+
+    def update(self, p: dict):
+        self._p, self._at = p or {}, time.monotonic()
+        self.changed.emit()
+        self.positionChanged.emit()
+
+    def _track(self) -> dict:
+        return self._p.get("track") or {}
+
+    def _artists(self) -> str:
+        a = self._track().get("artists") or ""
+        return ", ".join(a) if isinstance(a, list) else str(a)
+
+    def _playing(self) -> bool:
+        return bool(self._p.get("playing"))
+
+    def _position(self) -> float:
+        pos = float(self._p.get("position") or 0)
+        if self._playing():
+            pos += time.monotonic() - self._at
+        return min(pos, self._length()) if self._length() else pos
+
+    def _length(self) -> float:
+        return float(self._p.get("duration") or 0)
+
+    def _seek(self, pos):
+        _post("/control/seek",{"position": float(pos)})
+
+    @Slot()
+    def togglePlaying(self):
+        _post("/control/toggle")
+
+    @Slot()
+    def next(self):
+        _post("/control/next")
+
+    @Slot()
+    def previous(self):
+        _post("/control/previous")
+
+    identity = Property(str, lambda self: "Orpheus", constant=True)
+    trackTitle = Property(str, lambda self: self._track().get("title") or "", notify=changed)
+    trackArtist = Property(str, _artists, notify=changed)
+    trackAlbum = Property(str, lambda self: self._track().get("album") or "", notify=changed)
+    trackArtUrl = Property(str, lambda self: self._track().get("art") or "", notify=changed)
+    isPlaying = Property(bool, _playing, notify=changed)
+    position = Property(float, _position, _seek, notify=positionChanged)
+    length = Property(float, _length, notify=changed)
+    positionSupported = Property(bool, lambda self: True, constant=True)
+    lengthSupported = Property(bool, lambda self: True, constant=True)
+    canSeek = Property(bool, lambda self: True, constant=True)
+    canGoNext = Property(bool, lambda self: True, constant=True)
+    canGoPrevious = Property(bool, lambda self: True, constant=True)
+
+
+_NET = []
+
+
+def _post(path: str, body: dict | None = None):
+    import json
+    from PySide6.QtCore import QUrl
+    from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest
+    if not _NET:
+        _NET.append(QNetworkAccessManager())
+    req = QNetworkRequest(QUrl(f"http://127.0.0.1:{os.environ.get('ORPHEUS_PORT', 47837)}{path}"))
+    req.setHeader(QNetworkRequest.KnownHeaders.ContentTypeHeader, "application/json")
+    reply = _NET[0].post(req, json.dumps(body or {}).encode())
+    reply.finished.connect(reply.deleteLater)
+
+
 @QmlElement
 @QmlSingleton
 class Mpris(QObject):
-    """Other players' state; Windows has no MPRIS, so there are none."""
+    """Windows has no MPRIS, so the only player is Orpheus's own daemon, polled."""
     changed = Signal()
-    players = Property("QVariant", lambda self: None, notify=changed)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        from PySide6.QtNetwork import QNetworkAccessManager
+        self._orpheus = OrpheusPlayer(self)
+        self._listed = False
+        self._net = QNetworkAccessManager(self)
+        self._busy = False
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._poll)
+        self._timer.start(1000)
+        QTimer.singleShot(0, self._poll)
+
+    def _poll(self):
+        if self._busy:
+            return
+        from PySide6.QtCore import QUrl
+        from PySide6.QtNetwork import QNetworkRequest
+        self._busy = True
+        reply = self._net.get(QNetworkRequest(QUrl(
+            f"http://127.0.0.1:{os.environ.get('ORPHEUS_PORT', 47837)}/status")))
+        reply.finished.connect(lambda: self._done(reply))
+
+    def _done(self, reply):
+        import json
+        self._busy = False
+        try:
+            p = json.loads(bytes(reply.readAll().data())).get("player") or {} if not reply.error().value else {}
+        except (ValueError, AttributeError):
+            p = {}
+        reply.deleteLater()
+        self._orpheus.update(p)
+        listed = bool(p.get("track"))
+        if listed != self._listed:
+            self._listed = listed
+            self.changed.emit()
+
+    players = Property("QVariant", lambda self: {"values": [self._orpheus] if self._listed else []},
+                       notify=changed)
 
 
 # ---- qs.Commons ------------------------------------------------------------------
@@ -484,19 +603,113 @@ def _accent() -> QColor:
     return QColor("#5b8cff")
 
 
+THEMES_DIR = Path(__file__).resolve().parent / "themes"   # Omarchy's palettes, bundled
+DEFAULT_THEME = "orpheus"
+
+
+def _user_themes_dir() -> Path:
+    home = os.environ.get("ORPHEUS_HOME") or os.environ.get("HOME") or str(Path.home())
+    return Path(home) / ".config" / "orpheus" / "themes"
+
+
+def theme_names() -> list[str]:
+    """Orpheus's own look first, then every Omarchy palette and any user ones."""
+    found = {p.stem for d in (THEMES_DIR, _user_themes_dir()) if d.is_dir() for p in d.glob("*.toml")}
+    return [DEFAULT_THEME] + sorted(found - {DEFAULT_THEME})
+
+
+def theme_label(name: str) -> str:
+    return name.replace("-", " ").title()
+
+
+def _theme_file(name: str) -> Path | None:
+    for d in (_user_themes_dir(), THEMES_DIR):
+        if (d / f"{name}.toml").is_file():
+            return d / f"{name}.toml"
+    return None
+
+
+def _read_toml(path: Path) -> dict:
+    import tomllib
+    with open(path, "rb") as f:
+        return {k: v for k, v in tomllib.load(f).items() if isinstance(v, str)}
+
+
+def _prefs_path() -> Path:
+    from orpheusd.system import STATE_DIR
+    return STATE_DIR / "desktop.json"
+
+
+def saved_theme() -> str:
+    import json
+    try:
+        name = json.loads(_prefs_path().read_text(encoding="utf-8")).get("theme", DEFAULT_THEME)
+    except (OSError, ValueError, AttributeError):
+        return DEFAULT_THEME
+    return name if name in theme_names() else DEFAULT_THEME
+
+
+THEME: list = []   # the live Color singleton, once the QML has made it
+
+
 @QmlElement
 @QmlSingleton
 class Color(QObject):
-    """The theme. Omarchy's comes from the shell; here it is Orpheus's own dark one
-    with the system accent, so the contrast guards in the QML still have work to do."""
+    """The theme. Omarchy's comes from the shell; here there is no desktop theme
+    to follow, so the app carries Omarchy's palettes and switches between them
+    itself. "orpheus" is the app's own dark look with the system accent."""
     changed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        bg = QColor("#0b0d12")
+        self._name = ""
+        self._v = {}
+        THEME[:] = [self]
+        self.set_theme(saved_theme(), save=False)
+
+    def set_theme(self, name: str, save: bool = True):
+        import json
+        path = _theme_file(name) if name != DEFAULT_THEME else None
+        t = _read_toml(path) if path else {}
+        if not t:
+            name = DEFAULT_THEME
+        bg = QColor(t.get("background", "#0b0d12"))
         bg.setAlphaF(0.94)
-        self._v = {"background": bg, "foreground": QColor("#d7dbe6"), "accent": _accent(),
-                   "urgent": QColor("#ff5c7a")}
+        self._v = {"background": bg,
+                   "foreground": QColor(t.get("foreground", "#d7dbe6")),
+                   "accent": QColor(t["accent"]) if "accent" in t else _accent(),
+                   "urgent": QColor(t.get("red", "#ff5c7a"))}
+        self._name = name
+        self._write_palette(path)
+        if save:
+            p = _prefs_path()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps({"theme": name}) + "\n", encoding="utf-8")
+        self.changed.emit()
+
+    def _write_palette(self, path: Path | None):
+        """Service.qml fills its second and third visualizer colours from the
+        Omarchy theme's colors.toml. Off Omarchy nothing else owns that file, so
+        put the chosen palette there; its file watch picks the change up live."""
+        if sys.platform != "win32":
+            return  # on Linux that path is the real Omarchy theme
+        home = os.environ.get("ORPHEUS_HOME") or os.environ.get("HOME") or str(Path.home())
+        dest = Path(home) / ".local" / "state" / "omarchy" / "current" / "theme" / "colors.toml"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        text = path.read_text(encoding="utf-8") if path else ""
+        try:
+            if not dest.exists() or dest.read_text(encoding="utf-8") != text:
+                dest.write_text(text, encoding="utf-8")
+        except OSError as e:
+            print(f"orpheus-desktop: cannot write {dest}: {e}", file=sys.stderr)
+
+    @Slot(int)
+    def cycle(self, step=1):
+        names = theme_names()
+        i = names.index(self._name) if self._name in names else 0
+        self.set_theme(names[(i + step) % len(names)])
+
+    name = Property(str, lambda self: self._name, notify=changed)
 
     background = Property(QColor, _getter("background"), notify=changed)
     foreground = Property(QColor, _getter("foreground"), notify=changed)
@@ -512,10 +725,14 @@ class Color(QObject):
 
 def _mono_family() -> str:
     """The first monospace font that is installed. The TUI lines up only in a
-    monospace face, and Qt quietly substitutes a proportional one for a missing name."""
+    monospace face, and Qt quietly substitutes a proportional one for a missing name.
+    Nerd Fonts go first: the transport and like buttons are Nerd Font glyphs, blank
+    in anything else. Windows installs register JetBrains Mono's as "JetBrainsMono NF"."""
     from PySide6.QtGui import QFontDatabase
     have = set(QFontDatabase.families())
-    for f in ("Cascadia Mono", "Cascadia Code", "JetBrainsMono Nerd Font", "JetBrains Mono",
+    for f in ("JetBrainsMono Nerd Font", "JetBrainsMono NF", "JetBrainsMono Nerd Font Mono",
+              "CaskaydiaCove Nerd Font", "CaskaydiaCove NF",
+              "Cascadia Mono", "Cascadia Code", "JetBrains Mono",
               "Consolas", "DejaVu Sans Mono", "Liberation Mono", "Courier New"):
         if f in have:
             return f

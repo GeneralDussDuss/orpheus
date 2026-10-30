@@ -15,13 +15,32 @@ WINDOWS = sys.platform == "win32"
 
 MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, MOD_NOREPEAT = 0x1, 0x2, 0x4, 0x8, 0x4000
 WM_HOTKEY = 0x0312
+VK_SPACE, VK_LEFT, VK_RIGHT, VK_OEM_PLUS, VK_OEM_MINUS = 0x20, 0x25, 0x27, 0xBB, 0xBD
+VK_OEM_COMMA, VK_OEM_PERIOD = 0xBC, 0xBE
+WIN_ALT = MOD_WIN | MOD_ALT
 
 # Linux uses Super+Shift+M, but Windows keeps Win+Shift+M for itself (restore
 # minimised windows). Win+Alt is the free corner of the Win key on Windows 10 and 11.
+# A plain action is a QML IPC method; "control:x" and "volume:±n" go to orpheusd.
+# Rows sharing an action are alternates: the first that registers wins, so a
+# combination another app already owns falls through to the next.
 HOTKEYS = [
-    ("Win+Alt+M", MOD_WIN | MOD_ALT, ord("M"), "library"),
-    ("Win+Alt+V", MOD_WIN | MOD_ALT, ord("V"), "toggle"),
-    ("Win+Alt+P", MOD_WIN | MOD_ALT, ord("P"), "miniPlayer"),
+    ("Win+Alt+M", WIN_ALT, ord("M"), "library"),
+    ("Win+Alt+O", WIN_ALT, ord("O"), "library"),
+    ("Win+Alt+V", WIN_ALT, ord("V"), "toggle"),
+    ("Win+Alt+P", WIN_ALT, ord("P"), "miniPlayer"),
+    ("Win+Alt+E", WIN_ALT, ord("E"), "eq"),
+    ("Win+Alt+L", WIN_ALT, ord("L"), "lyrics"),
+    ("Win+Alt+Space", WIN_ALT, VK_SPACE, "control:toggle"),
+    ("Win+Alt+Right", WIN_ALT, VK_RIGHT, "control:next"),
+    ("Win+Alt+.", WIN_ALT, VK_OEM_PERIOD, "control:next"),
+    ("Win+Alt+Left", WIN_ALT, VK_LEFT, "control:previous"),
+    ("Win+Alt+,", WIN_ALT, VK_OEM_COMMA, "control:previous"),
+    ("Win+Alt+T", WIN_ALT, ord("T"), "theme:next"),
+    ("Win+Alt+C", WIN_ALT, ord("C"), "theme:next"),
+    ("Win+Alt+Y", WIN_ALT, ord("Y"), "theme:next"),
+    ("Win+Alt+=", WIN_ALT, VK_OEM_PLUS, "volume:+5"),
+    ("Win+Alt+-", WIN_ALT, VK_OEM_MINUS, "volume:-5"),
 ]
 
 
@@ -35,9 +54,13 @@ class Hotkeys(QAbstractNativeEventFilter):
         self.failed: list[str] = []
         if not WINDOWS:
             return
-        for i, (label, mods, vk, _) in enumerate(HOTKEYS, start=1):
+        bound = set()
+        for i, (label, mods, vk, action) in enumerate(HOTKEYS, start=1):
+            if action in bound:
+                continue
             if ctypes.windll.user32.RegisterHotKey(None, i, mods | MOD_NOREPEAT, vk):
                 self.active.append(label)
+                bound.add(action)
             else:  # another app owns the combination
                 self.failed.append(label)
 
