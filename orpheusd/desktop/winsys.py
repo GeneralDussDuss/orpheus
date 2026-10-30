@@ -287,3 +287,20 @@ def set_start_with_windows(on: bool):
                 winreg.DeleteValue(k, "Orpheus")
             except OSError:
                 pass
+
+
+def own_child(pid: int) -> bool:
+    """Put a child of the app (the daemon, cava, audiocap) in a kill-on-close
+    job, so it ends with the app however the app ends: a crash or Task Manager
+    used to leave cava.exe and a playing daemon behind. The venv launcher that
+    starts a Python child keeps that child in its own kill-on-close job, so
+    ending the launcher ends the real interpreter too. Off Windows: nothing."""
+    if not WINDOWS or not pid:
+        return False
+    from orpheusd.system import tie_to_daemon   # the same job object, held by this process
+    try:
+        tie_to_daemon(pid)
+        return True
+    except OSError as e:
+        print(f"orpheus-desktop: pid {pid} could outlive the app: {e}", file=sys.stderr)
+        return False

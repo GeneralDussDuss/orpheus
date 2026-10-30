@@ -81,6 +81,18 @@ class SplitParser(QObject):
     splitMarker = Property(str, lambda self: self._marker, _set_marker, notify=splitMarkerChanged)
 
 
+_PROCESSES: "weakref.WeakSet[Process]" = None    # every live Process, for stop_processes()
+
+
+def stop_processes():
+    """End every child the QML started (cava, audiocap): the app is quitting."""
+    for p in list(_PROCESSES or ()):
+        try:
+            p._set_running(False)
+        except RuntimeError:        # its C++ side is already gone
+            pass
+
+
 @QmlElement
 class Process(QObject):
     """A child process: set `command`, flip `running` on, get `exited(code)` back."""
@@ -95,6 +107,11 @@ class Process(QObject):
         self._command: list = []
         self._stdout = None
         self._proc: QProcess | None = None
+        global _PROCESSES
+        if _PROCESSES is None:
+            import weakref
+            _PROCESSES = weakref.WeakSet()
+        _PROCESSES.add(self)
 
     def _set_command(self, cmd):
         self._command = [str(c) for c in (cmd or [])]
@@ -124,6 +141,9 @@ class Process(QObject):
         self._proc = p
         self.runningChanged.emit()
         p.start(self._command[0], self._command[1:])
+        if p.processId():            # Windows creates it inside start()
+            from .winsys import own_child
+            own_child(int(p.processId()))   # cava/audiocap end with the app, even on a crash
 
     def _on_output(self):
         if self._proc and self._stdout is not None:
@@ -459,6 +479,15 @@ QML_IMPORT_NAME = "Quickshell.Services.Mpris"
 
 
 PLAYER_LISTENERS: list = []   # called with each /status player dict (winshell)
+# The daemon as the desktop app last heard it: answering or not, signed in or
+# not, and since when (monotonic). The tray and the daemon keeper read it.
+STATUS: dict = {"online": False, "login": "", "since": 0.0}
+
+
+def backoff_ms(fails: int) -> int:
+    """How long to wait before asking a daemon that did not answer `fails`
+    times in a row: quick at first (a restart takes ~2 s), then every 5 s."""
+    return min(5000, 500 * 2 ** max(0, fails - 1))
 
 
 class OrpheusPlayer(QObject):
@@ -549,7 +578,12 @@ def _post(path: str, body: dict | None = None):
 @QmlElement
 @QmlSingleton
 class Mpris(QObject):
-    """Windows has no MPRIS, so the only player is Orpheus's own daemon, polled."""
+    """Windows has no MPRIS, so the only player is Orpheus's own daemon, followed
+    with the same long poll the QML's Api uses (/status?since=<version>): the
+    daemon answers when something changes, or after 25 s. That replaced a plain
+    poll every second, which cost the daemon and this process a 20 KB status
+    each second while paused, hidden or in a game. Positions are interpolated
+    by OrpheusPlayer between answers."""
     changed = Signal()
 
     def __init__(self, parent=None):
@@ -559,9 +593,11 @@ class Mpris(QObject):
         self._listed = False
         self._net = QNetworkAccessManager(self)
         self._busy = False
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._poll)
-        self._timer.start(1000)
+        self._version = -1
+        self._fails = 0
+        self._asked = 0.0
+        self._retry = QTimer(self, singleShot=True)
+        self._retry.timeout.connect(self._poll)
         QTimer.singleShot(0, self._poll)
 
     def _poll(self):
@@ -570,18 +606,44 @@ class Mpris(QObject):
         from PySide6.QtCore import QUrl
         from PySide6.QtNetwork import QNetworkRequest
         self._busy = True
-        reply = self._net.get(QNetworkRequest(QUrl(
-            f"http://127.0.0.1:{os.environ.get('ORPHEUS_PORT', 47837)}/status")))
+        self._asked = time.monotonic()
+        since = f"?since={self._version}" if STATUS["online"] and self._version >= 0 else ""
+        req = QNetworkRequest(QUrl(f"http://127.0.0.1:{os.environ.get('ORPHEUS_PORT', 47837)}/status{since}"))
+        req.setTransferTimeout(35000)   # the daemon holds it 25 s at most; a hung one must not wedge us
+        reply = self._net.get(req)
         reply.finished.connect(lambda: self._done(reply))
 
     def _done(self, reply):
         import json
         self._busy = False
-        try:
-            p = json.loads(bytes(reply.readAll().data())).get("player") or {} if not reply.error().value else {}
-        except (ValueError, AttributeError):
-            p = {}
+        data = None
+        if not reply.error().value:
+            try:
+                data = json.loads(bytes(reply.readAll().data()))
+            except ValueError:
+                data = None
         reply.deleteLater()
+        if isinstance(data, dict):
+            self._fails = 0
+            changed = data.get("version", -1) != self._version
+            self._version = data.get("version", -1)
+            was = dict(STATUS)
+            STATUS.update(online=True, login=(data.get("login") or {}).get("state", ""), since=time.monotonic())
+            p = data.get("player") or {}
+            if changed or was != STATUS:
+                self._publish(p)
+            # Straight back into the long poll, but never faster than 4 a second:
+            # a burst of changes (a track loading) is folded, and a daemon that
+            # ignores `since` cannot spin this.
+            self._retry.start(max(0, int(250 - (time.monotonic() - self._asked) * 1000)))
+        else:
+            self._fails += 1
+            if STATUS["online"] or self._fails == 1:
+                STATUS.update(online=False, since=time.monotonic())
+                self._publish({})
+            self._retry.start(backoff_ms(self._fails))
+
+    def _publish(self, p: dict):
         self._orpheus.update(p)
         listed = bool(p.get("track"))
         if listed != self._listed:
