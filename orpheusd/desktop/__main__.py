@@ -267,11 +267,6 @@ def main():
     ap.add_argument("--no-daemon", action="store_true", help="do not start orpheusd")
     ap.add_argument("--style", help="visual style to switch to first (prism is slow to render off-screen)")
     args = ap.parse_args()
-    if sys.stderr is None or "pythonw" in Path(sys.executable).name.lower():
-        # pythonw has no console: keep this app's own errors too.
-        from orpheusd.system import STATE_DIR
-        STATE_DIR.mkdir(parents=True, exist_ok=True)
-        sys.stdout = sys.stderr = open(STATE_DIR / "desktop.log", "w", encoding="utf-8", buffering=1)
 
     qt_argv = sys.argv[:1] + (["-platform", "offscreen"] if args.shot else [])
     if args.shot and "ORPHEUS_HOME" not in os.environ:
@@ -288,6 +283,13 @@ def main():
         sys.exit(0 if make_icon().save(args.write_icon) else 1)
     if not args.shot and hand_over(args.open):
         return
+    if sys.stderr is None or "pythonw" in Path(sys.executable).name.lower():
+        # pythonw has no console: keep this app's own errors too. Only the
+        # instance that stays opens it: a launch that just handed over to the
+        # running one would otherwise wipe that one's log.
+        from orpheusd.system import STATE_DIR
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        sys.stdout = sys.stderr = open(STATE_DIR / "desktop.log", "w", encoding="utf-8", buffering=1)
     # Listen straight away: a second launch during the few seconds the QML takes
     # to load must still find this one.
     launches = None if args.shot else listen_for_launches(app)

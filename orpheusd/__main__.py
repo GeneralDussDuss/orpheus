@@ -51,7 +51,11 @@ class App:
         for d in (STATE_DIR, CACHE_DIR, RUNTIME_DIR):
             d.mkdir(parents=True, exist_ok=True)
         self.prefs = self._load_prefs()
-        self.tidal = Tidal(STATE_DIR, self.prefs.get("quality"))
+        # Always start on the best the sign-in allows. A quality picked through
+        # /quality lasts until the daemon restarts; a saved one pinned users to
+        # lossless long after they had signed in for hi-res.
+        self.prefs.pop("quality", None)
+        self.tidal = Tidal(STATE_DIR, None)
         self.youtube = YouTube()
         self.sources = {"youtube": self.youtube, "soundcloud": SoundCloud()}
         self.anime = Anime(RUNTIME_DIR)

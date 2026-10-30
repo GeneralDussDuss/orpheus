@@ -52,7 +52,10 @@ PanelWindow {
 
   implicitWidth: vizWidth + Math.round(fm.advanceWidth("M") * 3)
   implicitHeight: card.height
-  color: bleed ? bg : "transparent"
+  // Windows hit-tests a translucent (layered) window by its pixels' alpha, and a
+  // GPU-drawn Qt window reads as fully clear to it, so every click fell through.
+  // An opaque window takes the mouse normally; the card fills it anyway.
+  color: bleed || Qt.platform.os === "windows" ? bg : "transparent"
   exclusionMode: ExclusionMode.Ignore
   visible: !(desktop && !windows && fullscreen)
 

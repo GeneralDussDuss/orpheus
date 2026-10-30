@@ -227,8 +227,13 @@ FloatingWindow {
   Timer { interval: 5000; repeat: true; triggeredOnStart: true; running: win.visible && Qt.platform.os !== "windows"; onTriggered: sinkProc.running = true }
   function qualityText(s) {
     if (!s || !s.quality) return ""
-    var q = { HI_RES_LOSSLESS: "HI-RES", LOSSLESS: "LOSSLESS", HIGH: "320K", LOW: "96K" }[s.quality] || s.quality
-    return q + (s.bitDepth && s.sampleRate ? " " + s.bitDepth + "/" + (s.sampleRate / 1000) : "") + (s.codec ? " " + s.codec : "")
+    // Lossless shows its nominal PCM rate (bits x rate x 2 channels): FLAC's real
+    // bitrate wanders with the music, and this is the figure people compare.
+    var lossy = { HIGH: 320, LOW: 96 }[s.quality]
+    var kbps = lossy || (s.bitDepth && s.sampleRate ? Math.round(s.bitDepth * s.sampleRate * 2 / 1000) : 0)
+    var fmt = s.codec || (lossy ? "AAC" : "")
+    var res = !lossy && s.bitDepth && s.sampleRate ? " " + s.bitDepth + "/" + (s.sampleRate / 1000) : ""
+    return (fmt + res + (kbps ? " · " + kbps + " kbps" : "")).trim()
   }
 
   // ---- navigation ------------------------------------------------------------
@@ -538,8 +543,8 @@ FloatingWindow {
     if (t === "p") { api.control("previous"); return true }
     if (k === Qt.Key_Right || t === "l") { api.control("seek", { position: (api.position || 0) + 10 }); return true }
     if (k === Qt.Key_Left || t === "h") { api.control("seek", { position: Math.max(0, (api.position || 0) - 10) }); return true }
-    if (t === "+" || t === "=") { api.control("volume", { volume: Math.min(100, (st.volume || 0) + 5) }); return true }
-    if (t === "-") { api.control("volume", { volume: Math.max(0, (st.volume || 0) - 5) }); return true }
+    if (t === "+" || t === "=") { volMeter.setVolume(volMeter.shown + 5); return true }
+    if (t === "-") { volMeter.setVolume(volMeter.shown - 5); return true }
     if (t === "s") { api.control("shuffle"); return true }
     if (t === "r") { api.control("repeat"); return true }
     if (t === "v") { engine.cycleRailViz(1); return true }
@@ -654,40 +659,17 @@ FloatingWindow {
       Column {
         anchors.bottom: parent.bottom
         width: parent.width
-        // One button; the choices open under it on click and fold away once picked.
+        // What is actually streaming, not a picker: the daemon always takes the best
+        // the sign-in allows. A device-link sign-in tops out at lossless, so that
+        // case links to the hi-res sign-in.
         Text {
-          id: qualityBtn
-          property bool open: false
-          text: open ? "[quality]" : " quality "
-          font.family: win.family; font.pixelSize: Style.font.caption; font.bold: open
-          color: qm.containsMouse || open ? win.accentText : win.dim
-          MouseArea { id: qm; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                      onClicked: qualityBtn.open = !qualityBtn.open }
-        }
-        Row {
-          visible: qualityBtn.open
-          spacing: win.cw
-          Repeater {
-            model: [["high", "320k"], ["lossless", "flac"], ["hires", "hi-res"]]
-            Text {
-              required property var modelData
-              readonly property bool on: win.api && win.api.status.quality === modelData[0]
-              readonly property bool locked: modelData[0] === "hires" && !(win.api && win.api.login.hires)
-              text: on ? "[" + modelData[1] + "]" : " " + modelData[1] + " "
-              font.family: win.family; font.pixelSize: Style.font.caption; font.bold: on
-              color: on ? win.accentText : win.dim
-              opacity: locked ? 0.5 : 1
-              MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                  qualityBtn.open = false
-                  if (parent.locked) win.go({ type: "login", title: "sign in", hires: true })
-                  else win.api.post("/quality", { quality: modelData[0] })
-                }
-              }
-            }
-          }
+          readonly property bool capped: !!(win.api && win.api.signedIn && !win.api.login.hires)
+          text: (win.qualityText(win.st.stream) || "—").toLowerCase() + (capped ? "  · get hi-res" : "")
+          font.family: win.family; font.pixelSize: Style.font.caption
+          color: capped && qm.containsMouse ? win.accentText : win.dim
+          MouseArea { id: qm; anchors.fill: parent; hoverEnabled: true; enabled: parent.capped
+                      cursorShape: Qt.PointingHandCursor
+                      onClicked: win.go({ type: "login", title: "sign in", hires: true }) }
         }
         Item { width: 1; height: win.ch * 0.5 }
         Text {
@@ -1394,17 +1376,42 @@ FloatingWindow {
         }
         Text {
           id: volMeter
-          text: "vol " + Tui.meter((win.st.volume || 0) / 100, 8, "▰", "▱", "") + " " + win.lpad(String(win.st.volume || 0), 3)
+          // The level we last asked for, shown and stepped from until the daemon's
+          // status catches up, so quick scrolls and repeated +/- don't all start
+          // from the same stale value.
+          property int pending: -1
+          readonly property int shown: pending >= 0 ? pending : Math.round(win.st.volume || 0)
+          function setVolume(v) {
+            v = Math.max(0, Math.min(100, Math.round(v)))
+            pending = v
+            settle.restart()
+            win.api.control("volume", { volume: v })
+          }
+          Timer { id: settle; interval: 800; onTriggered: volMeter.pending = -1 }
+          text: "vol " + Tui.meter(shown / 100, 8, "▰", "▱", "") + " " + win.lpad(String(shown), 3)
           font.family: win.family; font.pixelSize: Style.font.caption; color: win.dim
           anchors.verticalCenter: parent.verticalCenter
+          // Measured in this text's own font: the bar's glyphs need not be as wide
+          // as the body font's cells, which is what the old click maths assumed.
+          TextMetrics { id: volHead; font: volMeter.font; text: "vol " }
+          TextMetrics { id: volBar; font: volMeter.font; text: "vol " + Tui.meter(1, 8, "▰", "▱", "") }
           MouseArea {
             anchors.fill: parent
             cursorShape: Qt.PointingHandCursor
-            onWheel: function(w) { win.api.control("volume", { volume: Math.max(0, Math.min(100, (win.st.volume || 0) + (w.angleDelta.y > 0 ? 5 : -5))) }) }
-            onClicked: function(m) {
-              var x0 = win.cw * 4, x1 = win.cw * 12
-              if (m.x >= x0 && m.x <= x1) win.api.control("volume", { volume: Math.round((m.x - x0) / (x1 - x0) * 100) })
+            property real wheel: 0
+            // A notch is 120; touchpads send it in small pieces. Step 5% per notch.
+            onWheel: function(w) {
+              wheel += w.angleDelta.y
+              var notches = wheel > 0 ? Math.floor(wheel / 120) : Math.ceil(wheel / 120)
+              if (notches !== 0) { wheel -= notches * 120; volMeter.setVolume(volMeter.shown + notches * 5) }
             }
+            function at(x) {
+              var x0 = volHead.advanceWidth, x1 = volBar.advanceWidth
+              return (x - x0) / Math.max(1, x1 - x0) * 100
+            }
+            // Click or drag along the bar; a click past either end pins 0 or 100.
+            onPressed: function(m) { volMeter.setVolume(at(m.x)) }
+            onPositionChanged: function(m) { if (pressed) volMeter.setVolume(at(m.x)) }
           }
         }
         Text {
@@ -1448,8 +1455,8 @@ FloatingWindow {
       add("playback", "previous track", "p", function() { a.control("previous") })
       add("playback", "shuffle " + (st.shuffle ? "off" : "on"), "s", function() { a.control("shuffle") })
       add("playback", "repeat: cycle (now " + (st.repeat || "off") + ")", "r", function() { a.control("repeat") })
-      add("playback", "volume up", "+", function() { a.control("volume", { volume: Math.min(100, (st.volume || 0) + 5) }) })
-      add("playback", "volume down", "-", function() { a.control("volume", { volume: Math.max(0, (st.volume || 0) - 5) }) })
+      add("playback", "volume up", "+", function() { volMeter.setVolume(volMeter.shown + 5) })
+      add("playback", "volume down", "-", function() { volMeter.setVolume(volMeter.shown - 5) })
       if (track) add("playback", "like / unlike what is playing", "F", function() { a.toggleLike("track", track.id) })
       if (pageTracks.length) {
         add("playback", "play this page", "P", function() { playPage(false) })

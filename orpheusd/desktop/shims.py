@@ -743,7 +743,10 @@ class Color(QObject):
 
     def _apply(self, t: dict, toml_text: str):
         bg = QColor(t.get("background", "#0b0d12"))
-        bg.setAlphaF(0.94)
+        # Omarchy's background is slightly see-through over a blurring compositor.
+        # Windows has no blur behind, and a window whose colour has any alpha is
+        # made layered, which Windows hit-tests as clear: clicks would fall through.
+        bg.setAlphaF(1.0 if sys.platform == "win32" else 0.94)
         self._v = {"background": bg,
                    "foreground": QColor(t.get("foreground", "#d7dbe6")),
                    "accent": QColor(t["accent"]) if "accent" in t else _accent(),
