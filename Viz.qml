@@ -19,10 +19,36 @@ ShaderEffect {
   // qt_TexCoord0 and `res`, so nothing in them changes.
   property real renderScale: 1
   readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
-  layer.enabled: renderScale < 0.999
+  layer.enabled: renderScale < 0.999 || bloomOn
   layer.smooth: true
   layer.textureSize: Qt.size(Math.max(1, Math.round(width * dpr * renderScale)),
                              Math.max(1, Math.round(height * dpr * renderScale)))
+  // Bloom reads the layer in half float, so light the shaders push past 1.0
+  // still counts as hot instead of being clipped first.
+  layer.format: bloomOn ? ShaderEffectSource.RGBA16F : ShaderEffectSource.RGBA8
+  layer.effect: bloomOn ? bloomComponent : null
+
+  // ---- bloom ------------------------------------------------------------------
+  //
+  // Real post-process glow (Bloom.qml) over every style: off on light themes
+  // (glow reads as smudge there, same as lit()), and off for the tiny bar viz.
+  // Auto quality makes it cheaper before the shader itself loses resolution:
+  // at the first step down the blur starts from 1/8 res over two levels, and
+  // at the last step it is skipped.
+  property string bloomLevel: engine && engine.bloom ? engine.bloom : "subtle"   // off | subtle | full
+  readonly property bool bloomOn: bloomLevel !== "off" && light < 0.5 && styleName !== "mini"
+                                  && renderScale > 0.6 && Math.min(width, height) >= 48
+  readonly property real bloomIntensity: bloomLevel === "full" ? 1.0 : 0.6
+  Component {
+    id: bloomComponent
+    Bloom {
+      sourceSize: fx.layer.textureSize
+      intensity: fx.bloomIntensity
+      kick: fx.kick
+      swell: fx.swell
+      quality: fx.renderScale > 0.9 ? 2 : 1
+    }
+  }
 
   property real time: engine ? engine.time : 0
   property vector2d res: Qt.vector2d(width, height)
@@ -61,6 +87,8 @@ ShaderEffect {
   property real swell: engine ? engine.swell : 0
   property real kicks: engine ? engine.kicks : 0
   property vector4d kickAge: engine ? engine.kickAge : Qt.vector4d(8, 8, 8, 0)
+  // How much real bloom sits over this view: the shaders dial their own halos down by it.
+  property real bloomAmt: bloomOn ? bloomIntensity : 0
 
   // Spectrum history for Prism, Horizon, Scope and Skyline, kept on the GPU: histFx renders a 32x40 target
   // from its own previous frame (rows shift back one step, row 0 = now).
