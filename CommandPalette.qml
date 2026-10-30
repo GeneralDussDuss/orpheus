@@ -20,7 +20,7 @@ Item {
   z: 50
 
   function open() {
-    all = host.commands().concat(bloomCommands()).concat(directorCommands()).concat(gamingCommands())
+    all = host.commands().concat(bloomCommands()).concat(directorCommands()).concat(gamingCommands()).concat(listeningCommands())
     input.text = ""
     filter()
     shown = true
@@ -67,6 +67,35 @@ Item {
     var hud = e.config.hud === "off" || e.config.hud === false ? "off" : "on"
     out.push({ group: "gaming", label: "HUD on track change · " + (hud === "on" ? "off" : "on") + "  (now " + hud + ")", key: "",
                run: function() { e.updateConfig(function(c) { c.hud = hud === "on" ? "off" : "on" }) } })
+    return out
+  }
+  // Listening: the sleep timer, endless play, crossfade, the phone remote, stats.
+  function listeningCommands() {
+    var a = host.api, e = host.engine, out = []
+    if (!a) return out
+    var sl = a.sleepState || { active: false }
+    var mins = [15, 30, 60]
+    for (var i = 0; i < mins.length; i++)
+      (function(m) { out.push({ group: "sleep", label: "sleep in " + m + " min", key: "", run: function() { a.sleep(m); host.say("☾ sleeping in " + m + " min") } }) })(mins[i])
+    out.push({ group: "sleep", label: "sleep at the end of this track", key: "", run: function() { a.sleepAtEnd(); host.say("☾ sleeping at the end of this track") } })
+    if (sl.active) out.push({ group: "sleep", label: "cancel the sleep timer", key: "", run: function() { a.cancelSleep(); host.say("sleep timer off") } })
+    if (host.go) {
+      out.push({ group: "go", label: "stats", key: "9", run: function() { host.go({ type: "stats", title: "stats" }) } })
+      out.push({ group: "go", label: "wrapped · this month", key: "", run: function() { host.go({ type: "stats", title: "stats", range: "wrapped" }) } })
+    }
+    if (!e || !e.updateConfig) return out
+    var endless = e.config.endless !== false
+    out.push({ group: "listening", label: "endless play · " + (endless ? "off" : "on") + "  (now " + (endless ? "on" : "off") + ")", key: "",
+               run: function() { e.updateConfig(function(c) { c.endless = !endless }) } })
+    var xf = Number(e.config.crossfade) || 0, xs = [0, 4, 8, 12]
+    for (var j = 0; j < xs.length; j++)
+      (function(n) {
+        out.push({ group: "listening", label: "crossfade · " + (n ? n + " s" : "off (gapless)") + (xf === n ? "  (now)" : ""), key: "",
+                   run: function() { e.updateConfig(function(c) { c.crossfade = n }) } })
+      })(xs[j])
+    var lan = e.config.remote === "lan"
+    out.push({ group: "listening", label: "phone remote · " + (lan ? "off" : "on") + "  (now " + (lan ? "on" : "off") + ")", key: "",
+               run: function() { e.updateConfig(function(c) { c.remote = lan ? "off" : "lan" }); if (!lan) host.say("phone remote on · the pairing code is in settings ▸ listening") } })
     return out
   }
   function close() {
