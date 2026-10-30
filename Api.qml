@@ -1,11 +1,14 @@
 import QtQuick
+import Quickshell
 
 // Talks to orpheusd on 127.0.0.1. Keeps `status` fresh with a long poll, and
 // wraps the rest of the JSON API in small callback helpers.
 QtObject {
   id: api
 
-  property int port: 47837
+  // ORPHEUS_PORT, as the desktop app and the daemon read it, so a second
+  // daemon (tests, a shot) can have its own UI.
+  property int port: Number(Quickshell.env("ORPHEUS_PORT")) || 47837
   readonly property string base: "http://127.0.0.1:" + port
   property bool active: false          // poll only while some UI needs it
   property bool online: false
@@ -74,6 +77,14 @@ QtObject {
       api.liked = fixed
     })
   }
+
+  // ---- listening: sleep timer, stats -----------------------------------
+  readonly property var listening: status.listening || ({})
+  readonly property var sleepState: listening.sleep || ({ active: false })
+  function sleep(minutes) { post("/sleep", { minutes: minutes }) }
+  function sleepAtEnd() { post("/sleep", { endOfTrack: true }) }
+  function cancelSleep() { post("/sleep", { cancel: true }) }
+  function stats(range, done) { get("/stats?range=" + (range || "week"), done) }
 
   // Convenience controls.
   function control(action, body) { post("/control/" + action, body) }

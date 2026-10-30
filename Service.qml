@@ -38,6 +38,7 @@ Item {
   readonly property var defaults: ({ style: "prism", railViz: "prism", miniPlayer: true, placement: "overlay", fps: 60, syncViz: true,
                                      showMonitor: "", autoStyle: false, trackTitle: true, lyricsOverViz: false,
                                      autoQuality: true, showFps: false, bloom: "subtle",
+                                     endless: true, crossfade: 0, remote: "off",
                                      director: true, beatLock: true, lookaheadMs: 85, feedback: "subtle", albumArt: true,
                                      widget: { enabled: true, style: "full", corner: "bottom-right", monitor: "", viz: "prism", layer: "top" } })
 
