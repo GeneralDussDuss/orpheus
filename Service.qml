@@ -209,7 +209,10 @@ Item {
   property int settingsHandled: 0
   property int loginHandled: 0
   property int barWidgets: 0           // bar widgets register themselves
-  readonly property bool widgetShown: widget.enabled !== false && (player !== null || widgetIsWindow)
+  // Game mode (desktop app, Windows): a fullscreen game is in front, so the
+  // widget and the stage step back. A runtime override: config is untouched.
+  readonly property bool gameMode: typeof OrpheusGame !== "undefined" && OrpheusGame.gameMode
+  readonly property bool widgetShown: widget.enabled !== false && !gameMode && (player !== null || widgetIsWindow)
   readonly property bool wanted: open || libraryOpen || barWidgets > 0 || widgetShown
 
   // ---- Player service (orpheusd) -----------------------------------------
@@ -638,17 +641,17 @@ Item {
   // window that tiles into the layout (tile) or floats (float).
   readonly property bool widgetIsWindow: widget.layer === "tile" || widget.layer === "float"
   Loader {
-    active: root.widget.enabled !== false && !root.widgetIsWindow
+    active: root.widget.enabled !== false && !root.widgetIsWindow && !root.gameMode
     sourceComponent: Widget { engine: root }
   }
   // Separate loaders so switching tile <-> float opens a fresh window; Hyprland
   // applies window rules only when a window opens.
   Loader {
-    active: root.widget.enabled !== false && root.widget.layer === "tile"
+    active: root.widget.enabled !== false && root.widget.layer === "tile" && !root.gameMode
     sourceComponent: WidgetWindow { engine: root; floating: false; visible: true }
   }
   Loader {
-    active: root.widget.enabled !== false && root.widget.layer === "float"
+    active: root.widget.enabled !== false && root.widget.layer === "float" && !root.gameMode
     sourceComponent: WidgetWindow { engine: root; floating: true; visible: true }
   }
 

@@ -57,7 +57,10 @@ PanelWindow {
   // An opaque window takes the mouse normally; the card fills it anyway.
   color: bleed || Qt.platform.os === "windows" ? bg : "transparent"
   exclusionMode: ExclusionMode.Ignore
-  visible: !(desktop && !windows && fullscreen)
+  // Game mode: a fullscreen game is in front. Every placement steps back (the
+  // overlay and the show are topmost; the wallpaper would only burn GPU behind
+  // the game) and comes back when the game does.
+  visible: !(desktop && !windows && fullscreen) && !(engine && engine.gameMode)
 
   anchors.left: bleed
   anchors.right: bleed

@@ -17,7 +17,8 @@ FloatingWindow {
   implicitWidth: Math.round(body.cw * 48)
   implicitHeight: Math.round(body.ch * 18)
   minimumSize: Qt.size(Math.round(body.cw * 30), Math.round(body.ch * 7))
-  onVisibleChanged: if (!visible && engine) engine.setWidget("enabled", "off")
+  // Closing it turns the widget off; game mode hiding it does not.
+  onVisibleChanged: if (!visible && engine && !engine.gameMode) engine.setWidget("enabled", "off")
 
   WidgetBody {
     id: body
