@@ -218,7 +218,11 @@ Item {
   // widget and the stage step back. A runtime override: config is untouched.
   readonly property bool gameMode: typeof OrpheusGame !== "undefined" && OrpheusGame.gameMode
   readonly property bool widgetShown: widget.enabled !== false && !gameMode && (player !== null || widgetIsWindow)
-  readonly property bool wanted: open || libraryOpen || barWidgets > 0 || widgetShown
+  // The widget's body reports whether its window is actually on screen (shown
+  // and not minimized); a widget nobody can see needs no audio, clock or redraws.
+  property int widgetLiveCount: 0
+  readonly property bool widgetLive: widgetLiveCount > 0
+  readonly property bool wanted: open || libraryOpen || barWidgets > 0 || (widgetShown && widgetLive)
 
   // ---- Player service (orpheusd) -----------------------------------------
   Api { id: apiClient; active: root.libraryOpen || root.open || root.widgetShown }

@@ -61,6 +61,23 @@ TuiBox {
     function onVisibleChanged() { if (box.Window.window.visible) appearAnim.restart() }
   }
 
+  // Whether anyone can see the widget: its window shown and not minimized. While
+  // not, the engine drops the audio feed and clock for it and the spectrum stops
+  // updating (see Service.widgetLive). Counted, not a flag: a widget being
+  // replaced (layer change) overlaps with its successor for a moment.
+  readonly property bool live: !!box.Window.window && box.Window.window.visible
+                               && box.Window.window.visibility !== Window.Minimized
+  property bool counted: false
+  function report() {
+    if (!engine || counted === live) return
+    counted = live
+    engine.widgetLiveCount += live ? 1 : -1
+  }
+  onLiveChanged: report()
+  onEngineChanged: report()
+  Component.onCompleted: report()
+  Component.onDestruction: if (counted && engine) { counted = false; engine.widgetLiveCount-- }
+
   function clock(s) {
     s = Math.max(0, Math.floor(s || 0))
     return Math.floor(s / 60) + ":" + (s % 60 < 10 ? "0" : "") + (s % 60)
@@ -94,7 +111,7 @@ TuiBox {
     spacing: box.ch * 0.4
 
     Viz {
-      visible: box.full
+      visible: box.full && box.live
       width: parent.width
       height: box.fill ? Math.max(box.ch * 4, box.height - box.ch * 2.4 - nowRow.height - content.spacing) : box.ch * 9
       engine: box.engine
