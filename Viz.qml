@@ -13,6 +13,17 @@ ShaderEffect {
   fragmentShader: Qt.resolvedUrl("shaders/" + styleName + ".frag.qsb")
   blending: true
 
+  // Fraction of full resolution to shade at (the stage's auto quality sets it).
+  // Below 1 the effect renders into a smaller layer that is scaled back up, so
+  // the fragment cost drops with the square of it. The shaders work in
+  // qt_TexCoord0 and `res`, so nothing in them changes.
+  property real renderScale: 1
+  readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+  layer.enabled: renderScale < 0.999
+  layer.smooth: true
+  layer.textureSize: Qt.size(Math.max(1, Math.round(width * dpr * renderScale)),
+                             Math.max(1, Math.round(height * dpr * renderScale)))
+
   property real time: engine ? engine.time : 0
   property vector2d res: Qt.vector2d(width, height)
 

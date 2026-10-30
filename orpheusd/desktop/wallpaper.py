@@ -74,6 +74,8 @@ if WINDOWS:
     u32.ShowWindow.argtypes = [W.HWND, ctypes.c_int]
     u32.SetLayeredWindowAttributes.argtypes = [W.HWND, W.COLORREF, W.BYTE, W.DWORD]
     u32.SystemParametersInfoW.argtypes = [W.UINT, W.UINT, ctypes.c_void_p, W.UINT]
+    u32.GetWindowThreadProcessId.restype = W.DWORD
+    u32.GetWindowThreadProcessId.argtypes = [W.HWND, ctypes.POINTER(W.DWORD)]
     u32.EnumWindows.argtypes = [ctypes.WINFUNCTYPE(W.BOOL, W.HWND, W.LPARAM), W.LPARAM]
 
     class MONITORINFO(ctypes.Structure):
@@ -151,10 +153,21 @@ def _monitor_rect(hwnd):
     return r.left, r.top, r.right - r.left, r.bottom - r.top
 
 
+def _ours(hwnd: int) -> bool:
+    """A real window of this process: never restyle anyone else's (an offscreen
+    Qt platform hands out ids that are not HWNDs at all)."""
+    if not u32.IsWindow(hwnd):
+        return False
+    pid = W.DWORD()
+    u32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    import os
+    return pid.value == os.getpid()
+
+
 def attach(hwnd: int) -> str:
     """Move `hwnd` behind the desktop icons, covering the monitor it is on now.
     Returns the layout used ("raised", "classic", "progman"), or "" on failure."""
-    if not WINDOWS or not hwnd:
+    if not WINDOWS or not hwnd or not _ours(hwnd):
         return ""
     if hwnd in ATTACHED:
         return ATTACHED[hwnd].layout
@@ -294,11 +307,13 @@ if QObject is not None:
 
         @Slot(QObject, result=str)
         def attach(self, window):
-            layout = attach(_hwnd(window)) if WINDOWS else ""
+            on_windows = WINDOWS and QGuiApplication.platformName() == "windows"
+            layout = attach(_hwnd(window)) if on_windows else ""
             if layout:
                 self._watch.start()
             else:
-                print("orpheus-desktop: could not put the visualizer on the wallpaper", file=sys.stderr)
+                if on_windows:
+                    print("orpheus-desktop: could not put the visualizer on the wallpaper", file=sys.stderr)
             return layout
 
         @Slot(QObject, result=bool)
