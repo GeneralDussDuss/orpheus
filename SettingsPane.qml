@@ -65,6 +65,7 @@ Rectangle {
       r.push({ kind: "choice", id: "style", label: "visualizer style", options: styles })
       r.push({ kind: "choice", id: "railViz", label: "player rail", options: ["off"].concat(styles), hint: "v cycles it" })
       r.push({ kind: "choice", id: "fps", label: "frame rate", options: [30, 60, 90, 120] })
+      r.push({ kind: "choice", id: "bloom", label: "bloom", options: ["off", "subtle", "full"], hint: "dark themes" })
       r.push({ kind: "toggle", id: "syncViz", label: "widget follows the visualizer" })
       r.push({ kind: "toggle", id: "stage", label: "visualizer window open", hint: "V" })
     } else if (id === "widget") {
@@ -119,6 +120,7 @@ Rectangle {
     case "style": return engine.style
     case "railViz": return engine.railViz
     case "fps": return engine.fps
+    case "bloom": return engine.bloom
     case "stage": return engine.open
     case "widget.enabled": return engine.widget.enabled !== false
     case "widget.style": return engine.widget.style
@@ -151,6 +153,7 @@ Rectangle {
     case "style": engine.setStyle(v); return
     case "railViz": engine.setRailViz(v); return
     case "fps": engine.updateConfig(function(c) { c.fps = v }); return
+    case "bloom": engine.setBloom(v); return
     case "stage": engine.open = !!v; return
     case "widget.enabled": engine.setWidget("enabled", v ? "on" : "off"); return
     case "widget.style": engine.setWidget("style", v); return

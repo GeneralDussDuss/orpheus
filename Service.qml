@@ -37,7 +37,7 @@ Item {
   // style by a wide margin (+0.7% shell CPU, against +13 to +20 for the others).
   readonly property var defaults: ({ style: "prism", railViz: "prism", miniPlayer: true, placement: "overlay", fps: 60, syncViz: true,
                                      showMonitor: "", autoStyle: false, trackTitle: true, lyricsOverViz: false,
-                                     autoQuality: true, showFps: false,
+                                     autoQuality: true, showFps: false, bloom: "subtle",
                                      widget: { enabled: true, style: "full", corner: "bottom-right", monitor: "", viz: "prism", layer: "top" } })
 
   // ---- Config ------------------------------------------------------------
@@ -55,6 +55,9 @@ Item {
   readonly property bool autoQuality: config.autoQuality !== false     // drop render scale when frames drop
   readonly property bool showFps: config.showFps === true
   readonly property int fps: Math.max(20, Math.min(120, config.fps || 60))
+  // Post-process glow over the visualizers (Bloom.qml); dark themes only.
+  readonly property var blooms: ["off", "subtle", "full"]
+  readonly property string bloom: blooms.indexOf(config.bloom) >= 0 ? config.bloom : "subtle"
   readonly property var widget: {
     var w = {}
     for (var k in defaults.widget) w[k] = defaults.widget[k]
@@ -695,6 +698,13 @@ Item {
     updateConfig(function(c) { c[key] = v })
     return statusText()
   }
+  // off | subtle | full, or "next" to step through them.
+  function setBloom(level) {
+    if (level === "next") level = blooms[(blooms.indexOf(bloom) + 1) % blooms.length]
+    if (blooms.indexOf(level) < 0) return "unknown bloom: " + level + " (" + blooms.join("|") + "|next)"
+    updateConfig(function(c) { c.bloom = level })
+    return statusText()
+  }
   function setWidget(key, value) {
     if (key === "viz" && syncViz && styles.indexOf(value) >= 0) return setStyle(value)
     var allowed = { enabled: ["on", "off", "toggle"], style: ["compact", "full"], corner: ["top-left", "top-right", "bottom-left", "bottom-right"],
@@ -746,7 +756,7 @@ Item {
   }
 
   function statusText() {
-    return JSON.stringify({ open: open, library: libraryOpen, widget: widget, style: style, railViz: railViz, miniPlayer: miniPlayer, placement: placement,
+    return JSON.stringify({ open: open, library: libraryOpen, widget: widget, style: style, railViz: railViz, miniPlayer: miniPlayer, placement: placement, bloom: bloom,
                             cava: hasCava, listening: listening,
                             energy: Math.round(energy * 1000) / 1000, bass: Math.round(bass * 1000) / 1000,
                             beat: Math.round(beat * 1000) / 1000, kick: Math.round(kick * 1000) / 1000,
@@ -783,6 +793,7 @@ Item {
     function lyricsOverViz(on: string): string { return root.setStageFlag("lyricsOverViz", on) }
     function autoQuality(on: string): string { return root.setStageFlag("autoQuality", on) }
     function showFps(on: string): string { return root.setStageFlag("showFps", on) }
+    function bloom(level: string): string { return root.setBloom(level) }
     function widget(key: string, value: string): string { return root.setWidget(key, value) }
   }
 

@@ -20,11 +20,22 @@ Item {
   z: 50
 
   function open() {
-    all = host.commands()
+    all = host.commands().concat(bloomCommands())
     input.text = ""
     filter()
     shown = true
     input.forceActiveFocus()
+  }
+  // Bloom levels live here rather than in the host's list.
+  function bloomCommands() {
+    var e = host.engine, out = []
+    if (!e || !e.setBloom) return out
+    var levels = ["off", "subtle", "full"]
+    for (var i = 0; i < levels.length; i++)
+      (function(b) {
+        out.push({ group: "visualizer", label: "bloom · " + b + (e.bloom === b ? "  (now)" : ""), key: "", run: function() { e.setBloom(b) } })
+      })(levels[i])
+    return out
   }
   function close() {
     shown = false
