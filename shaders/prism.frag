@@ -10,8 +10,6 @@
 //#common
 
 layout(binding = 1) uniform sampler2D hist;
-// The album cover (Viz.qml): alpha 0 when there is none, and the sun stays a sun.
-layout(binding = 2) uniform sampler2D art;
 
 const int R = 40;            // rows of history (matches the 32x40 history target)
 const float N = 32.0;
@@ -152,25 +150,8 @@ void main() {
         float skyL = dark * (faux(corona * (0.35 + energy * 0.3 + kick * 0.35), 0.35) + wide * (0.12 + bass * 0.18 + faux(kick * 0.25, 0.5))
                              + rays * above * (0.10 + 0.25 * swell + kick * 0.4));
         vec3 hotCore = mix(sunCol, vec3(1.0), 0.55);
-        // The sun is the album cover: a bigger disc, setting behind the skyline,
-        // cut by the scrolling synthwave bands across its lower half.
-        float coverA = 0.0;
-        vec3 coverRgb = vec3(0.0);
-        {
-            float R = sr * 1.55;
-            vec2 cu = (p - sc) / (2.0 * R) + 0.5;
-            vec4 A = texture(art, vec2(cu.x, 1.0 - cu.y));
-            float sv = clamp(cu.y, 0.0, 1.0);
-            float gap = smoothstep(0.0, 0.08, fract(sv * 10.0 - flow * 0.42) - (1.0 - sv) * 0.55);
-            coverA = clamp(R - sd + 0.5, 0.0, 1.0) * above * gap * A.a;
-            // Lit by the sun's own colour from below, hotter on kicks.
-            coverRgb = A.rgb * mix(vec3(1.0), sunCol * 1.5, 0.22 * (1.0 - sv) * dark) * (0.92 + kick * 0.18 * dark);
-            core *= 1.0 - 0.85 * A.a * smoothstep(R * 1.1, R * 0.8, sd);
-        }
         vec3 skyRgb = sunCol * skyL + hotCore * (core * (0.9 + faux(kick * 0.5, 0.4)) + streak * faux(0.35 + kick * 0.6, 0.4)) * dark;
         float skyA = clamp(skyL + (core + streak * 0.5) * dark, 0.0, 1.0);
-        skyRgb = coverRgb * coverA + skyRgb * (1.0 - coverA * 0.8);
-        skyA = coverA + skyA * (1.0 - coverA);
         // Light themes: a soft tinted band at the horizon instead of light.
         float tint = light * glow(p.y - horizon, res.y * 0.20) * (0.10 + kick * 0.08);
         skyRgb += c1.rgb * tint; skyA += tint;

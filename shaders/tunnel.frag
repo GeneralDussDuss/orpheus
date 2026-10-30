@@ -14,9 +14,6 @@
 
 //#common
 
-// The album cover (Viz.qml): alpha 0 when there is none.
-layout(binding = 1) uniform sampler2D art;
-
 const float PI = 3.14159265;
 const int N = 32;            // rings in view
 const float SP = 0.55;       // world spacing between rings
@@ -157,12 +154,7 @@ void main() {
         vec3 pc = pal(fract(h * 3.7 + cell.y * 0.031));
         float base = (0.10 + 0.10 * loud) * fog;
         vec3 wallCol = mix(bg.rgb, mix(c1.rgb, c2.rgb, 0.5 + 0.5 * sin(ang * 2.0 + zw * 0.08)), 0.22 + 0.12 * light);
-        // The walls carry the cover: once around (mirrored, so no seam), and
-        // again every eight ring gaps down the tube, rushing past with the flow.
-        vec4 A = texture(art, vec2(abs(fract(ang / (2.0 * PI) + 0.25) * 2.0 - 1.0),
-                                   abs(fract(zw / (SP * 16.0)) * 2.0 - 1.0)));
-        wallCol = mix(wallCol, A.rgb * (0.75 + 0.35 * ringLight), A.a * 0.85);
-        float wa = base + seams * 0.10 * fog + A.a * fog * (0.24 + 0.10 * loud);
+        float wa = base + seams * 0.10 * fog;
         col.rgb += (1.0 - col.a) * wa * wallCol;
         col.a += (1.0 - col.a) * wa;
         float pa = clamp(inset * on * fog * 0.6, 0.0, 1.0);

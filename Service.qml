@@ -39,7 +39,7 @@ Item {
                                      showMonitor: "", autoStyle: false, trackTitle: true, lyricsOverViz: false,
                                      autoQuality: true, showFps: false, bloom: "subtle",
                                      endless: true, crossfade: 0, remote: "off",
-                                     director: true, beatLock: true, lookaheadMs: 85, feedback: "subtle", albumArt: true,
+                                     director: true, beatLock: true, lookaheadMs: 85, feedback: "subtle",
                                      widget: { enabled: true, style: "full", corner: "bottom-right", monitor: "", viz: "prism", layer: "top" } })
 
   // ---- Config ------------------------------------------------------------
@@ -60,11 +60,9 @@ Item {
   // Post-process glow over the visualizers (Bloom.qml); dark themes only.
   readonly property var blooms: ["off", "subtle", "full"]
   readonly property string bloom: blooms.indexOf(config.bloom) >= 0 ? config.bloom : "subtle"
-  // MilkDrop-style trails under every visualizer (VizPost.qml), and the album
-  // cover inside the visuals (Prism's sun, Halo's record, the Tunnel walls...).
+  // MilkDrop-style trails under every visualizer (VizPost.qml).
   readonly property var feedbacks: ["off", "subtle", "full"]
   readonly property string feedback: feedbacks.indexOf(config.feedback) >= 0 ? config.feedback : "subtle"
-  readonly property bool albumArt: config.albumArt !== false
   readonly property var widget: {
     var w = {}
     for (var k in defaults.widget) w[k] = defaults.widget[k]
@@ -776,7 +774,7 @@ Item {
   }
   // The stage's on/off switches: autoStyle, trackTitle, lyricsOverViz, autoQuality, showFps.
   function setStageFlag(key, on) {
-    var keys = ["autoStyle", "trackTitle", "lyricsOverViz", "autoQuality", "showFps", "albumArt", "director", "beatLock"]
+    var keys = ["autoStyle", "trackTitle", "lyricsOverViz", "autoQuality", "showFps", "director", "beatLock"]
     if (keys.indexOf(key) < 0) return "unknown setting: " + key + " (" + keys.join("|") + ")"
     var v = on === "toggle" ? !root[key] : (on === true || on === "on" || on === "true" || on === "1")
     updateConfig(function(c) { c[key] = v })
@@ -888,7 +886,6 @@ Item {
     function showFps(on: string): string { return root.setStageFlag("showFps", on) }
     function bloom(level: string): string { return root.setBloom(level) }
     function feedback(level: string): string { return root.setFeedback(level) }
-    function albumArt(on: string): string { return root.setStageFlag("albumArt", on) }
     function director(on: string): string { return root.setStageFlag("director", on) }
     function beatLock(on: string): string { return root.setStageFlag("beatLock", on) }
     function widget(key: string, value: string): string { return root.setWidget(key, value) }

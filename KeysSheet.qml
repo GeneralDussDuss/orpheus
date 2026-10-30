@@ -29,7 +29,7 @@ Item {
     ["lists", [["j k  ↑ ↓", "move"], ["pgup pgdn", "move 10"], ["g  G", "top / bottom"], ["⏎", "open or play"],
                ["a", "add to queue"], ["f", "like the row"], ["P  S", "play all / shuffle all"]]],
     ["visualizer", [["v", "cycle the player rail"], ["V", "open / close the visualizer"],
-                    ["a", "album art in the visuals on / off (in the visualizer)"], ["f", "fullscreen show (in the visualizer)"]]],
+                    ["f", "fullscreen show (in the visualizer)"]]],
     ["video page", [["⇥", "next provider"], ["⏎", "watch"], ["a", "listen instead"], ["c", "hand over to curd"],
                     ["space", "pause the video"], ["h l", "seek the video"], ["F", "fullscreen"], ["x", "close the video"]]],
     ["equalizer", [["h l", "pick a band"], ["j k", "± a step"], ["J K", "± coarse"], ["0  z", "zero band / all"],

@@ -175,69 +175,6 @@ ShaderEffect {
     textureSize: Qt.size(32, 40)
   }
 
-  // ---- album art --------------------------------------------------------------
-  //
-  // The current cover as the sampler `art` (512 px, mipmapped so a style can
-  // read it blurred, or as one average colour). A new cover crossfades in over
-  // the old one; alpha is 0 where there is no cover (nothing playing, not
-  // loaded yet, or `albumArt` off), and every style falls back to its own look
-  // there.
-  readonly property bool artOn: !!engine && engine.albumArt !== false && styleName !== "mini"
-  readonly property string artUrl: {
-    if (!artOn) return ""
-    var p = engine.player, t = engine.api ? engine.api.track : null
-    return (p && p.trackArtUrl) ? String(p.trackArtUrl) : (t && t.art ? String(t.art) : "")
-  }
-  property int artFront: 0
-  property real artMix: 1
-  property var art: artSrc
-  readonly property var artImgs: [artImg0, artImg1]
-  onArtUrlChanged: loadArt()
-  function loadArt() {
-    var front = artImgs[artFront], back = artImgs[1 - artFront]
-    if (artUrl === "") {
-      if (String(front.source) !== "") { back.source = ""; showArt() }
-      return
-    }
-    if (String(front.source) === artUrl) return
-    back.source = artUrl
-    if (back.status === Image.Ready) showArt()
-  }
-  function artReady(img) { if (img === artImgs[1 - artFront] && String(img.source) === artUrl) showArt() }
-  function showArt() {
-    artFront = 1 - artFront
-    artFade.restart()
-  }
-  NumberAnimation { id: artFade; target: fx; property: "artMix"; from: 0; to: 1; duration: 900; easing.type: Easing.InOutSine }
-  Image { id: artImg0; visible: false; asynchronous: true; cache: true; smooth: true; sourceSize: Qt.size(512, 512)
-          onStatusChanged: if (status === Image.Ready) fx.artReady(artImg0) }
-  Image { id: artImg1; visible: false; asynchronous: true; cache: true; smooth: true; sourceSize: Qt.size(512, 512)
-          onStatusChanged: if (status === Image.Ready) fx.artReady(artImg1) }
-  ShaderEffect {
-    id: artFx
-    width: 512; height: 512
-    blending: false
-    visible: fx.artOn
-    readonly property var cur: fx.artImgs[fx.artFront]
-    readonly property var old: fx.artImgs[1 - fx.artFront]
-    property var artCur: cur
-    property var artPrev: old
-    property real artMix: fx.artMix
-    property real curOk: fx.artOn && cur.status === Image.Ready && String(cur.source) !== "" ? 1 : 0
-    property real prevOk: fx.artOn && old.status === Image.Ready && String(old.source) !== "" ? 1 : 0
-    fragmentShader: Qt.resolvedUrl("shaders/artmix.frag.qsb")
-  }
-  ShaderEffectSource {
-    id: artSrc
-    sourceItem: artFx
-    hideSource: true
-    live: fx.artOn
-    smooth: true
-    mipmap: true
-    format: ShaderEffectSource.RGBA8
-    textureSize: Qt.size(512, 512)
-  }
-
   // ---- style transitions ------------------------------------------------------
   //
   // A new style (picked, palette, autoStyle) waits for the next downbeat when
@@ -254,7 +191,7 @@ ShaderEffect {
   property real lastBar: 0
   readonly property var kinds: ({ prism: 0, skyline: 0, horizon: 3, orb: 2, tunnel: 1, halo: 2, scope: 3, nova: 1 })
 
-  Component.onCompleted: { shownStyle = styleName; loadArt() }
+  Component.onCompleted: shownStyle = styleName
   onStyleNameChanged: requestStyle()
   function requestStyle() {
     if (shownStyle === "") return
@@ -308,7 +245,6 @@ ShaderEffect {
     blending: true
     fragmentShader: fx.oldStyle !== "" ? Qt.resolvedUrl("shaders/" + fx.oldStyle + ".frag.qsb") : ""
     property var hist: fx.hist
-    property var art: fx.art
     property real time: fx.time
     property vector2d res: fx.res
     property vector4d b0: fx.b0

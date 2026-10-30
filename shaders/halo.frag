@@ -12,9 +12,6 @@
 
 //#common
 
-// The album cover (Viz.qml): alpha 0 when there is none.
-layout(binding = 1) uniform sampler2D art;
-
 const float PI = 3.14159265;
 const float SLOTS = 64.0;    // 32 bands, mirrored
 
@@ -177,22 +174,6 @@ void main() {
     float disc = clamp((R0 - r) * kpx + 0.5, 0.0, 1.0);
     vec3 discCol = mix(bg.rgb * 0.35, mix(bg.rgb, c1.rgb, 0.08), light);
     float da = disc * (0.75 - 0.35 * light);
-    // The disc is the record: the cover pressed into it, turning at 33 rpm,
-    // with fine grooves, a sheen that stays put as it spins, and the spindle.
-    {
-        float rot = time * 3.4557;
-        vec2 rp = vec2(p.x * cos(rot) - p.y * sin(rot), p.x * sin(rot) + p.y * cos(rot));
-        vec2 cu = rp / (2.0 * R0 * 0.94) + 0.5;
-        vec4 A = texture(art, vec2(cu.x, 1.0 - cu.y));
-        float rn = r / R0;
-        float groove = 0.86 + 0.14 * sin(r * 1.7) * smoothstep(0.30, 0.36, rn);
-        float sheen = pow(abs(dot(p / max(r, 1.0), normalize(vec2(0.6, 0.8)))), 18.0) * smoothstep(0.30, 0.4, rn) * 0.22;
-        float hole = clamp((r - R0 * 0.035) * kpx + 0.5, 0.0, 1.0);
-        vec3 rec = A.rgb * groove * (0.78 + 0.22 * light) + sheen * mix(fg.rgb, vec3(1.0), 0.5) * (1.0 - 0.6 * light);
-        float k = A.a * hole;
-        discCol = mix(discCol, rec, k);
-        da = mix(da, disc * hole, A.a);
-    }
     col.rgb += (1.0 - col.a) * da * discCol;
     col.a += (1.0 - col.a) * da;
     light3 += glow(r, R0 * 0.7) * disc * (0.06 + bass * 0.18 + hit * 0.25) * c1.rgb;

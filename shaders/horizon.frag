@@ -9,8 +9,6 @@
 //#common
 
 layout(binding = 1) uniform sampler2D hist;
-// The album cover (Viz.qml, mipmapped): alpha 0 when there is none.
-layout(binding = 2) uniform sampler2D art;
 
 const int K = 30;            // ridges, front (0) to back
 const float R = 40.0;        // history rows
@@ -42,16 +40,6 @@ void main() {
         float up = (p.y - horizon) / (res.y - horizon);
         float skyGlow = dark * glow(up, 0.45 + swell * 0.15) * (0.16 + energy * 0.18 + kick * 0.22);
         col = vec4(glowCol * skyGlow, skyGlow);
-        // The sky reflects the cover: a soft, blurred image of it rising off
-        // the horizon behind the sun, like the land's own aurora.
-        {
-            float sh = res.y - horizon;
-            vec2 cu = vec2((p.x - res.x * 0.5) / (sh * 1.6) + 0.5, 1.0 - up);
-            vec4 A = textureLod(art, clamp(cu, 0.0, 1.0), 3.5);
-            float k = A.a * smoothstep(0.0, 0.12, up) * smoothstep(1.0, 0.45, up)
-                      * smoothstep(0.0, 0.25, cu.x) * smoothstep(1.0, 0.75, cu.x) * mix(0.42 + swell * 0.12, 0.30, light);
-            col = vec4(col.rgb * (1.0 - k) + A.rgb * k, col.a * (1.0 - k) + k);
-        }
 
         // Round, sub-pixel stars on a sparse jittered grid. Each twinkles at its
         // own rate (two detuned sines, so they scintillate rather than pulse in sync).

@@ -70,7 +70,6 @@ Rectangle {
       r.push({ kind: "choice", id: "fps", label: "frame rate", options: [30, 60, 90, 120] })
       r.push({ kind: "choice", id: "bloom", label: "bloom", options: ["off", "subtle", "full"], hint: "dark themes" })
       r.push({ kind: "choice", id: "feedback", label: "trails", options: ["off", "subtle", "full"], hint: "feedback" })
-      r.push({ kind: "toggle", id: "albumArt", label: "album art in the visuals" })
       r.push({ kind: "toggle", id: "syncViz", label: "widget follows the visualizer" })
       r.push({ kind: "toggle", id: "stage", label: "visualizer window open", hint: "V" })
     } else if (id === "widget") {

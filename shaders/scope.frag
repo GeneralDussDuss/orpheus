@@ -15,8 +15,6 @@
 //#common
 
 layout(binding = 1) uniform sampler2D hist;
-// The album cover (Viz.qml): alpha 0 when there is none.
-layout(binding = 2) uniform sampler2D art;
 
 const float PI = 3.14159265;
 const int ECHOES = 9;        // afterimages, every ESTEP history rows (~0.45 s at 60 fps)
@@ -191,19 +189,6 @@ void main() {
                 }
             }
         }
-    }
-
-    // ---- the cover, projected onto the haze behind the stage -----------------------
-    // Soft-edged, scanlined like a CRT, breathing with the loudness.
-    {
-        vec2 cu = (q - vec2(0.0, 0.10)) / 0.70 + 0.5;
-        vec4 A = texture(art, vec2(cu.x, 1.0 - cu.y));
-        vec2 e = min(cu, 1.0 - cu);
-        float m = smoothstep(0.0, 0.18, e.x) * smoothstep(0.0, 0.18, e.y);
-        float scan = 0.72 + 0.28 * sin(px.y * 2.2);
-        float ka = A.a * m * scan * mix(0.20 + 0.10 * loud + 0.08 * kick, 0.22, light);
-        col.rgb += (1.0 - col.a) * ka * A.rgb;
-        col.a += (1.0 - col.a) * ka;
     }
 
     // ---- light: beam glow, shafts through the haze, a backlight behind the stage ----

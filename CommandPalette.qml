@@ -35,15 +35,12 @@ Item {
       (function(b) {
         out.push({ group: "visualizer", label: "bloom · " + b + (e.bloom === b ? "  (now)" : ""), key: "", run: function() { e.setBloom(b) } })
       })(levels[i])
-    // Trails and album art in the visuals ride along with bloom.
+    // Trails ride along with bloom.
     if (e.setFeedback)
       for (var j = 0; j < levels.length; j++)
         (function(f) {
           out.push({ group: "visualizer", label: "trails · " + f + (e.feedback === f ? "  (now)" : ""), key: "", run: function() { e.setFeedback(f) } })
         })(levels[j])
-    if (e.setStageFlag && typeof e.albumArt === "boolean")
-      out.push({ group: "visualizer", label: "album art in the visuals · " + (e.albumArt ? "on" : "off"), key: "",
-                 run: function() { e.setStageFlag("albumArt", "toggle") } })
     return out
   }
   // The director: song structure (builds, drops) and the beat-locked pulse.

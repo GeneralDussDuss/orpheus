@@ -9,8 +9,6 @@
 //#common
 
 layout(binding = 1) uniform sampler2D hist;
-// The album cover (Viz.qml): alpha 0 when there is none.
-layout(binding = 2) uniform sampler2D art;
 
 vec3 sat3(vec3 x) { return x / (1.0 + max(max(x.r, x.g), x.b) * 0.6); }
 
@@ -61,23 +59,6 @@ void main() {
 
     vec4 col = vec4(0.0);
     vec3 bloom = vec3(0.0);
-
-    // ---- the LED wall: the cover, big, at the back of the stage ---------------
-    {
-        float sz = res.y * 0.42;
-        vec2 lo = vec2(res.x * 0.5 - sz * 0.5, base + res.y * 0.17);
-        vec2 cu = (p - lo) / sz;
-        if (cu.x > 0.0 && cu.x < 1.0 && cu.y > 0.0 && cu.y < 1.0) {
-            float pitchL = max(3.0, res.y / 160.0);
-            vec2 cell = floor((p - lo) / pitchL);
-            vec4 A = texture(art, vec2((cell.x + 0.5) * pitchL / sz, 1.0 - (cell.y + 0.5) * pitchL / sz));
-            vec2 f = fract((p - lo) / pitchL) - 0.5;
-            float led = smoothstep(0.5, 0.28, length(f));
-            float edge = smoothstep(0.0, 0.03, min(min(cu.x, 1.0 - cu.x), min(cu.y, 1.0 - cu.y)));
-            float k = A.a * edge * mix(led * (0.50 + 0.20 * swell + 0.25 * kick), 0.5, light);
-            col = over(col, A.rgb * mix(1.15, 1.0, light), k);
-        }
-    }
 
     // ---- back of the stage: haze glow and sweeping spotlights -----------------
     if (dark > 0.0) {
