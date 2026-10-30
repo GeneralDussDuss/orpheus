@@ -458,6 +458,9 @@ class Hyprland(QObject):
 QML_IMPORT_NAME = "Quickshell.Services.Mpris"
 
 
+PLAYER_LISTENERS: list = []   # called with each /status player dict (winshell)
+
+
 class OrpheusPlayer(QObject):
     """orpheusd as an MPRIS player. On Linux the daemon publishes itself on the
     bus and the QML finds it there; whether anything is playing, and so whether
@@ -476,6 +479,8 @@ class OrpheusPlayer(QObject):
             THEME[0].album.track_art(self._track().get("art") or "")
         self.changed.emit()
         self.positionChanged.emit()
+        for listener in PLAYER_LISTENERS:
+            listener(self._p)
 
     def _track(self) -> dict:
         return self._p.get("track") or {}
