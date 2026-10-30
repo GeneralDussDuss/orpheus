@@ -44,9 +44,9 @@ ShaderEffect {
   property real beat: engine ? engine.beat : 0
   property real flow: engine ? engine.travel : 0
 
-  // Spectrum history for Prism and Horizon, kept on the GPU: histFx renders a 32x40 target
+  // Spectrum history for Prism, Horizon and Scope, kept on the GPU: histFx renders a 32x40 target
   // from its own previous frame (rows shift back one step, row 0 = now).
-  readonly property bool wantsHistory: styleName === "prism" || styleName === "horizon"
+  readonly property bool wantsHistory: styleName === "prism" || styleName === "horizon" || styleName === "scope"
   property var hist: histSource
 
   ShaderEffect {
