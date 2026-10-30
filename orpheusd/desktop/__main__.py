@@ -312,6 +312,12 @@ def main():
         qmlRegisterType(QUrl.fromLocalFile(str(HERE / "qml" / f"{name}.qml")), "Quickshell", 1, 0, name)
 
     find_tools()
+    if sys.platform == "win32":
+        # Service.qml runs the audio capture (audiocap.py) with this interpreter:
+        # python.exe rather than pythonw.exe, for a plain stdout pipe.
+        exe = Path(sys.executable)
+        console = exe.with_name("python.exe")
+        os.environ.setdefault("ORPHEUS_PYTHON", str(console if console.exists() else exe))
     daemon = None if args.no_daemon else start_daemon()
     engine = QQmlApplicationEngine()
     shims.refresh_screens(engine)

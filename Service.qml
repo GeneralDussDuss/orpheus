@@ -220,17 +220,29 @@ Item {
   readonly property var api: apiClient
 
   // ---- Audio (cava) ------------------------------------------------------
-  property bool hasCava: false
+  // On Windows cava hears the whole default output: a game, Discord, a video.
+  // The desktop app's audiocap (orpheusd/desktop/audiocap.py) captures only
+  // orpheusd's mpv and prints cava's exact raw format, so it takes cava's place
+  // there; if it fails straight away (Windows older than 10 2004) cava returns.
+  readonly property string audiocapPython: windows ? Quickshell.env("ORPHEUS_PYTHON") : ""
+  property bool audiocapFailed: false
+  readonly property bool useAudiocap: audiocapPython !== "" && !audiocapFailed
+  property bool cavaFound: false
+  // "Can we hear the music": cava installed, or audiocap standing in for it.
+  readonly property bool hasCava: cavaFound || useAudiocap
   readonly property bool listening: hasCava && wanted && playing
+  onUseAudiocapChanged: if (cava.running) { cava.running = false; cavaRestart.restart() }
 
   Process {
     id: cavaCheck
     command: root.windows ? ["where", "cava"] : ["sh", "-c", "command -v cava"]
-    running: true
-    onExited: function(code) { root.hasCava = code === 0 }
+    // Not `running: true`: the desktop shim would see that before the command
+    // binding and start nothing, leaving the 15 s recheck to find cava.
+    Component.onCompleted: running = true
+    onExited: function(code) { root.cavaFound = code === 0 }
   }
   // Recheck occasionally so installing cava later just works.
-  Timer { interval: 15000; repeat: true; running: !root.hasCava; onTriggered: cavaCheck.running = true }
+  Timer { interval: 15000; repeat: true; running: !root.cavaFound && !root.useAudiocap; onTriggered: cavaCheck.running = true }
 
   // Small visualizers (bar, widget) get 30 Hz; the big stage gets the full rate.
   readonly property int audioFps: open ? fps : 30
@@ -256,7 +268,7 @@ Item {
   property string sinkMonitor: ""
 
   // Windows cava captures the default output by itself.
-  function probeSink() { if (hasCava && !windows) sinkProbe.running = true }
+  function probeSink() { if (cavaFound && !windows) sinkProbe.running = true }
 
   Process {
     id: sinkProbe
@@ -270,7 +282,7 @@ Item {
     }
   }
 
-  onHasCavaChanged: probeSink()
+  onCavaFoundChanged: probeSink()
 
   // pactl reports a change on the server object when the default sink moves.
   // One long-lived subscriber beats polling: device changes are rare, and this
@@ -290,7 +302,7 @@ Item {
   Timer {
     interval: 5000
     repeat: true
-    running: root.hasCava && !root.windows && !sinkWatch.running
+    running: root.cavaFound && !root.windows && !sinkWatch.running
     onTriggered: { sinkWatch.running = true; root.probeSink() }
   }
 
@@ -301,14 +313,29 @@ Item {
 
   FileView { id: cavaConfigFile; path: root.cavaConfigPath; printErrors: false }
 
+  property real audioStartedMs: 0
   Process {
     id: cava
     running: root.listening
-    command: ["cava", "-p", root.cavaConfigPath]
+    command: root.useAudiocap
+             ? [root.audiocapPython, "-m", "orpheusd.desktop.audiocap", "--fps", String(root.audioFps), "--bars", "32",
+                "--noise-reduction", "70"]
+             : ["cava", "-p", root.cavaConfigPath]
     stdout: SplitParser {
       onRead: function(line) { root.ingest(line) }
     }
-    onExited: function(code) { if (code !== 0 && root.listening) console.warn("orpheus: cava exited with", code) }
+    onRunningChanged: if (running) root.audioStartedMs = Date.now()
+    onExited: function(code) {
+      if (code === 0 || !root.listening) return
+      if (root.useAudiocap && Date.now() - root.audioStartedMs < 5000) {
+        console.warn("orpheus: audiocap exited with", code, "- falling back to cava")
+        // Later, not now: a command that never started lands here from inside
+        // the `running` binding, and flipping the source there loops it.
+        Qt.callLater(function() { root.audiocapFailed = true; cavaRestart.restart() })
+      } else {
+        console.warn("orpheus: " + (root.useAudiocap ? "audiocap" : "cava") + " exited with", code)
+      }
+    }
   }
 
   // If cava dies while we still want audio (device change, config race), bring it back.
