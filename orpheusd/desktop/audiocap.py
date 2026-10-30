@@ -26,7 +26,12 @@ import time
 import urllib.request
 from ctypes import wintypes
 
-import numpy as np
+# One FFT a frame needs no BLAS thread pool. OpenBLAS sizes one buffer per
+# core by default, which committed ~770 MB to this small process.
+for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")
+
+import numpy as np  # noqa: E402  after the thread caps
 
 RATE = 48000
 CHANNELS = 2
