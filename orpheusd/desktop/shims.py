@@ -472,6 +472,8 @@ class OrpheusPlayer(QObject):
 
     def update(self, p: dict):
         self._p, self._at = p or {}, time.monotonic()
+        if THEME:
+            THEME[0].album.track_art(self._track().get("art") or "")
         self.changed.emit()
         self.positionChanged.emit()
 
@@ -616,7 +618,7 @@ def theme_groups() -> list[tuple[str, list[str]]]:
     """The menu's sections. A user theme with a bundled name replaces it, so it
     is listed once, under Yours."""
     yours = sorted(p.stem for p in user_themes_dir().glob("*.toml")) if user_themes_dir().is_dir() else []
-    groups = [("Orpheus", [DEFAULT_THEME])]
+    groups = [("Orpheus", [DEFAULT_THEME, "album"])]
     for label, sub in (("Orpheus", "orpheus"), ("Omarchy", "omarchy")):
         names = sorted(p.stem for p in (THEMES_DIR / sub).glob("*.toml") if p.stem not in yours)
         if label == "Orpheus":
@@ -633,7 +635,7 @@ def theme_names() -> list[str]:
 
 
 def theme_label(name: str) -> str:
-    return name.replace("-", " ").title()
+    return "From Album Art" if name == "album" else name.replace("-", " ").title()
 
 
 def _theme_file(name: str) -> Path | None:
@@ -679,20 +681,54 @@ class Color(QObject):
         self._name = ""
         self._v = {}
         THEME[:] = [self]
+        from .albumtheme import AlbumTheme
+        self.album = AlbumTheme(self, self)
         self.set_theme(saved_theme(), save=False)
 
     def set_theme(self, name: str, save: bool = True):
         import json
-        path = _theme_file(name) if name != DEFAULT_THEME else None
-        t = _read_toml(path) if path else {}
-        if not t:
-            name = DEFAULT_THEME
-        self._name = name
-        self._apply(t, path.read_text(encoding="utf-8") if path else "")
+        from .themegen import to_toml
+        if name == "album":
+            # Until the first cover arrives, keep looking like Orpheus.
+            self._name = name
+            p = self.album.palette
+            self._apply(p or {}, to_toml(p) if p else "")
+        else:
+            path = _theme_file(name) if name != DEFAULT_THEME else None
+            t = _read_toml(path) if path else {}
+            if not t:
+                name = DEFAULT_THEME
+            self._name = name
+            self._apply(t, path.read_text(encoding="utf-8") if path else "")
         if save:
             p = _prefs_path()
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(json.dumps({"theme": name}) + "\n", encoding="utf-8")
+
+    def apply_album(self, palette: dict):
+        from .themegen import to_toml
+        self._apply(palette, to_toml(palette))
+
+    # ---- for QML (the settings page) ----------------------------------------
+    themesChanged = Signal()
+
+    def _theme_list(self):
+        return [{"name": n, "label": theme_label(n), "group": g} for g, names in theme_groups() for n in names]
+
+    themeList = Property("QVariantList", _theme_list, notify=themesChanged)
+
+    @Slot(str)
+    def setTheme(self, name):
+        self.set_theme(name)
+
+    @Slot()
+    def openBuilder(self):
+        from .themebuilder import open_builder
+        open_builder()
+
+    @Slot()
+    def rescanThemes(self):
+        self.themesChanged.emit()
 
     def preview(self, palette: dict):
         """Show a palette without making it the theme: the builder's live view.
