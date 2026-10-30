@@ -117,7 +117,7 @@ void main() {
         col.a += (1.0 - col.a) * cm;
         // Glow around the ring, wider when loud.
         float gr = FOC * (0.035 + lvl * 0.03 + hit * 0.03) / zi;
-        glowSum += rc * glow(sd, gr) * bright * a * 0.16;
+        glowSum += rc * glow(sd, gr) * bright * a * faux(0.16, 0.4);
     }
 
     // ---- walls: between the rings, lit by them, fading into fog ------------------
@@ -160,7 +160,7 @@ void main() {
         float pa = clamp(inset * on * fog * 0.6, 0.0, 1.0);
         col.rgb += (1.0 - col.a) * pa * pc;
         col.a += (1.0 - col.a) * pa;
-        glowSum += pc * lit(inset * on * fog) * 0.12 + mix(c1.rgb, c3.rgb, u) * lit(ringLight * fog) * 0.18;
+        glowSum += pc * lit(inset * on * fog) * faux(0.12, 0.35) + mix(c1.rgb, c3.rgb, u) * lit(ringLight * fog) * faux(0.18, 0.3);
     }
 
     // ---- dust: streaks rushing past the camera inside the tube --------------------
@@ -196,8 +196,8 @@ void main() {
         vec2 d = p - cFar;
         float r = length(d);
         float core = glow(r, 0.035 + bass * 0.03 + hit * 0.03) * (0.3 + bass * 0.6 + hit * 1.0);
-        float bloom = glow(r, 0.16 + loud * 0.10) * (0.06 + loud * 0.14 + hit * 0.22);
-        float flare = glow(d.y, 0.004 + hit * 0.004) * glow(d.x, 0.35 + hit * 0.6) * (0.10 + hit * 1.2);
+        float bloom = glow(r, 0.16 + loud * 0.10) * faux(0.06 + loud * 0.14 + hit * 0.22, 0.4);
+        float flare = glow(d.y, 0.004 + hit * 0.004) * glow(d.x, 0.35 + hit * 0.6) * faux(0.10 + hit * 1.2, 0.4);
         glowSum += mix(c1.rgb, fg.rgb, 0.45) * core + c2.rgb * bloom + mix(c3.rgb, fg.rgb, 0.5) * flare;
         // On light themes the end of the tunnel is a soft bright opening instead of light.
         float open = glow(r, 0.10 + bass * 0.06) * light;

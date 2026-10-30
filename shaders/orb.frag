@@ -90,7 +90,7 @@ void main() {
     // Shockwaves: a fat one on kicks, a thin one on snares.
     float wave = rim + (1.0 - kick) * 0.42;
     float aW = glow(r - wave, px * (2.0 + 6.0 * kick)) * kick * kick;
-    add += mix(c1.rgb, fg.rgb, 0.3) * aW * 1.2;
+    add += mix(c1.rgb, fg.rgb, 0.3) * aW * faux(1.2, 0.35);
     col = over(col, mix(c1.rgb, fg.rgb, 0.2), glow(r - wave, px * 1.5) * kick * kick * light * 0.7);
     float wave2 = rim + (1.0 - snap) * 0.30;
     add += c3.rgb * glow(r - wave2, px * 1.5) * snap * snap * 0.8;
@@ -113,7 +113,7 @@ void main() {
             float lvl = band(abs(ea) / 3.14159265);           // mirrored, so it has no seam
             vec3 rc = pal(0.2 + fk * 0.35);
             float a = line * (back ? 0.35 : 0.85) * (0.35 + lvl * 1.3);
-            add += rc * glow(d, px * (3.0 + lvl * 5.0)) * (0.15 + lvl * 0.5 + kick * 0.3) * (back ? 0.4 : 1.0);
+            add += rc * glow(d, px * (3.0 + lvl * 5.0)) * faux(0.15 + lvl * 0.5 + kick * 0.3, 0.4) * (back ? 0.4 : 1.0);
             // Beads riding the ring, each dragging a fading trail behind it.
             float bead = 0.0;
             for (int b = 0; b < 3; b++) {
@@ -147,7 +147,7 @@ void main() {
         }
     }
     // Outer halo hugging the outline.
-    add += pal(mirrored) * glow(rr, 0.05 + lv * 0.04) * (0.30 + energy * 0.3 + kick * 0.25) * step(rim, r);
+    add += pal(mirrored) * glow(rr, 0.05 + lv * 0.04) * faux(0.30 + energy * 0.3 + kick * 0.25, 0.4) * step(rim, r);
 
     col.rgb = col.rgb * col.a;                               // to premultiplied
     vec3 L = sat3(add) * dark;

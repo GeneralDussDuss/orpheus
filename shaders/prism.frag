@@ -73,9 +73,10 @@ void main() {
 
         // Rooftop bloom, strongest near you and on kicks.
         float topY = by + h + dy * 0.5;
-        if (dark > 0.0 && p.x > x0 - pitch * 0.6 && p.x < x0 + w + dx + pitch * 0.6) {
+        // (Only hot rows: heat is 0 below a third of full, so most rows skip the two exps.)
+        if (dark > 0.0 && heat > 0.0 && p.x > x0 - pitch * 0.6 && p.x < x0 + w + dx + pitch * 0.6) {
             bloom += tint * glow(p.y - topY, pitch * (1.4 + kick)) * glow(p.x - (x0 + w * 0.5 + dx * 0.5), pitch * 1.1)
-                     * heat * (1.0 - fog) * (0.22 + kick * 0.7);
+                     * heat * (1.0 - fog) * (faux(0.22, 0.4) + faux(kick * 0.7, 0.6));
         }
 
         // Front face: dark at the foot, emissive toward the top, crisp rim.
@@ -146,10 +147,10 @@ void main() {
         float wide = glow(p.y - horizon, res.y * (0.16 + swell * 0.08));
         // Anamorphic streak through the sun: a thin horizontal flare that stretches on kicks.
         float streak = glow(p.y - sc.y, res.y * (0.006 + kick * 0.006)) * glow(p.x - sc.x, res.x * (0.25 + kick * 0.35));
-        float skyL = dark * (corona * (0.35 + energy * 0.3 + kick * 0.35) + wide * (0.12 + bass * 0.18 + kick * 0.25)
+        float skyL = dark * (faux(corona * (0.35 + energy * 0.3 + kick * 0.35), 0.35) + wide * (0.12 + bass * 0.18 + faux(kick * 0.25, 0.5))
                              + rays * above * (0.10 + 0.25 * swell + kick * 0.4));
         vec3 hotCore = mix(sunCol, vec3(1.0), 0.55);
-        vec3 skyRgb = sunCol * skyL + hotCore * (core * (0.9 + kick * 0.5) + streak * (0.35 + kick * 0.6)) * dark;
+        vec3 skyRgb = sunCol * skyL + hotCore * (core * (0.9 + faux(kick * 0.5, 0.4)) + streak * faux(0.35 + kick * 0.6, 0.4)) * dark;
         float skyA = clamp(skyL + (core + streak * 0.5) * dark, 0.0, 1.0);
         // Light themes: a soft tinted band at the horizon instead of light.
         float tint = light * glow(p.y - horizon, res.y * 0.20) * (0.10 + kick * 0.08);
@@ -160,7 +161,7 @@ void main() {
 
     col.rgb += sat3(bloom) * (1.0 - col.a * 0.5);
     col.a = clamp(col.a + length(bloom) * 0.4, 0.0, 1.0);
-    col.rgb *= 1.0 + kick * 0.08 * dark;
+    col.rgb *= 1.0 + faux(kick * 0.08, 0.5) * dark;
 
     // Vignette: corners sink toward shadow so the eye lands on the road.
     vec2 q = qt_TexCoord0 - 0.5;

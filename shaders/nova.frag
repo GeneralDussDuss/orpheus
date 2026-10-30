@@ -97,7 +97,7 @@ void main() {
             float a = clamp(core * sb, 0.0, 1.0);
             col.rgb += (1.0 - col.a) * a * sc;
             col.a += (1.0 - col.a) * a;
-            L += glow(dist, w * 3.0 + 1.5) * fade * sb * 0.25 * (1.0 - z) * pal(1.0 - uS);
+            L += glow(dist, w * 3.0 + 1.5) * fade * sb * faux(0.25, 0.4) * (1.0 - z) * pal(1.0 - uS);
         }
     }
 
@@ -130,7 +130,7 @@ void main() {
 
     // ---- corona, spikes, core ----------------------------------------------------------
     float cr = 0.05 + lvl * 0.16 + bass * 0.03 + hit * 0.03;
-    float corona = exp(-pow(r / cr, 2.0)) * (0.25 + lvl * 0.5 + hit * 0.4);
+    float corona = exp(-pow(r / cr, 2.0)) * faux(0.25 + lvl * 0.5 + hit * 0.4, 0.3);
     float rim = glow(r - cr, 0.005 + lvl * 0.008) * (0.25 + lvl * 0.6 + hit * 0.4);
     L += corona * tint + rim * mix(tint, fg.rgb, 0.3);
     // Diffraction spikes: six thin arms, longer and brighter on kicks, flickering on snares.
@@ -141,7 +141,7 @@ void main() {
         float spk = glow(perp, 0.0018 + r * 0.006) * exp(-r / len) * (0.25 + hit * 0.9 + snap * 0.3);
         L += spk * mix(c1.rgb, fg.rgb, 0.5);
     }
-    float core = glow(r, 0.016 + bass * 0.012 + hit * 0.015) * (0.6 + hit * 1.2);
+    float core = glow(r, 0.016 + bass * 0.012 + hit * 0.015) * (0.6 + faux(hit * 1.2, 0.5));
     L += core * mix(c1.rgb, fg.rgb, 0.6);
     // Light themes: the core and corona become a bright opening with a coloured rim.
     {

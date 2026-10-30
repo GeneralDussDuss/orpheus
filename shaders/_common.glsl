@@ -28,6 +28,7 @@ layout(std140, binding = 0) uniform buf {
     float kicks;     // kick counter, whole steps wrapping at 1024: hash(vec2(kicks)) varies per kick
     vec4 kickAge;    // seconds since each of the last three kicks, newest first (x, y, z), capped
                      // at 8.0; w = strength (0..1) of the newest. Lets kick effects layer.
+    float bloomAmt;  // 0 = no post bloom over this view, 0.6 subtle, 1.0 full (Viz.qml / Bloom.qml)
 };
 
 // 32 cava bands packed as 8 vec4s; band(x) samples them smoothly over 0..1.
@@ -83,6 +84,11 @@ vec3 dither(vec2 p) { return vec3((hash(p) - 0.5) / 255.0); }
 
 // Additive light that switches off on light themes (glow reads as smudge there).
 float lit(float x) { return x * (1.0 - 0.85 * light); }
+
+// A shader-drawn halo that the real bloom pass now also draws: dialled down by
+// `k` (0..1) at full bloom, so the two don't stack into white. With bloom off
+// (the setting, light themes, auto quality's last step) it is untouched.
+float faux(float x, float k) { return x * (1.0 - k * bloomAmt); }
 
 // ---- camera: one slow, shared motion so every style feels alive --------------
 // Roll angle (radians): a slow wander, nudged by kicks.

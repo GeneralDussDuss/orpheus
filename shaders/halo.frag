@@ -151,14 +151,14 @@ void main() {
               * v * (0.12 + 0.28 * heat + 0.30 * hit);
     light3 += ray * tint;
     // Tip bloom.
-    light3 += glow(beyond, m * 0.03) * glow(lat, arc * 0.9) * heat * (0.3 + hit * 0.5) * tint;
+    light3 += glow(beyond, m * 0.03) * glow(lat, arc * 0.9) * heat * faux(0.3 + hit * 0.5, 0.5) * tint;
 
     // ---- the rim and the eclipse ---------------------------------------------------
     float ringLine = clamp((1.6 + hit * 1.5) - abs(r - R0) * kpx, 0.0, 1.0);
     vec3 ringCol = mix(c1.rgb, c2.rgb, 0.5 + 0.5 * sin(a * 2.0 * PI * 2.0 + time * 0.4));
     col.rgb += (1.0 - col.a) * ringLine * mix(ringCol, fg.rgb, 0.3 * (1.0 - light));
     col.a += (1.0 - col.a) * ringLine;
-    light3 += glow(r - R0, m * (0.025 + bass * 0.03 + hit * 0.02)) * (0.25 + bass * 0.45 + hit * 0.7) * ringCol;
+    light3 += glow(r - R0, m * (0.025 + bass * 0.03 + hit * 0.02)) * faux(0.25 + bass * 0.45 + hit * 0.7, 0.4) * ringCol;
 
     // Inner contour: the spectrum again as one smooth closed line, counter-rotating.
     float a2 = fract(atan(p.x, -p.y) / (2.0 * PI) + 0.5 - time / 80.0);
@@ -168,7 +168,7 @@ void main() {
     vec3 cc = mix(c3.rgb, c2.rgb, u2);
     col.rgb += (1.0 - col.a) * cl * 0.8 * cc;
     col.a += (1.0 - col.a) * cl * 0.8;
-    light3 += glow(r - rc, m * 0.015) * (0.15 + energy * 0.4) * cc;
+    light3 += glow(r - rc, m * 0.015) * faux(0.15 + energy * 0.4, 0.35) * cc;
 
     // The disc: dark (a lighter well on light themes), with a coloured lens glow.
     float disc = clamp((R0 - r) * kpx + 0.5, 0.0, 1.0);
@@ -199,7 +199,7 @@ void main() {
         vec3 oc = mix(pal(uo), bg.rgb, 0.35 * light);
         col.rgb += (1.0 - col.a) * dA * oc * 0.85;
         col.a += (1.0 - col.a) * dA * 0.85;
-        light3 += glow(dd, m * 0.008) * lv * 0.25 * pal(uo) * (1.0 - disc);
+        light3 += glow(dd, m * 0.008) * lv * faux(0.25, 0.35) * pal(uo) * (1.0 - disc);
         // A faint guide line for the orbit.
         float gl = clamp(0.8 - abs(rq - ROrb) * ok, 0.0, 1.0) * 0.12 * (1.0 - disc);
         col.rgb += (1.0 - col.a) * gl * c2.rgb;

@@ -99,7 +99,8 @@ void main() {
     float xn = q.x / W + 0.5;
     if (xn > 0.0 && xn < 1.0) {
         float near = abs(q.y - YC) - R0;                     // > 0: outside the beam's envelope
-        float glowR = (0.008 + hot * 0.016 + kick * 0.010) * (1.0 - 0.5 * light);
+        // Narrower under real bloom, which also shrinks the band of pixels that run the strands.
+        float glowR = (0.008 + hot * 0.016 + kick * 0.010) * (1.0 - 0.5 * light) * (1.0 - 0.3 * bloomAmt);
         float ends = smoothstep(0.0, 0.03, xn) * smoothstep(1.0, 0.97, xn);   // the beam fades into the wings
         if (near < glowR * 4.0) {
             for (int s = 0; s < 3; s++) {
@@ -112,7 +113,7 @@ void main() {
                 vec3 hc = mix(cs[s], fg.rgb, (0.20 + 0.30 * hot + 0.25 * kick) * (1.0 - light));
                 col.rgb += (1.0 - col.a) * core * hc;
                 col.a += (1.0 - col.a) * core;
-                float halo = lit(glow(d * pxU, glowR)) * (0.15 + hot * 0.45 + kick * 0.30) * ends;
+                float halo = lit(glow(d * pxU, glowR)) * faux(0.15 + hot * 0.45 + kick * 0.30, 0.4) * ends;
                 haloSum += halo * cs[s];
                 haloA += halo;
             }
@@ -182,7 +183,7 @@ void main() {
                     vec2 w = wave(xn, amp, time, fs * 2.1, 1.0 + fs * 0.25) * (1.0 - fs * 0.18);
                     float d = abs(yr - (YC + w.x)) / pxU;
                     float rc = clamp(1.2 + hot * 2.0 - d * 0.6, 0.0, 1.0) * refl;
-                    float rg = lit(glow(d * pxU, 0.012 + hot * 0.015)) * refl * (0.3 + hot);
+                    float rg = lit(glow(d * pxU, 0.012 + hot * 0.015)) * refl * faux(0.3 + hot, 0.3);
                     col.rgb += (1.0 - col.a) * rc * cs[s] + rg * cs[s];
                     col.a += (1.0 - col.a) * rc + rg * 0.3;
                 }

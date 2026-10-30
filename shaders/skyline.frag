@@ -139,7 +139,7 @@ void main() {
             float cap = boxAA(p, vec2(x0, base + pk - 1.5), vec2(x0 + w, base + pk + 1.5));
             float trail = boxAA(p, vec2(x0, base + h), vec2(x0 + w, base + pk)) * smoothstep(base + h, base + pk, p.y) * 0.16;
             col = over(col, mix(tint, fg.rgb, 0.5 + snap * 0.3), max(cap * 0.95, lit(trail)));
-            bloom += tint * lit(glow(p.y - (base + pk), 3.0 + snap * 4.0) * glow(p.x - (x0 + w * 0.5), w) * (0.2 + snap * 0.6));
+            bloom += tint * lit(glow(p.y - (base + pk), 3.0 + snap * 4.0) * glow(p.x - (x0 + w * 0.5), w) * faux(0.2 + snap * 0.6, 0.4));
         }
 
         // Reflection: the column mirrored under the floor, rippling, fading out.
@@ -149,12 +149,15 @@ void main() {
             float aR = boxAA(vec2(p.x + ripple, ry), vec2(x0, base), vec2(x0 + w, base + h * 0.8));
             float rf = smoothstep(base - h * 0.8, base, p.y) * mix(0.50, 0.30, light);
             col = over(col, mix(tint * 0.9, hotOf(tint, heat, dark), smoothstep(base - h * 0.3, base - h * 0.8, p.y) * heat), aR * rf);
-            bloom += tint * lit(glow(p.y - (base - h), pitch * 1.2) * glow(p.x - (x0 + w * 0.5), pitch * 0.8) * heat * 0.25);
+            if (heat > 0.0)
+                bloom += tint * lit(glow(p.y - (base - h), pitch * 1.2) * glow(p.x - (x0 + w * 0.5), pitch * 0.8) * heat * faux(0.25, 0.4));
         }
 
         // Bloom over hot tops, swelling on kicks.
-        bloom += tint * lit(glow(p.y - (base + h + dy * 0.5), pitch * (1.3 + kick)) * glow(p.x - (x0 + w * 0.5), pitch * 0.9)
-                 * heat * (0.35 + kick * 0.8));
+        // (heat is 0 for the quieter columns: they skip the two exps.)
+        if (heat > 0.0)
+            bloom += tint * lit(glow(p.y - (base + h + dy * 0.5), pitch * (1.3 + kick)) * glow(p.x - (x0 + w * 0.5), pitch * 0.9)
+                     * heat * (faux(0.35, 0.4) + faux(kick * 0.8, 0.6)));
     }
 
     col.rgb = col.rgb * col.a;                               // to premultiplied

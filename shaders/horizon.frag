@@ -72,7 +72,7 @@ void main() {
         float a = disc * 0.95;
         col = vec4(col.rgb * (1.0 - a) + sun * a, col.a * (1.0 - a) + a);
     }
-    float corona = lit(glow(max(sd - sr, 0.0), sr * (0.8 + swell * 0.4 + kick * 0.5)) * (0.30 + energy * 0.35 + kick * 0.55));
+    float corona = lit(glow(max(sd - sr, 0.0), sr * (0.8 + swell * 0.4 + kick * 0.5)) * faux(0.30 + energy * 0.35 + kick * 0.55, 0.35));
     col.rgb += sunA * corona * 0.8 * (1.0 - col.a);
     col.a = max(col.a, corona * 0.8);
 
@@ -90,7 +90,7 @@ void main() {
     }
 
     // Horizon line: a thin hot seam where the land meets the glow.
-    float seam = lit(glow(p.y - horizon, 2.0 + kick * 3.0) * (0.35 + energy * 0.3 + kick * 0.6) * glow(p.x - sc.x, res.x * 0.45));
+    float seam = lit(glow(p.y - horizon, 2.0 + kick * 3.0) * faux(0.35 + energy * 0.3 + kick * 0.6, 0.35) * glow(p.x - sc.x, res.x * 0.45));
     col.rgb += mix(sunA, vec3(1.0), 0.3) * seam; col.a = clamp(col.a + seam, 0.0, 1.0);
 
     // ---- ridges: front to back, the first one above the pixel owns it -------------
@@ -116,10 +116,10 @@ void main() {
             // Kick light rolls down the ridges: the crest sits at depth = kick, so as
             // the kick decays it travels from the back toward you.
             float pulse = lit(glow(z - kick, 0.09)) * min(1.0, kick * 4.0);
-            float halo2 = lit(glow(max(d, 0.0), (6.0 + 10.0 * v) * persp) * (0.45 + v * 0.5 + pulse));
+            float halo2 = lit(glow(max(d, 0.0), (6.0 + 10.0 * v) * persp) * faux(0.45 + v * 0.5 + pulse, 0.35));
             float fade = mix(1.0, 0.35, z);
             float sunward = glow(p.x - sc.x, res.x * 0.30) * z;   // ridges near the sun catch its light
-            vec3 lc = pal(z * 0.7 + fx * 0.3) * (1.25 + lit(1.2 * v + pulse * 2.2 + sunward * 0.6));
+            vec3 lc = pal(z * 0.7 + fx * 0.3) * (1.25 + lit(1.2 * v + faux(pulse * 2.2, 0.4) + sunward * 0.6));
             vec3 fogC = mix(bg.rgb, glowCol, 0.35 * dark);
             vec3 body = mix(bg.rgb * 0.6, bg.rgb, light);
             body = mix(body, fogC, z * z * 0.6);             // distant land melts into the glow
