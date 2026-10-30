@@ -3,12 +3,21 @@
 mpv is driven over its JSON IPC socket. The next track is resolved and
 appended to mpv's own playlist while the current one plays, so album
 transitions are gapless.
+
+With config `crossfade` above 0, a transition between tracks of different
+albums is a crossfade instead: mpv cannot fade between its own playlist
+entries, so a second mpv (a "deck") is started with the next track loaded and
+paused, and N seconds before the end it starts while the volumes cross on
+equal-power curves. The new deck becomes *the* mpv the moment it starts (its
+pid in /status, its events, the queue's place); the old one only fades out
+and quits. Within an album nothing changes: still one mpv, still gapless.
 """
 
 import asyncio
 import hashlib
 import json
 import logging
+import math
 import os
 import random
 import time
@@ -189,12 +198,29 @@ class QueueStore:
         write_atomic(self.place_path, json.dumps(self.player.place()).encode())
 
 
+class _Deck:
+    """One mpv process and its IPC pipe."""
+
+    def __init__(self, proc, reader, writer, address: str):
+        self.proc, self.reader, self.writer, self.address = proc, reader, writer, address
+        self.chain = None        # the `af` chain this mpv is running
+
+    @property
+    def alive(self) -> bool:
+        return self.proc is not None and self.proc.returncode is None
+
+
+# How long before a crossfade the next deck is resolved, started and loaded.
+XFADE_LEAD = 15.0
+
+
 class Player:
     def __init__(self, tidal, sources: dict, runtime_dir: Path, cache_dir: Path, on_change):
         self.tidal = tidal
         # yt-dlp sources by provider name; a track without a provider is TIDAL's
         self.sources = sources
         self.socket_path = ipc_address(runtime_dir, "mpv")
+        self.runtime_dir = runtime_dir
         self.cache_dir = cache_dir
         self.on_change = on_change
 
@@ -239,6 +265,25 @@ class Player:
         # since TIDAL's stream URLs expire.
         self._resume_at = 0.0
         self._http = None
+
+        # ---- decks, crossfade and gain -------------------------------------
+        self._deck: _Deck | None = None       # the current mpv
+        self._spawned = 0
+        self._side: set = set()               # readers of decks that are not current
+        self._hooks: dict = {}                # reader -> event callback, for a deck being prepared
+        self.crossfade = 0.0                  # seconds; set from config by the daemon
+        self.crossfading = False
+        self.suppress_xfade = False           # the sleep timer's fade owns the volume
+        self._xf: dict | None = None          # the next deck, while it is prepared
+        self._outgoing: _Deck | None = None   # the deck fading out
+        self._xf_task = None
+        self._xf_loop = None
+        self._cur_gain = 1.0                  # fade-in of the current deck (amplitude)
+        self._out_gain = 0.0                  # fade-out of the outgoing deck
+        self.gain = 1.0                       # the sleep timer's fade (amplitude)
+        self.serial = 0                       # bumps on every track start, for the history
+        self.ended = False                    # the queue ran out by playing to its end
+        self.stop_after = False               # stop when this track ends (sleep: end of track)
 
     # ---- derived -----------------------------------------------------------
 
@@ -288,23 +333,50 @@ class Player:
             "upNext": upcoming,
             "error": self.error,
             # The desktop's audio capture listens to this process tree only.
+            # During a crossfade that is the incoming deck: it is "now playing".
             "mpvPid": self._proc.pid if self._proc and self._proc.returncode is None else 0,
+            "crossfading": self.crossfading,
         }
 
     # ---- mpv process & IPC ---------------------------------------------------
 
     async def start(self):
-        ipc_clear(self.socket_path)
-        self._proc = await asyncio.create_subprocess_exec(
-            mpv_path(), *MPV_ARGS, f"--input-ipc-server={self.socket_path}",
+        await self._adopt(await self._spawn())
+        if not self._clock_task:
+            self._clock_task = asyncio.create_task(self._clock_loop())
+        if not self._xf_loop:
+            self._xf_loop = asyncio.create_task(self._xfade_loop())
+
+    async def _spawn(self) -> _Deck:
+        """Start an mpv and connect to it. Its events are ignored until it is
+        adopted as the current deck; replies to commands reach _send either way."""
+        self._spawned += 1
+        address = self.socket_path if self._spawned == 1 else ipc_address(self.runtime_dir, f"mpv{self._spawned}")
+        ipc_clear(address)
+        proc = await asyncio.create_subprocess_exec(
+            mpv_path(), *MPV_ARGS, f"--input-ipc-server={address}",
             stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL)
         try:
-            tie_to_daemon(self._proc.pid)
+            tie_to_daemon(proc.pid)
         except OSError as e:
             log.warning("mpv will outlive a killed daemon: %s", e)
-        self._reader, self._writer = await ipc_connect(self.socket_path)
-        asyncio.create_task(self._read_loop(self._reader))
+        try:
+            reader, writer = await ipc_connect(address)
+        except Exception:
+            proc.kill()
+            raise
+        deck = _Deck(proc, reader, writer, address)
+        self._side.add(reader)
+        asyncio.create_task(self._read_loop(reader))
+        return deck
+
+    async def _adopt(self, deck: _Deck):
+        """Make `deck` the current mpv: its events drive the player from here on."""
+        self._side.discard(deck.reader)
+        self._hooks.pop(deck.reader, None)
+        self._deck = deck
+        self._proc, self._reader, self._writer = deck.proc, deck.reader, deck.writer
         for i, prop in enumerate(["pause", "duration", "idle-active", "volume", "playlist-pos"]):
             await self._send(["observe_property", i + 1, prop])
         if WINDOWS:
@@ -315,8 +387,6 @@ class Player:
         # Restore the saved curve before anything plays, so the first track is
         # already corrected rather than snapping into place a moment later.
         await self._apply_eq()
-        if not self._clock_task:
-            self._clock_task = asyncio.create_task(self._clock_loop())
 
     def _heap_mb(self) -> int:
         try:
@@ -340,6 +410,7 @@ class Player:
         if self._http is not None:
             await self._http.close()
             self._http = None
+        await self._cancel_xfade()
         if self._proc and self._proc.returncode is None:
             try:
                 await self._send(["quit"], wait=False)
@@ -347,14 +418,22 @@ class Player:
             except Exception:
                 self._proc.kill()
 
-    async def _send(self, command, wait=True):
+    async def _send(self, command, wait=True, deck: _Deck | None = None):
+        # Request ids are unique across decks, so one table serves them all.
         self._req += 1
         rid = self._req
         fut = asyncio.get_running_loop().create_future() if wait else None
         if fut:
             self._pending[rid] = fut
-        self._writer.write((json.dumps({"command": command, "request_id": rid}) + "\n").encode())
-        await self._writer.drain()
+        writer = deck.writer if deck else self._writer
+        try:
+            writer.write((json.dumps({"command": command, "request_id": rid}) + "\n").encode())
+            await writer.drain()
+        except (ConnectionError, OSError, AttributeError, RuntimeError):
+            if deck is None:
+                raise
+            self._pending.pop(rid, None)
+            return None   # a side deck that has already gone
         if not fut:
             return None
         try:
@@ -372,12 +451,15 @@ class Player:
                 line = await reader.readline()
             except (ConnectionResetError, BrokenPipeError):
                 line = b""
-            if reader is not self._reader:
+            current = reader is self._reader
+            if not current and reader not in self._side:
                 return  # an mpv we recycled on purpose: its last words are stale
             if not line:
-                log.error("mpv went away")
-                self.idle = True
-                self.on_change()
+                if current:
+                    log.error("mpv went away")
+                    self.idle = True
+                    self.on_change()
+                self._side.discard(reader)
                 return
             try:
                 msg = json.loads(line)
@@ -389,7 +471,10 @@ class Player:
                 if not fut.done():
                     fut.set_result(msg)
                 continue
-            await self._on_event(msg)
+            if current:
+                await self._on_event(msg)
+            elif reader in self._hooks:
+                self._hooks[reader](msg)
 
     async def _on_event(self, msg):
         # This runs on the read loop, which is also what delivers replies to
@@ -408,13 +493,16 @@ class Player:
                 self.duration = float(data or 0)
             elif name == "idle-active":
                 self.idle = bool(data)
-            elif name == "volume" and data is not None:
+            elif name == "volume" and data is not None and not self._fading():
+                # While a fade runs, mpv's volume is the fade's, not the user's.
                 self.volume = float(data)
             self.on_change()
         elif ev == "start-file":
             entry = msg.get("playlist_entry_id")
             self._last_started = entry
             if entry in self._entries:
+                if entry != self._current_entry:
+                    self.serial += 1   # a gapless move to the prefetched track
                 self._current_entry = entry
                 self.pos = self._entries[entry]
                 # A paused start sends no playback-restart to correct this later.
@@ -456,10 +544,26 @@ class Player:
         await asyncio.sleep(0.05)
         if self._current_entry == entry:
             nxt = self.next_pos()
-            if nxt >= 0:
+            if self.stop_after:
+                # Sleep at the end of the track: stop here, ready on the next one,
+                # the way a restored queue waits for play.
+                self.stop_after = False
+                if nxt >= 0 and nxt != self.pos:
+                    self.pos, self.serial = nxt, self.serial + 1
+                    self.duration = float((self.current or {}).get("duration") or 0)
+                    self._resume_at = self._pos_at = 0.0
+                    self._pos_clock = time.monotonic()
+                self.paused = True
+                # mpv must agree, or the next play's unpause changes nothing it
+                # would report, and the player would go on saying "paused".
+                await self._send(["set_property", "pause", True])
+                self.on_change()
+            elif nxt >= 0:
                 await self._load(nxt)
             else:
                 self.paused = True
+                self.ended = True
+                await self._send(["set_property", "pause", True])
                 self.on_change()
 
     async def _refresh_position(self):
@@ -495,9 +599,12 @@ class Player:
         return await self.tidal.stream(track["id"], self.cache_dir)
 
     async def _load(self, order_pos: int, start: float = 0, paused: bool = False):
+        await self._cancel_xfade()
         self._loading += 1
         token = self._loading
         self.pos = order_pos
+        self.serial += 1
+        self.ended = False
         track = self.current
         self.error = ""
         self._busy, self._load_entry, self._seek_after_load = True, None, None
@@ -603,6 +710,8 @@ class Player:
         nxt = self.next_pos()
         if nxt < 0 or nxt == self.pos:
             return
+        if self._xfade_ok(nxt) or self.stop_after:
+            return   # the crossfade loop starts that one on a deck of its own
         if self._heap_mb() > RECYCLE_MB:
             return  # let this track end into a plain load, and recycle there
         token = self._loading
@@ -715,11 +824,14 @@ class Player:
     async def toggle(self):
         if self.idle and self.current and not self._busy:
             return await self._load(self.pos, start=self._resume_at)
+        await self._finish_fade_now()
         await self._send(["cycle", "pause"])
 
     async def set_paused(self, paused: bool):
         if not paused and self.idle and self.current and not self._busy:
             return await self._load(self.pos, start=self._resume_at)
+        if paused:
+            await self._finish_fade_now()
         await self._send(["set_property", "pause", paused])
 
     async def next(self):
@@ -755,21 +867,22 @@ class Player:
     # ---- equalizer ---------------------------------------------------------
 
     async def _apply_eq(self):
-        """Push the current curve to mpv, skipping a no-op rebuild.
+        """Push the current curve to every live mpv, skipping a no-op rebuild.
 
         Setting `af` rebuilds the audio filter graph, so only do it when the
-        resulting chain actually differs from what mpv is already running.
+        resulting chain actually differs from what that mpv is already running.
         """
         chain = eqmod.build_chain(self.eq)
-        if chain == self._eq_chain:
-            return
         self._eq_chain = chain
-        if self._writer is None:
-            return
-        try:
-            await self._send(["set_property", "af", chain])
-        except Exception as e:
-            log.warning("could not apply EQ: %s", e)
+        decks = [self._deck, self._outgoing, (self._xf or {}).get("deck")]
+        for d in decks:
+            if d is None or not d.alive or d.chain == chain:
+                continue
+            try:
+                await self._send(["set_property", "af", chain], deck=d)
+                d.chain = chain
+            except Exception as e:
+                log.warning("could not apply EQ: %s", e)
 
     async def set_eq(self, state: dict) -> dict:
         self.eq = eqmod.normalize(state)
@@ -785,10 +898,13 @@ class Player:
 
     async def set_volume(self, vol: float):
         vol = max(0.0, min(130.0, float(vol)))
-        await self._send(["set_property", "volume", vol])
         # mpv's property-change event lands after this returns, so the reply the UI
         # gets (and the saved prefs) would still carry the old volume.
         self.volume = vol
+        if self._fading():
+            await self._push_volumes()   # the fade carries on from the new level
+        else:
+            await self._send(["set_property", "volume", vol])
 
     async def set_shuffle(self, on: bool):
         if on == self.shuffle:
@@ -823,3 +939,216 @@ class Player:
         del self.order[queue_pos]
         self.on_change()
         asyncio.create_task(self._prefetch_next())
+
+    # ---- fades: crossfade and the sleep timer ------------------------------------
+    #
+    # mpv's volume is cubic: its amplitude gain is (volume / 100) ** 3. A fade
+    # is an amplitude curve, so the volume that plays the user's level times a
+    # gain g is volume * g ** (1/3).
+
+    def _fading(self) -> bool:
+        return self.crossfading or self.gain < 1.0 or self._cur_gain < 1.0
+
+    def _vol(self, g: float) -> float:
+        return round(self.volume * max(0.0, min(1.0, g * self.gain)) ** (1 / 3), 3)
+
+    async def _push_volumes(self):
+        cur, out = self._vol(self._cur_gain), self._vol(self._out_gain)
+        await self._send(["set_property", "volume", cur], wait=False)
+        if self._outgoing is not None:
+            await self._send(["set_property", "volume", out], wait=False, deck=self._outgoing)
+        log.debug("volumes in=%.2f out=%s gain=%.3f", cur, f"{out:.2f}" if self._outgoing else "-", self.gain)
+
+    async def set_stop_after(self, on: bool):
+        """Stop when the current track ends instead of moving on. Whatever mpv
+        has prefetched for a gapless start is dropped, so nothing slips out."""
+        self.stop_after = on
+        if on:
+            await self._send(["playlist-clear"])
+            self._entries = {k: v for k, v in self._entries.items() if k == self._current_entry}
+        else:
+            asyncio.create_task(self._prefetch_next())
+
+    async def set_gain(self, g: float):
+        """The sleep timer's fade: an amplitude multiplier over everything."""
+        g = max(0.0, min(1.0, g))
+        if g == self.gain:
+            return
+        self.gain = g
+        await self._push_volumes()
+
+    def _xfade_ok(self, nxt: int) -> bool:
+        """Whether the move to `nxt` should be a crossfade rather than gapless."""
+        n = self.crossfade
+        if (n <= 0 or nxt < 0 or nxt == self.pos or self.suppress_xfade or self.stop_after
+                or self.repeat == "one"):
+            return False
+        cur, nt = self.current, self.queue[self.order[nxt]]
+        if not cur:
+            return False
+        # An album, or two neighbours from one, plays as the record was cut.
+        if cur.get("albumId") and cur.get("albumId") == nt.get("albumId"):
+            return False
+        dur = self.duration or cur.get("duration") or 0
+        if dur < n * 2 + 5 or (nt.get("duration") and nt["duration"] < n * 2 + 5):
+            return False
+        return True
+
+    async def _xfade_loop(self):
+        while True:
+            await asyncio.sleep(0.1 if self._xf and self._xf.get("ready") else 0.25)
+            try:
+                await self._xfade_step()
+            except Exception as e:
+                log.warning("crossfade: %s", e)
+
+    async def _xfade_step(self):
+        if self.crossfading or self._busy or not self.playing or not self.duration:
+            return
+        nxt = self.next_pos()
+        if not self._xfade_ok(nxt):
+            if self._xf:
+                await self._drop_prepared()
+            return
+        n = self.crossfade
+        remaining = (self.duration or 0) - self.position
+        nid = self.queue[self.order[nxt]].get("id")
+        if self._xf and (self._xf["nxt"] != nxt or self._xf["id"] != nid or self._xf["token"] != self._loading):
+            await self._drop_prepared()   # the queue moved under it
+        if remaining > n + XFADE_LEAD:
+            return
+        if not self._xf:
+            self._xf = {"nxt": nxt, "id": nid, "ready": False, "failed": False, "token": self._loading}
+            asyncio.create_task(self._prepare(self._xf))
+            return
+        if not self._xf["ready"]:
+            return
+        if remaining <= n + 1.5:
+            t = await self._send(["get_property", "time-pos"])   # exact, not interpolated
+            if t is not None:
+                remaining = (self.duration or 0) - float(t)
+        if remaining <= n:
+            await self._start_crossfade(self._xf, remaining)
+
+    async def _prepare(self, xf: dict):
+        track = self.queue[self.order[xf["nxt"]]]
+        cover = asyncio.create_task(self._cover(track))
+        try:
+            info = await self._resolve(track)
+            cover = await cover
+        except Exception as e:
+            cover.cancel()
+            log.warning("crossfade: couldn't resolve %s (%s); it will load at the end instead", track.get("id"), e)
+            xf["failed"] = True
+            return
+        if xf is not self._xf:
+            return
+        deck = None
+        try:
+            deck = await self._spawn()
+            xf["deck"] = deck
+            loaded = asyncio.Event()
+            self._hooks[deck.reader] = lambda m: loaded.set() if m.get("event") == "file-loaded" else None
+            # Anything mpv prefetched into the current deck's playlist (from before
+            # crossfade was on) would play gaplessly underneath the fade: drop it.
+            await self._send(["playlist-clear"])
+            self._entries = {k: v for k, v in self._entries.items() if k == self._current_entry}
+            await self._send(["set_property", "volume", 0], deck=deck)
+            await self._send(["set_property", "pause", True], deck=deck)
+            await self._send(["set_property", "af", self._eq_chain], deck=deck)
+            deck.chain = self._eq_chain
+            url, opts = _loadable(info["source"], track, cover)
+            data = await self._send(["loadfile", url, "replace", -1, opts], deck=deck)
+            xf["entry"] = (data or {}).get("playlist_entry_id", -1)
+            xf["info"] = self._info(info)
+            await asyncio.wait_for(loaded.wait(), 20)
+        except Exception as e:
+            log.warning("crossfade: the next deck didn't load (%s)", e)
+            xf["failed"] = True
+            if deck:
+                await self._retire(deck)
+                xf.pop("deck", None)
+            return
+        if xf is not self._xf:
+            await self._retire(deck)
+            return
+        xf["ready"] = True
+        log.info("crossfade: %s ready on mpv %d", track.get("id"), deck.proc.pid)
+
+    async def _drop_prepared(self):
+        xf, self._xf = self._xf, None
+        if xf and xf.get("deck"):
+            await self._retire(xf["deck"])
+
+    async def _retire(self, deck: _Deck):
+        self._side.discard(deck.reader)
+        self._hooks.pop(deck.reader, None)
+        if deck.alive:
+            await self._send(["quit"], wait=False, deck=deck)
+            try:
+                await asyncio.wait_for(deck.proc.wait(), 2)
+            except Exception:
+                try:
+                    deck.proc.kill()
+                except ProcessLookupError:
+                    pass
+
+    async def _start_crossfade(self, xf: dict, remaining: float):
+        n = max(0.5, min(self.crossfade, remaining))
+        new, old = xf["deck"], self._deck
+        self._xf = None
+        self.crossfading = True
+        self._cur_gain, self._out_gain = 0.0, 1.0
+        await self._send(["set_property", "pause", False], deck=new)
+        # The incoming deck is "now playing" from its first sample.
+        self._side.add(old.reader)
+        self._outgoing = old
+        self._entries = {xf["entry"]: xf["nxt"]}
+        self._entry_info = {xf["entry"]: xf["info"]}
+        self._current_entry = self._last_started = self._last_loaded = xf["entry"]
+        self.pos = xf["nxt"]
+        self.serial += 1
+        self.ended = False
+        self.duration = float((self.current or {}).get("duration") or 0)
+        self.stream_info = xf["info"]
+        self._pos_at, self._pos_clock = 0.0, time.monotonic()
+        await self._adopt(new)
+        log.info("crossfade: %.1f s from mpv %d to mpv %d", n, old.proc.pid, new.proc.pid)
+        self.on_change()
+        self._xf_task = asyncio.create_task(self._run_crossfade(old, n))
+        asyncio.create_task(self._prefetch_next())
+
+    async def _run_crossfade(self, old: _Deck, n: float):
+        t0 = time.monotonic()
+        try:
+            while True:
+                x = min(1.0, (time.monotonic() - t0) / n)
+                # equal power: in**2 + out**2 == 1 all the way across
+                self._cur_gain, self._out_gain = math.sin(x * math.pi / 2), math.cos(x * math.pi / 2)
+                await self._push_volumes()
+                if x >= 1.0:
+                    break
+                await asyncio.sleep(0.03)
+        finally:
+            self._cur_gain, self._out_gain = 1.0, 0.0
+            self._outgoing = None
+            await self._retire(old)
+            self.crossfading = False
+            try:
+                await self._push_volumes()
+            except Exception:
+                pass
+            self.on_change()
+
+    async def _finish_fade_now(self):
+        """Pause or a jump during a crossfade: the old track stops now."""
+        if self._xf_task and not self._xf_task.done():
+            self._xf_task.cancel()
+            try:
+                await self._xf_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    async def _cancel_xfade(self):
+        await self._finish_fade_now()
+        await self._drop_prepared()

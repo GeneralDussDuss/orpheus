@@ -52,6 +52,10 @@ def track_dict(t):
         "hires": bool(getattr(t, "is_hi_res_lossless", False)),
         "art": _img(album, 640) if album else "",
         "available": bool(getattr(t, "available", True)),
+        # for endless play's ordering and for scrobbles; 0 / -1 / "" when TIDAL has none
+        "bpm": int(getattr(t, "bpm", 0) or 0),
+        "popularity": int(getattr(t, "popularity", -1) if getattr(t, "popularity", None) is not None else -1),
+        "isrc": str(getattr(t, "isrc", "") or ""),
     }
 
 
@@ -359,6 +363,20 @@ class Tidal:
     async def radio(self, track_id: str) -> list:
         def work():
             return [track_dict(t) for t in self.session.track(track_id).get_track_radio(limit=50)]
+        return await asyncio.to_thread(work)
+
+    async def radio_from(self, track_id: str, limit: int = 60) -> tuple[dict, list]:
+        """The seed as TIDAL has it (with its BPM, which an old queue entry may
+        lack) and its track radio. Falls back to the artist's radio when the
+        track has none."""
+        def work():
+            seed = self.session.track(track_id)
+            try:
+                items = seed.get_track_radio(limit=limit)
+            except Exception as e:
+                log.info("no track radio for %s (%s); trying the artist's", track_id, e)
+                items = seed.artist.get_radio(limit=limit) if getattr(seed, "artist", None) else []
+            return track_dict(seed), [track_dict(t) for t in items]
         return await asyncio.to_thread(work)
 
     # ---- playback ----------------------------------------------------------

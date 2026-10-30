@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#101014">
+<title>Orpheus remote</title>
+<style>
+  :root { --bg: #101014; --fg: #e6e6e6; --accent: #7aa2f7; --dim: #808080; --line: #2a2a30; --card: #18181d; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); }
+  body { font: 15px/1.4 ui-monospace, "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+         padding: max(12px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); max-width: 560px; margin: 0 auto; }
+  .brand { color: var(--dim); letter-spacing: .15em; font-size: 12px; display: flex; justify-content: space-between; }
+  .brand b { color: var(--fg); } .brand i { color: var(--accent); font-style: normal; }
+  .box { border: 1px solid var(--line); padding: 12px; margin-top: 12px; position: relative; }
+  .box > .t { position: absolute; top: -9px; left: 10px; background: var(--bg); padding: 0 6px; font-size: 12px; color: var(--dim); }
+  .box > .t b { color: var(--accent); font-weight: normal; }
+  #cover { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: var(--card); }
+  #title { font-size: 18px; margin-top: 10px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #artist { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #bar { height: 28px; display: flex; align-items: center; cursor: pointer; margin-top: 6px; }
+  #bar .track { height: 3px; width: 100%; background: var(--line); position: relative; }
+  #bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); }
+  .times { display: flex; justify-content: space-between; color: var(--dim); font-size: 12px; }
+  .transport { display: flex; justify-content: space-around; align-items: center; margin: 8px 0 4px; }
+  button { font: inherit; color: var(--fg); background: none; border: 1px solid var(--line); border-radius: 0; padding: 10px 14px; min-width: 48px; min-height: 44px; }
+  button:active { background: var(--card); }
+  .transport button { border: none; font-size: 26px; }
+  .transport #play { color: var(--accent); font-size: 34px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .modes button { font-size: 13px; padding: 6px 10px; min-height: 36px; color: var(--dim); }
+  .modes button.on { color: var(--accent); border-color: var(--accent); }
+  input[type=range] { flex: 1; accent-color: var(--accent); height: 36px; }
+  #vol { color: var(--dim); width: 3.5em; text-align: right; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+  li:last-child { border-bottom: none; }
+  li img { width: 40px; height: 40px; object-fit: cover; flex: none; background: var(--card); }
+  li .m { flex: 1; min-width: 0; }
+  li .m div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  li .m .a { color: var(--dim); font-size: 13px; }
+  li .n { color: var(--dim); width: 2ch; text-align: right; flex: none; font-size: 12px; }
+  li button { min-width: 40px; padding: 6px; font-size: 18px; color: var(--accent); border-color: var(--line); }
+  li.hdr { color: var(--accent); font-size: 12px; cursor: default; padding: 10px 0 4px; letter-spacing: .05em; }
+  #q { width: 100%; font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--line); padding: 10px; border-radius: 0; }
+  #q:focus { outline: 1px solid var(--accent); }
+  .muted { color: var(--dim); font-size: 13px; padding: 6px 0; }
+  #sleep { color: var(--accent); }
+  #err { color: #e06c75; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="brand"><span><i>╱╱╱</i> <b>ORPHEUS</b> remote</span><span id="conn">…</span></div>
+
+<div class="box">
+  <span class="t"><b>╱╱</b> <span id="state">now</span> <span id="sleep"></span></span>
+  <img id="cover" alt="">
+  <div id="title">—</div>
+  <div id="artist"></div>
+  <div id="bar"><div class="track"><div class="fill" id="fill"></div></div></div>
+  <div class="times"><span id="pos">0:00</span><span id="dur">0:00</span></div>
+  <div class="transport">
+    <button id="prev" aria-label="previous">⏮</button>
+    <button id="play" aria-label="play or pause">▶</button>
+    <button id="next" aria-label="next">⏭</button>
+  </div>
+  <div class="row"><span>vol</span><input type="range" id="volume" min="0" max="100" step="1"><span id="vol">–</span></div>
+  <div class="row modes"><button id="shuffle">⇄ shuffle</button><button id="repeat">↻ off</button></div>
+  <div id="err"></div>
+</div>
+
+<div class="box">
+  <span class="t"><b>╱╱</b> search</span>
+  <input id="q" type="search" placeholder="a song, an artist…" autocomplete="off" enterkeyhint="search">
+  <ul id="results"></ul>
+</div>
+
+<div class="box">
+  <span class="t"><b>╱╱</b> up next <span id="ctx"></span></span>
+  <ul id="queue"></ul>
+</div>
+
+<script>
+"use strict";
+const token = new URLSearchParams(location.search).get("t") || "";
+const $ = (id) => document.getElementById(id);
+let st = null, version = -1, posBase = 0, posAt = 0, dragging = false, volTimer = 0;
+
+function api(method, path, body) {
+  return fetch("/remote/api" + path, {
+    method, headers: Object.assign({ "X-Orpheus-Token": token }, body ? { "Content-Type": "application/json" } : {}),
+    body: body ? JSON.stringify(body) : undefined, cache: "no-store"
+  }).then((r) => { if (r.status === 401) throw new Error("not paired: scan the QR code again"); if (!r.ok) throw new Error("HTTP " + r.status); return r.json() });
+}
+const control = (a, b) => api("POST", "/control/" + a, b || {}).then(render).catch(fail);
+const clock = (s) => { s = Math.max(0, Math.floor(s || 0)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") };
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const artists = (t) => (t && t.artists || []).join(", ");
+function fail(e) { $("err").textContent = e.message || String(e) }
+
+function render(s) {
+  if (!s) return;
+  st = s; version = s.version; $("err").textContent = "";
+  posBase = s.position || 0; posAt = Date.now();
+  const t = s.track;
+  $("title").textContent = t ? t.title : "nothing playing";
+  $("artist").textContent = t ? artists(t) + (t.album ? " · " + t.album : "") : "";
+  if (t && t.art && $("cover").getAttribute("src") !== t.art) $("cover").src = t.art;
+  if (!t) $("cover").removeAttribute("src");
+  $("play").textContent = s.playing ? "⏸" : "▶";
+  $("state").textContent = s.playing ? "playing" : "paused";
+  $("dur").textContent = clock(s.duration);
+  if (!dragging) { $("volume").value = s.volume; $("vol").textContent = s.volume }
+  $("shuffle").classList.toggle("on", !!s.shuffle);
+  $("repeat").textContent = "↻ " + (s.repeat || "off"); $("repeat").classList.toggle("on", s.repeat && s.repeat !== "off");
+  $("ctx").textContent = s.context ? "· " + s.context : "";
+  const sl = s.sleep;
+  $("sleep").textContent = sl && sl.active ? "☾ " + (sl.endOfTrack ? "end of track" : Math.ceil((sl.remaining || 0) / 60) + "m") : "";
+  let html = "", radio = false;
+  (s.upNext || []).forEach((q, i) => {
+    if (q.radio && !radio) { radio = true; html += `<li class="hdr">∞ radio · from ${esc(q.radio.from)}</li>` }
+    html += `<li data-i="${s.queueIndex + 1 + i}"><span class="n">${i + 1}</span>` +
+            (q.art ? `<img loading="lazy" src="${esc(q.art)}" alt="">` : "") +
+            `<div class="m"><div>${esc(q.title)}</div><div class="a">${esc(artists(q))}</div></div></li>`;
+  });
+  $("queue").innerHTML = html || `<li class="muted">the queue ends here</li>`;
+  tick();
+}
+function tick() {
+  if (!st) return;
+  let p = posBase + (st.playing ? (Date.now() - posAt) / 1000 : 0);
+  if (st.duration) p = Math.min(p, st.duration);
+  $("pos").textContent = clock(p);
+  $("fill").style.width = (st.duration ? Math.min(100, p / st.duration * 100) : 0) + "%";
+}
+setInterval(tick, 250);
+
+async function poll() {
+  for (;;) {
+    try {
+      const s = await api("GET", "/status" + (version >= 0 ? "?since=" + version : ""));
+      $("conn").textContent = "● connected"; render(s);
+    } catch (e) {
+      $("conn").textContent = "○ offline"; fail(e); await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
+}
+
+$("play").onclick = () => control("toggle");
+$("next").onclick = () => control("next");
+$("prev").onclick = () => control("previous");
+$("shuffle").onclick = () => control("shuffle");
+$("repeat").onclick = () => control("repeat");
+$("bar").onclick = (e) => { if (!st || !st.duration) return; const r = e.currentTarget.getBoundingClientRect();
+  control("seek", { position: (e.clientX - r.left) / r.width * st.duration }) };
+$("volume").oninput = (e) => { dragging = true; $("vol").textContent = e.target.value; clearTimeout(volTimer);
+  volTimer = setTimeout(() => { control("volume", { volume: Number(e.target.value) }).finally(() => { dragging = false }) }, 120) };
+$("queue").onclick = (e) => { const li = e.target.closest("li[data-i]"); if (li) control("jump", { index: Number(li.dataset.i) }) };
+
+let found = [], searchTimer = 0;
+$("q").oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(search, 350) };
+$("q").onkeydown = (e) => { if (e.key === "Enter") { clearTimeout(searchTimer); search(); e.target.blur() } };
+function search() {
+  const q = $("q").value.trim();
+  if (!q) { $("results").innerHTML = ""; return }
+  api("GET", "/search?q=" + encodeURIComponent(q)).then((d) => {
+    found = d.tracks || [];
+    $("results").innerHTML = found.map((t, i) => `<li data-r="${i}">` + (t.art ? `<img loading="lazy" src="${esc(t.art)}" alt="">` : "") +
+      `<div class="m"><div>${esc(t.title)}</div><div class="a">${esc(artists(t))}</div></div>` +
+      `<button data-next="${i}" aria-label="play next">+</button></li>`).join("") || `<li class="muted">no results</li>`;
+  }).catch(fail);
+}
+$("results").onclick = (e) => {
+  const nx = e.target.closest("button[data-next]");
+  if (nx) { e.stopPropagation(); api("POST", "/play", { track: found[Number(nx.dataset.next)], next: true }).then(render).catch(fail); nx.textContent = "✓"; return }
+  const li = e.target.closest("li[data-r]");
+  if (li) api("POST", "/play", { track: found[Number(li.dataset.r)] }).then(render).catch(fail);
+};
+
+api("GET", "/theme").then((c) => {
+  const r = document.documentElement.style;
+  r.setProperty("--bg", c.background); r.setProperty("--fg", c.foreground);
+  r.setProperty("--accent", c.accent); r.setProperty("--dim", c.muted);
+  const mix = (a, b, t) => { const p = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+    const x = p(a), y = p(b); return "#" + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, "0")).join("") };
+  try { r.setProperty("--line", mix(c.background, c.foreground, 0.16)); r.setProperty("--card", mix(c.background, c.foreground, 0.06)) } catch (e) {}
+  document.querySelector("meta[name=theme-color]").content = c.background;
+}).catch(() => {});
+poll();
+</script>
+</body>
+</html>

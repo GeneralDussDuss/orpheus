@@ -11,6 +11,7 @@ import logging
 import os
 import signal
 import subprocess
+import time
 from collections import OrderedDict
 from pathlib import Path
 
@@ -23,6 +24,11 @@ except ImportError:  # no D-Bus on Windows
     Mpris = None
 from .player import Player, QueueStore
 from . import eq as eqmod
+from . import endless
+from .config import Config
+from .history import History, Tracker
+from .remote import Remote
+from .scrobble import Scrobbler
 from .lyrics import Lyrics
 from .tidal import QUALITIES, Tidal
 from .video import Video
@@ -66,6 +72,17 @@ class App:
         self.lyrics = Lyrics(self.tidal, CACHE_DIR)
         self.mpris = Mpris(self, self.player) if Mpris else NoMpris()
 
+        # ---- listening: endless play, history, scrobbling, remote, sleep ----
+        self.config = Config()
+        self.history = History(STATE_DIR)
+        self.scrobbler = Scrobbler(self.config, self.history, STATE_DIR)
+        self.tracker = Tracker(self.history, self.scrobbler.now_playing, self.scrobbler.scrobble)
+        self.remote = Remote(self, self.config)
+        self.sleep: dict | None = None
+        self._sleep_task = None
+        self._endless_busy = False
+        self._endless_last: dict = {}
+
         self.version = 0
         self._cache: OrderedDict[str, dict] = OrderedDict()
         self._waiters: list[asyncio.Future] = []
@@ -98,6 +115,17 @@ class App:
         for w in waiters:
             if not w.done():
                 w.set_result(True)
+
+    async def wait_change(self, since: int, timeout: float = 25):
+        """Wait until the state moves past `since`, or `timeout` passes."""
+        if since != self.version:
+            return
+        fut = asyncio.get_running_loop().create_future()
+        self._waiters.append(fut)
+        try:
+            await asyncio.wait_for(fut, timeout)
+        except asyncio.TimeoutError:
+            pass
 
     def raise_ui(self):
         asyncio.create_task(asyncio.create_subprocess_exec("omarchy-shell", "-q", "orpheus", "library"))
@@ -153,6 +181,14 @@ class App:
             log.warning("MPRIS unavailable: %s", e)
         await self.tidal.restore()
         asyncio.create_task(self._liked_loop())
+        try:
+            for d in await asyncio.to_thread(self.history.close_dangling):
+                self.scrobbler.scrobble(d["track"], d["started"])
+        except Exception as e:
+            log.warning("history: %s", e)
+        self.scrobbler.start()
+        asyncio.create_task(self._listen_loop())
+        asyncio.create_task(self.remote.loop())
         runner = web.AppRunner(self.routes())
         await runner.setup()
         await web.TCPSite(runner, "127.0.0.1", port).start()
@@ -172,7 +208,170 @@ class App:
                 "video": self.video.state(),
                 "providers": {"youtube": True, "soundcloud": True, "anime": self.anime.available,
                               "curd": self.anime.curd},
-                "likedVersion": self.tidal.liked_version}
+                "likedVersion": self.tidal.liked_version,
+                "listening": {"endless": self.config.endless, "crossfade": self.config.crossfade,
+                              "sleep": self.sleep_state(),
+                              "scrobbling": self.scrobbler.enabled(),
+                              "remote": self.remote.state()}}
+
+    # ---- listening: the loop behind endless play, history and the sleep timer ----
+
+    async def _listen_loop(self):
+        while True:
+            await asyncio.sleep(0.5)
+            p = self.player
+            try:
+                p.crossfade = self.config.crossfade
+                self.tracker.tick(p, end_slack=p.crossfade)
+                await self._endless_check()
+            except Exception as e:
+                log.warning("listening loop: %s", e)
+
+    async def _endless_check(self):
+        """When the queue is about to run out (its last track has under 45 s to
+        go) or has run out, append TIDAL radio for that last track."""
+        p = self.player
+        cur = p.current
+        if (not self.config.endless or self._endless_busy or p.repeat != "off" or cur is None
+                or p.pos != len(p.order) - 1 or not self.tidal.signed_in
+                or cur.get("provider") not in (None, "", "tidal")):
+            return
+        remaining = (p.duration or cur.get("duration") or 0) - p.position
+        if not (p.ended or (p.playing and remaining <= 45)):
+            return
+        key = (cur.get("id"), len(p.order))
+        if self._endless_last.get("key") == key and time.monotonic() - self._endless_last.get("at", 0) < 60:
+            return   # tried for this one a moment ago
+        self._endless_last = {"key": key, "at": time.monotonic()}
+        self._endless_busy = True
+        try:
+            seed, radio = await self.tidal.radio_from(str(cur["id"]))
+            recent = await asyncio.to_thread(self.history.recent_ids)
+            recent.discard(str(cur["id"]))
+            seed = dict(cur, **{k: seed[k] for k in ("bpm", "popularity") if seed.get(k) not in (None, 0, -1)})
+            picked = endless.pick(seed, radio, recent, p.queue, 20)
+            if not picked:
+                log.info("endless: no radio for %s", cur.get("id"))
+                return
+            marker = {"from": cur.get("title", ""), "fromId": str(cur.get("id")),
+                      "artists": list(cur.get("artists") or [])}
+            # still the same last track? the user may have moved on meanwhile
+            if p.current is not cur or p.pos != len(p.order) - 1:
+                return
+            ended = p.ended
+            await p.enqueue([dict(t, radio=marker) for t in picked])
+            log.info("endless: %d radio tracks from %s (bpm %s)", len(picked), cur.get("id"),
+                     [t.get("bpm") for t in picked])
+            if ended:
+                await p.jump(p.pos + 1)
+        except Exception as e:
+            log.warning("endless: couldn't get radio for %s: %s", cur.get("id"), e)
+        finally:
+            self._endless_busy = False
+
+    # ---- the sleep timer ----------------------------------------------------------------
+
+    SLEEP_FADE = 60.0
+
+    def _sleep_remaining(self) -> float:
+        s, p = self.sleep, self.player
+        if s["endOfTrack"]:
+            if not p.stop_after:
+                return 0.0   # the player stopped at the end (or the stop was cleared)
+            # Done only when the player says so: an interpolated position can
+            # reach the duration a moment before mpv's end of file does.
+            return max(0.05, (p.duration or 0) - p.position)
+        return s["deadline"] - time.monotonic()
+
+    def sleep_state(self):
+        if not self.sleep:
+            return {"active": False}
+        s = self.sleep
+        return {"active": True, "endOfTrack": s["endOfTrack"], "at": s.get("at"),
+                "remaining": round(self._sleep_remaining()), "fading": s.get("fading", False)}
+
+    async def set_sleep(self, minutes: float | None = None, end_of_track: bool = False):
+        await self.cancel_sleep(notify=False)
+        if end_of_track:
+            p = self.player
+            left = max(1.0, (p.duration or 0) - p.position)
+            self.sleep = {"endOfTrack": True, "at": None, "total": left}
+            await p.set_stop_after(True)
+        elif minutes and minutes > 0:
+            secs = float(minutes) * 60
+            self.sleep = {"endOfTrack": False, "deadline": time.monotonic() + secs,
+                          "at": round(time.time() + secs), "total": secs}
+        if self.sleep:
+            self._sleep_task = asyncio.create_task(self._sleep_run(self.sleep))
+            log.info("sleep timer: %s", "end of track" if end_of_track else f"{minutes} min")
+        self._changed()
+
+    async def cancel_sleep(self, notify: bool = True):
+        task, self._sleep_task = self._sleep_task, None
+        self.sleep = None
+        if task and task is not asyncio.current_task():
+            task.cancel()
+        self.player.suppress_xfade = False
+        if self.player.stop_after:
+            await self.player.set_stop_after(False)
+        await self.player.set_gain(1.0)
+        if notify:
+            self._changed()
+
+    async def _sleep_run(self, s: dict):
+        """Count down; over the last minute fade out evenly in loudness (dB
+        linear, to -60 dB), then pause and put the volume back."""
+        p = self.player
+        while self.sleep is s:
+            rem = self._sleep_remaining()
+            fade = min(self.SLEEP_FADE, s.get("total", self.SLEEP_FADE))
+            # The fade owns the volume near the end: no crossfade into silence.
+            p.suppress_xfade = rem < self.SLEEP_FADE + 30 + p.crossfade
+            if rem <= 0:
+                await p.set_gain(0.0)
+                if not s["endOfTrack"]:
+                    await p.set_paused(True)   # end of track: the player already stopped itself
+                log.info("sleep timer: paused")
+                await self.cancel_sleep()
+                return
+            if rem <= fade:
+                if not s.get("fading"):
+                    s["fading"] = True
+                    self._changed()
+                if p.playing:
+                    await p.set_gain(10 ** (-3 * (1 - rem / fade)))
+            await asyncio.sleep(0.1 if rem <= fade + 1 else 0.5)
+
+    # ---- transport, shared by the API and the phone remote ----------------------------
+
+    async def control(self, a: str, b: dict):
+        p = self.player
+        if a == "toggle":
+            await p.toggle()
+        elif a == "play":
+            await p.set_paused(False)
+        elif a == "pause":
+            await p.set_paused(True)
+        elif a == "next":
+            await p.next()
+        elif a == "previous":
+            await p.previous()
+        elif a == "seek":
+            await p.seek(float(b.get("position", 0)))
+        elif a == "volume":
+            await p.set_volume(float(b.get("volume", 100)))
+            self._save_prefs()
+        elif a == "shuffle":
+            await p.set_shuffle(bool(b.get("on", not p.shuffle)))
+        elif a == "repeat":
+            order = ["off", "all", "one"]
+            await p.set_repeat(b.get("mode") or order[(order.index(p.repeat) + 1) % 3])
+        elif a == "jump":
+            await p.jump(int(b.get("index", 0)))
+        elif a == "remove":
+            await p.remove(int(b.get("index", -1)))
+        else:
+            raise web.HTTPNotFound(text=f"unknown action {a}")
 
     async def _liked_loop(self):
         # Load likes once per sign-in (also after signing in later).
@@ -205,13 +404,8 @@ class App:
         async def status(req):
             # Long-poll: ?since=<version> waits up to 25 s for a change.
             since = req.query.get("since")
-            if since is not None and int(since) == self.version:
-                fut = asyncio.get_running_loop().create_future()
-                self._waiters.append(fut)
-                try:
-                    await asyncio.wait_for(fut, 25)
-                except asyncio.TimeoutError:
-                    pass
+            if since is not None:
+                await self.wait_change(int(since), 25)
             return J(self.status())
 
         @r.post("/login/link")
@@ -366,36 +560,83 @@ class App:
 
         @r.post("/control/{action}")
         async def control(req):
-            a = req.match_info["action"]
-            b = await body(req)
-            p = self.player
-            if a == "toggle":
-                await p.toggle()
-            elif a == "play":
-                await p.set_paused(False)
-            elif a == "pause":
-                await p.set_paused(True)
-            elif a == "next":
-                await p.next()
-            elif a == "previous":
-                await p.previous()
-            elif a == "seek":
-                await p.seek(float(b.get("position", 0)))
-            elif a == "volume":
-                await p.set_volume(float(b.get("volume", 100)))
-                self._save_prefs()
-            elif a == "shuffle":
-                await p.set_shuffle(bool(b.get("on", not p.shuffle)))
-            elif a == "repeat":
-                order = ["off", "all", "one"]
-                await p.set_repeat(b.get("mode") or order[(order.index(p.repeat) + 1) % 3])
-            elif a == "jump":
-                await p.jump(int(b.get("index", 0)))
-            elif a == "remove":
-                await p.remove(int(b.get("index", -1)))
-            else:
-                raise web.HTTPNotFound(text=f"unknown action {a}")
+            await self.control(req.match_info["action"], await body(req))
             return J(self.status())
+
+        # ---- listening -------------------------------------------------------
+
+        @r.get("/stats")
+        async def stats(req):
+            """?range=week|month|year|all|wrapped (wrapped: this calendar month,
+            with the extra wrapped block)."""
+            rng = req.query.get("range", "week")
+            if rng not in ("week", "month", "year", "all", "wrapped"):
+                raise web.HTTPBadRequest(text="range must be week|month|year|all|wrapped")
+            try:
+                top = max(1, min(50, int(req.query.get("top", 10))))
+            except ValueError:
+                top = 10
+            return J(await asyncio.to_thread(self.history.stats, rng, None, top))
+
+        @r.post("/sleep")
+        async def sleep(req):
+            """Body {minutes} | {endOfTrack: true} | {cancel: true} (or minutes 0)."""
+            b = await body(req)
+            if b.get("cancel") or (not b.get("endOfTrack") and not b.get("minutes")):
+                await self.cancel_sleep()
+            else:
+                try:
+                    minutes = float(b.get("minutes") or 0)
+                except (TypeError, ValueError):
+                    raise web.HTTPBadRequest(text="minutes must be a number")
+                if not b.get("endOfTrack") and not 0 < minutes <= 24 * 60:
+                    raise web.HTTPBadRequest(text="minutes must be 1..1440")
+                await self.set_sleep(minutes, bool(b.get("endOfTrack")))
+            return J(self.sleep_state())
+
+        @r.get("/scrobble")
+        async def scrobble_state(req):
+            await self.scrobbler.check_listenbrainz()
+            return J(self.scrobbler.state())
+
+        @r.post("/scrobble/flush")
+        async def scrobble_flush(req):
+            await self.scrobbler.flush()
+            return J(self.scrobbler.state())
+
+        @r.post("/lastfm/auth/start")
+        async def lastfm_start(req):
+            try:
+                return J(await self.scrobbler.lastfm_auth_start())
+            except Exception as e:
+                raise web.HTTPBadGateway(text=str(e))
+
+        @r.post("/lastfm/auth/finish")
+        async def lastfm_finish(req):
+            try:
+                out = await self.scrobbler.lastfm_auth_finish()
+            except Exception as e:
+                raise web.HTTPBadGateway(text=str(e))
+            self._changed()
+            return J(out)
+
+        @r.post("/lastfm/disconnect")
+        async def lastfm_disconnect(req):
+            self.scrobbler.lastfm_disconnect()
+            self._changed()
+            return J(self.scrobbler.state())
+
+        # Pairing for the phone remote: loopback only (never on the LAN listener).
+        @r.get("/remote/pair")
+        async def remote_pair(req):
+            await self.remote.sync()
+            return J(self.remote.pairing())
+
+        @r.post("/remote/pair/reset")
+        async def remote_reset(req):
+            self.remote.reset_token()
+            self._changed()
+            return J(self.remote.pairing())
 
         @r.post("/favorite")
         async def favorite(req):
@@ -553,6 +794,7 @@ class App:
 
         app = web.Application()
         app.add_routes(r)
+        self.remote.add_routes(app)   # /remote and /remote/api, token-gated
         return app
 
 
@@ -577,6 +819,12 @@ async def serve(port: int):
 
 async def shutdown(app, runner):
     await app.video.close()
+    try:
+        app.tracker.finish(app.player.crossfade)
+    except Exception as e:
+        log.warning("couldn't close the last play: %s", e)
+    await app.remote.stop()
+    await app.scrobbler.close()
     try:
         app.store.save_now()
     except Exception as e:
