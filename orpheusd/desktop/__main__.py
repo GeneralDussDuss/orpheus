@@ -171,15 +171,27 @@ def tray(app, quit_all, hotkeys):
     from . import winsys
     t = QSystemTrayIcon(QIcon(make_icon()), app)
     t.setToolTip("Orpheus")
-    keys = {m: label for label, _, _, m in winsys.HOTKEYS if label in hotkeys.active}
     menu = QMenu()
+    labelled = []   # (action, QAction or QMenu, plain label): relabelled whenever the hotkeys change
     for label, method in (("Player", "library"), ("Visualizer", "toggle"), ("Mini player", "miniPlayer"),
                           ("Show/hide widget", "widget:toggle"), ("Settings", "settings")):
-        a = QAction(label + (f"\t{keys[method]}" if method in keys else ""), menu)
+        a = QAction(label, menu)
         a.triggered.connect(lambda _=False, m=method: fire(m))
         menu.addAction(a)
+        labelled.append((method, a, label))
     menu.addSeparator()
-    menu.addMenu(theme_menu(menu, keys.get("theme:next")))
+    themes = theme_menu(menu)
+    menu.addMenu(themes)
+    labelled.append(("theme:next", themes, "Theme"))
+
+    def relabel():
+        keys = {row["action"]: row["combo"] for row in getattr(hotkeys, "status", []) if row.get("combo")}
+        for action, item, label in labelled:
+            text = label + (f"\t{keys[action]}" if action in keys else "")
+            (item.setTitle if isinstance(item, QMenu) else item.setText)(text)
+    relabel()
+    if hasattr(hotkeys, "listeners"):
+        hotkeys.listeners.append(relabel)
     from .themebuilder import open_builder
     build = QAction("Theme builder…", menu)
     build.triggered.connect(open_builder)
