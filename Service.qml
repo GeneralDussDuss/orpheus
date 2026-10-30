@@ -38,6 +38,7 @@ Item {
   readonly property var defaults: ({ style: "prism", railViz: "prism", miniPlayer: true, placement: "overlay", fps: 60, syncViz: true,
                                      showMonitor: "", autoStyle: false, trackTitle: true, lyricsOverViz: false,
                                      autoQuality: true, showFps: false, bloom: "subtle",
+                                     director: true, beatLock: true, lookaheadMs: 85, feedback: "subtle", albumArt: true,
                                      widget: { enabled: true, style: "full", corner: "bottom-right", monitor: "", viz: "prism", layer: "top" } })
 
   // ---- Config ------------------------------------------------------------
@@ -391,14 +392,8 @@ Item {
   // Seconds since each of the last three kicks (newest first, capped at 8),
   // w = the newest kick's strength. Refreshed every clock tick.
   property vector4d kickAge: Qt.vector4d(8, 8, 8, 0)
-  // ---- Director outputs (beat grid + structure; see the Director section) ----
-  property real beatPhase: 0       // 0..1 within the beat, 0 = on the beat (lookahead-compensated)
-  property real barPhase: 0        // 0..1 within the 4-beat bar, 0 = downbeat
-  property real downbeat: 0        // 0..1 pulse on beat 1
-  property real beatConfidence: 0  // 0..1
-  property real build: 0           // 0..1 build-up tension
-  property real drop: 0            // 0..1 pulse when a build resolves
-  property int sectionCode: 4      // 0 intro, 1 build, 2 drop, 3 breakdown, 4 steady
+  // The onset-driven beat envelope, before the beat grid (beatLock) takes it over.
+  property real onsetBeat: 0
 
   // Onset strength 0..1 of `f` against its running average and peak.
   function onsetOf(f, avg, pk) {
@@ -437,14 +432,14 @@ Item {
     }
     lowF /= 6; hiF /= 20
     prevLv = lv
-    var nowMs = Date.now()
+    var nowMs = root.nowMs()
     fluxRate = fx * (listening ? fps : 60)
     feedEnvelope(fluxRate, nowMs)
     var dt = Math.max(0.004, Math.min(0.1, (nowMs - (lastPublishMs || nowMs - 16)) / 1000))
     lastPublishMs = nowMs
     function ease(tau) { return 1 - Math.exp(-dt / tau) }
     function hold(tau) { return Math.exp(-dt / tau) }
-    if (lv.length === 0) { beat = 0; kick = 0; snap = 0; swell = 0; return }
+    if (lv.length === 0) { beat = 0; onsetBeat = 0; kick = 0; snap = 0; swell = 0; return }
     // Strength is measured before the averages take this frame in.
     var lowOn = onsetOf(lowF, lowFluxAvg, lowFluxPk)
     var hiOn = onsetOf(hiF, hiFluxAvg, hiFluxPk)
@@ -461,10 +456,12 @@ Item {
     }
     // A shaped hit: weak onsets stay small, real kicks slam to near full.
     var hit = Math.max(lift, lowOn > 0.12 ? 0.35 + 0.65 * lowOn : lowOn)
-    beat = Math.max(hit, beat * hold(0.085))
+    onsetBeat = Math.max(hit, onsetBeat * hold(0.085))
     kick = Math.max(hit, kick * hold(0.22))
     snap = Math.max(hiOn > 0.12 ? 0.3 + 0.7 * hiOn : hiOn, snap * hold(0.12))
     swell += (energy - swell) * ease(energy > swell ? 0.2 : 1.4)
+    directorCore.frame(lv, nowMs, lowOn, hiOn)
+    steerBeat(nowMs)
   }
 
   // ---- Pace --------------------------------------------------------------
@@ -592,8 +589,50 @@ Item {
     var parts = line.split(";")
     var lv = []
     for (var i = 0; i < 32; i++) lv.push((parseInt(parts[i], 10) || 0) / 1000)
-    lastFrameMs = Date.now()
+    lastFrameMs = root.nowMs()
     publish(lv)
+  }
+
+  // ---- Director -----------------------------------------------------------
+  // The beat grid and the song's structure (Director.qml): beatPhase and
+  // barPhase predicted `lookahead` ahead, so effects land ON the beat rather
+  // than a detection late; downbeat, build and drop pulses; the section.
+  readonly property bool director: config.director !== false
+  readonly property bool beatLock: config.beatLock !== false
+  // Seconds from a sound to the frame that shows it. Analysis is 35-65 ms
+  // (measured: synthetic kicks through a cava-like analyzer at 60 fps -- FFT
+  // window, noise_reduction smoothing, onset peak-picking; ~50 typical), the
+  // capture buffer ~10, presentation one to two frames (~25). config
+  // `lookaheadMs` overrides: raise it if flashes land late, lower if early.
+  readonly property real lookahead: Math.max(0, Math.min(400, typeof config.lookaheadMs === "number" ? config.lookaheadMs : 85)) / 1000
+  // A test harness drives the analysis on a fake clock (ms); -1 = the wall clock.
+  property real clockMs: -1
+  function nowMs() { return clockMs >= 0 ? clockMs : Date.now() }
+
+  Director {
+    id: directorCore
+    enabled: root.director
+    beatLock: root.beatLock
+    lookahead: root.lookahead
+  }
+  readonly property var directorState: directorCore
+  readonly property real beatPhase: directorCore.beatPhase          // 0..1 within the beat, 0 = on it
+  readonly property real barPhase: directorCore.barPhase            // 0..1 within the 4-beat bar
+  readonly property real downbeat: directorCore.downbeat            // 0..1 pulse on beat 1
+  readonly property real beatConfidence: directorCore.beatConfidence
+  readonly property real build: directorCore.build                  // 0..1 build-up tension
+  readonly property real drop: directorCore.drop                    // 0..1 pulse on a drop
+  readonly property int sectionCode: directorCore.sectionCode       // 0 intro 1 build 2 drop 3 breakdown 4 steady
+  readonly property string section: directorCore.section
+  readonly property int drops: directorCore.drops                   // bumps on each drop (autoStyle watches it)
+
+  // `beat` is the onset envelope, or with beatLock and a confident grid, a
+  // pulse fired by the grid's predicted phase: it peaks on the beat instead of
+  // a detection after it.
+  function steerBeat(ms) {
+    directorCore.tick(ms)
+    var w = directorCore.lockWeight
+    beat = w > 0 ? onsetBeat * (1 - w) + directorCore.phasePulse * w : onsetBeat
   }
 
   // When playback stops, let the bars fall instead of freezing mid-air. Also
@@ -648,6 +687,7 @@ Item {
       var t = (now - root.startedAt) / 1000, kt = root.kickTimes
       function ageOf(x) { return Math.max(0, Math.min(8, t - x)) }
       root.kickAge = Qt.vector4d(ageOf(kt[0]), ageOf(kt[1]), ageOf(kt[2]), root.kickStrength)
+      root.steerBeat(root.nowMs())
     }
   }
 
@@ -815,6 +855,8 @@ Item {
                             peakLag: peakLag, peakCorr: Math.round(peakCorr * 100) / 100,
                             onsetRate: Math.round(onsetRate * 100) / 100, densityBpm: Math.round(densityBpm * 100) / 100,
                             candLags: candLags,
+                            director: director, beatLock: beatLock, section: section,
+                            beatConfidence: Math.round(beatConfidence * 100) / 100, build: Math.round(build * 100) / 100,
                             flowTarget: Math.round(flowTarget * 100) / 100, flow: Math.round(flow * 100) / 100,
                             player: player ? (player.identity || "") : "" })
   }
