@@ -12,7 +12,9 @@ Item {
   property bool shown: false
 
   anchors.fill: parent
-  visible: shown
+  visible: opacity > 0
+  opacity: shown ? 1 : 0
+  Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.InOutCubic } }
   z: 50
 
   function open() { shown = true; flick.contentY = 0; flick.forceActiveFocus() }
@@ -20,32 +22,47 @@ Item {
 
   readonly property bool hasKeys: typeof OrpheusKeys !== "undefined"
 
-  // [title, [[keys, what], ...]]
+  // [title, [[keys, what], ...]], checked against the handlers: Library.qml
+  // handleKey / videoKey / the list, Stage.qml handleKey, EqPane, LyricsPane,
+  // StatsPane, SettingsPane, LoginPane, TuiMenu, CommandPalette and this sheet.
+  // Keep it that way: a key listed here that does nothing is worse than none.
   readonly property var sections: [
-    ["anywhere", [["ctrl+k", "command palette"], ["?", "this sheet"], [",", "settings"], ["/", "search"],
-                  ["1-9", "library sections"], ["e", "equalizer"], ["L", "lyrics"], ["esc ⌫", "back"], ["q  ctrl+w", "close the player"]]],
-    ["playback", [["space", "play / pause"], ["n  p", "next / previous"], ["h l  ← →", "seek 10 s"], ["+ -", "volume"],
-                  ["s", "shuffle"], ["r", "repeat"], ["F", "like what is playing"], ["y  Y", "copy link / universal link"]]],
-    ["lists", [["j k  ↑ ↓", "move"], ["pgup pgdn", "move 10"], ["g  G", "top / bottom"], ["⏎", "open or play"],
-               ["a", "play the row next"], ["f", "like the row"], ["P  S", "play all / shuffle all"]]],
-    ["visualizer", [["v", "cycle the player rail"], ["V", "open / close the visualizer"],
-                    ["f", "fullscreen show (in the visualizer)"]]],
-    ["mouse", [["click row", "select it"], ["dbl-click row", "play or open it"],
-               ["right-click", "menu: queue, radio, link"],
-               ["click viz", "next visualizer"], ["right-click viz", "previous visualizer"],
-               ["scroll viz", "step through visualizers"], ["‹ name ›", "step / pick the rail viz"],
-               ["drag seek bar", "scrub; hover shows the time"], ["scroll vol", "volume"],
-               ["right-click eq", "bypass the equalizer"], ["hover", "what it does, and its key"],
-               ["click a hint", "key hints are buttons too"]]],
+    ["anywhere in the player", [["ctrl+k", "command palette"], ["?", "this sheet"], [",", "settings"], ["/", "search"],
+                  ["1-9", "library sections"], ["e", "equalizer"], ["L", "lyrics"], ["esc  ⌫", "back"], ["q  ctrl+w", "close the player"]]],
+    ["playback", [["space", "play / pause"], ["n  p", "next / previous track"], ["l  h  → ←", "seek ± 10 s"], ["+  -", "volume ± 5"],
+                  ["s", "shuffle"], ["r", "repeat: off, all, one"], ["F", "like what is playing"], ["y  Y", "copy link / universal link"]]],
+    ["lists", [["j k  ↓ ↑", "move"], ["pgdn pgup", "move 10"], ["g  G", "top / bottom"], ["⏎", "open or play"],
+               ["a", "play the row next"], ["f", "like the row"], ["P  S", "play / shuffle the page"]]],
+    ["search box", [["type", "search as you type"], ["↓  esc", "to the results"], ["⏎", "open the selected result"]]],
+    ["visualizer", [["v", "cycle the player rail"], ["V", "open / close the visualizer window"]]],
+    ["in the visualizer window", [["l h  → ←", "next / previous style"], ["1-8", "pick a style"], ["f", "fullscreen show / window"],
+                                  ["p", "mini player on / off"], ["space", "play / pause"], ["esc", "close it"]]],
+    ["mouse · player", [["click row", "select it"], ["dbl-click row", "play or open it"], ["right-click", "menu: queue, radio, link"],
+                        ["click picture", "next rail visual · right-click back"], ["scroll picture", "step through visuals"],
+                        ["‹ name ›", "step, or pick from a list"], ["click art · artist", "go to the album / artist"],
+                        ["click up next", "play it now"], ["drag seek bar", "scrub; hover shows the time"],
+                        ["vol", "click, drag or scroll"], ["eq", "click opens · right-click bypass"],
+                        ["click a hint", "key hints are buttons too"], ["hover", "what it does, and its key"]]],
+    ["mouse · visualizer, widget", [["click", "next style · right-click back"], ["scroll", "step through styles"],
+                                    ["dbl-click show", "back to a window"]]],
+    ["menus", [["j k  ↓ ↑", "move"], ["⇥ ⇧⇥", "the same"], ["⏎  space", "run"], ["g G  home end", "first / last"], ["esc  q", "close"]]],
     ["video page", [["⇥", "next provider"], ["⏎", "watch"], ["a", "listen instead"], ["c", "hand over to curd"],
-                    ["space", "pause the video"], ["h l", "seek the video"], ["F", "fullscreen"], ["x", "close the video"]]],
-    ["equalizer", [["h l", "pick a band"], ["j k", "± a step"], ["J K", "± coarse"], ["0  z", "zero band / all"],
-                   ["p  P", "presets"], ["b", "bypass"], ["[ ]", "preamp"], ["\\", "auto headroom"]]],
-    ["lyrics", [["[ ]", "nudge the sync"], ["\\", "reset the sync"], ["m", "layout"], ["j k", "scroll"]]],
-    ["settings", [["⇥  ⇧⇥", "section"], ["j k", "move"], ["h l", "change a value"], ["⏎", "set / rebind"],
-                  ["x", "hotkey off"], ["d", "hotkey default"],
-                  ["click", "step a value · right-click back"]]],
-    ["command palette", [["type", "filter"], ["↑ ↓  ctrl+j/k", "pick"], ["⏎", "run"], ["esc", "close"]]]
+                    ["space", "pause the video"], ["l h  → ←", "seek the video"], ["F", "fullscreen"], ["x", "close the video"]]],
+    ["equalizer", [["h l  ← →", "pick a band"], ["k j  ↑ ↓", "band up / down a step"], ["K J", "up / down coarse"], ["0  z", "zero the band / all"],
+                   ["p  P", "next / previous preset"], ["b", "bypass"], ["]  [", "preamp up / down"], ["\\", "auto headroom"],
+                   ["drag  scroll", "set a band"], ["middle-click", "zero a band"], ["right-click", "bypass"]]],
+    ["lyrics", [["]  [", "sync later / earlier"], ["\\", "reset the sync"], ["m", "entrance: wave, rain, plain"], ["j k  ↓ ↑", "scroll"]]],
+    ["stats", [["⇥ ⇧⇥  ] [", "next / previous range"], ["l h  → ←", "the same"], ["w", "wrapped"], ["r", "reload"],
+               ["j k  ↓ ↑", "scroll"], ["pgdn pgup", "scroll a page"], ["g", "top"]]],
+    ["settings", [["⇥  ⇧⇥  ] [", "section"], ["j k  ↓ ↑", "move"], ["pgdn pgup", "move 8"], ["g G  home end", "first / last"],
+                  ["l h  → ←", "change a value"], ["⏎", "set, edit or rebind"],
+                  ["d", "back to the default"], ["x  del", "hotkey off / clear a text"], ["/  ctrl+f", "search every setting"], ["esc", "clear the search, then back"],
+                  ["click", "step · right-click back · dbl-click edit"]]],
+    ["sign in", [["l", "sign in with a link"], ["h", "hi-res sign-in"], ["o", "sign out"], ["esc", "back, once signed in"],
+                 ["q  ctrl+w", "close the player"]]],
+    ["command palette", [["type", "filter"], ["↓ ↑", "pick"], ["ctrl+j/k ctrl+n/p", "the same"], ["pgdn pgup", "move 8"],
+                         ["⏎  click", "run"], ["esc  ctrl+k", "close"]]],
+    ["this sheet", [["j k  ↓ ↑", "scroll"], ["space pgdn pgup", "a page"], ["g  G", "top / bottom"], ["esc  ?  q", "close"]]]
   ]
 
   Rectangle {
@@ -55,16 +72,33 @@ Item {
   }
 
   readonly property color base: Color.background
-  readonly property real colW: host.cw * 40
+  // As many columns as fit at a readable width (keys 13 cells, words ~25),
+  // so a small window gets one long column rather than squeezed text.
+  readonly property real gap: host.cw * 3
+  readonly property int cols: Math.max(1, Math.min(3, Math.floor((box.width - host.cw * 2 + gap) / (host.cw * 40 + gap))))
+  readonly property real colW: Math.floor((box.width - host.cw * 2 - gap * (cols - 1)) / cols)
+  readonly property real keyW: host.cw * 15
+  readonly property var columns: {
+    var total = 0, i
+    for (i = 0; i < sections.length; i++) total += sections[i][1].length + 2
+    var share = total / cols, out = [[]], acc = 0
+    for (i = 0; i < sections.length; i++) {
+      var n = sections[i][1].length + 2
+      if (acc > 0 && acc + n / 2 > share * out.length && out.length < cols) out.push([])
+      out[out.length - 1].push(sections[i])
+      acc += n
+    }
+    return out
+  }
 
   TuiBox {
     id: box
     anchors.centerIn: parent
-    width: Math.min(parent.width - host.cw * 4, sheet.colW * 2 + host.cw * 7)
+    width: Math.min(parent.width - host.cw * 4, host.cw * 135)
     height: parent.height - host.ch * 3
     background: Qt.rgba(sheet.base.r, sheet.base.g, sheet.base.b, 1)
     title: "keys"
-    keyHint: Tui.hints([["j/k", "scroll"], ["esc", "close"]], host.accentText, host.dim)
+    hintItems: [{ k: "j/k", l: "scroll" }, { k: "esc", l: "close", run: function() { sheet.close() } }]
     focused: true
     clock: host.clock
 
@@ -94,11 +128,18 @@ Item {
         width: flick.width
         spacing: host.ch * 0.6
 
-        Flow {
+        // newspaper columns: sections in reading order, each column filled to
+        // about an even share of the lines before the next one starts
+        Row {
           width: parent.width
-          spacing: host.cw * 3
+          spacing: sheet.gap
           Repeater {
-            model: sheet.sections
+            model: sheet.columns
+            Column {
+              required property var modelData
+              width: sheet.colW
+              Repeater {
+                model: modelData
             Column {
               required property var modelData
               width: sheet.colW
@@ -117,14 +158,14 @@ Item {
                 Row {
                   required property var modelData
                   Text {
-                    width: host.cw * 15
+                    width: sheet.keyW
                     text: modelData[0]
                     font.family: host.family; font.pixelSize: Style.font.body
                     color: host.accentText
                   }
                   Text {
-                    width: sheet.colW - host.cw * 15
-                    elide: Text.ElideRight
+                    width: sheet.colW - sheet.keyW
+                    wrapMode: Text.WordWrap
                     text: modelData[1]
                     font.family: host.family; font.pixelSize: Style.font.body
                     color: host.fg
@@ -132,6 +173,8 @@ Item {
                 }
               }
               Item { width: 1; height: host.ch * 0.6 }
+            }
+              }
             }
           }
         }
