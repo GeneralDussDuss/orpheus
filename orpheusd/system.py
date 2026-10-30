@@ -13,6 +13,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 WINDOWS = sys.platform == "win32"
@@ -95,3 +96,83 @@ async def ipc_connect(address: str, attempts: int = 100):
                 raise
             await asyncio.sleep(0.05)
     raise ConnectionError(f"mpv IPC never appeared at {address}")
+
+
+def write_atomic(path: Path, data: bytes) -> None:
+    """Replace `path` with `data` so a reader, or a crash mid-write, only ever
+    sees the old file or the new one. Windows refuses the rename while something
+    (a virus scanner, usually) has the target open, so that is retried briefly."""
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "wb") as f:
+        f.write(data)
+        f.flush()
+        os.fsync(f.fileno())
+    for i in range(5):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if i == 4:
+                raise
+            time.sleep(0.05 * (i + 1))
+
+
+_job = None
+
+
+def tie_to_daemon(pid: int) -> None:
+    """Make Windows kill a child (mpv) when the daemon goes, however it goes.
+
+    The desktop app stops the daemon with TerminateProcess, which runs no
+    cleanup, so an mpv left behind would keep playing with nothing driving it.
+    A job object set to kill on close fixes that: its only handle is ours, and
+    the kernel closes it when this process ends. Linux needs nothing here; mpv
+    sees its IPC socket close and the systemd unit owns the process group."""
+    global _job
+    if not WINDOWS:
+        return
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateJobObjectW.restype = wintypes.HANDLE
+    k32.OpenProcess.restype = wintypes.HANDLE
+    k32.SetInformationJobObject.argtypes = (wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD)
+    k32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
+    k32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    if _job is None:
+        class IO(ctypes.Structure):
+            _fields_ = [(n, ctypes.c_ulonglong) for n in
+                        ("r", "w", "o", "rb", "wb", "ob")]
+
+        class Basic(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_longlong),
+                        ("PerJobUserTimeLimit", ctypes.c_longlong),
+                        ("LimitFlags", wintypes.DWORD),
+                        ("MinimumWorkingSetSize", ctypes.c_size_t),
+                        ("MaximumWorkingSetSize", ctypes.c_size_t),
+                        ("ActiveProcessLimit", wintypes.DWORD),
+                        ("Affinity", ctypes.c_size_t),
+                        ("PriorityClass", wintypes.DWORD),
+                        ("SchedulingClass", wintypes.DWORD)]
+
+        class Extended(ctypes.Structure):
+            _fields_ = [("Basic", Basic), ("Io", IO),
+                        ("ProcessMemoryLimit", ctypes.c_size_t),
+                        ("JobMemoryLimit", ctypes.c_size_t),
+                        ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                        ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+        job = k32.CreateJobObjectW(None, None)
+        info = Extended()
+        info.Basic.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if not job or not k32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)):
+            raise OSError(ctypes.get_last_error(), "job object")
+        _job = job
+    proc = k32.OpenProcess(0x0101, False, pid)  # PROCESS_TERMINATE | PROCESS_SET_QUOTA
+    if not proc:
+        raise OSError(ctypes.get_last_error(), "OpenProcess")
+    try:
+        if not k32.AssignProcessToJobObject(_job, proc):
+            raise OSError(ctypes.get_last_error(), "AssignProcessToJobObject")
+    finally:
+        k32.CloseHandle(proc)

@@ -21,7 +21,7 @@ try:
     from .mpris import Mpris
 except ImportError:  # no D-Bus on Windows
     Mpris = None
-from .player import Player
+from .player import Player, QueueStore
 from . import eq as eqmod
 from .lyrics import Lyrics
 from .tidal import QUALITIES, Tidal
@@ -33,7 +33,6 @@ from .youtube import YouTube, YouTubeError
 log = logging.getLogger("orpheus")
 
 PREFS = STATE_DIR / "daemon.json"
-RESUME = STATE_DIR / "resume.json"
 DEFAULT_PORT = 47837
 
 
@@ -57,6 +56,7 @@ class App:
         self.sources = {"youtube": self.youtube, "soundcloud": SoundCloud()}
         self.anime = Anime(RUNTIME_DIR)
         self.player = Player(self.tidal, self.sources, RUNTIME_DIR, CACHE_DIR, self._changed)
+        self.store = QueueStore(STATE_DIR, self.player)
         self.video = Video(RUNTIME_DIR, self._changed)
         self.player.eq = eqmod.normalize(self.prefs.get("eq"))
         self.lyrics = Lyrics(self.tidal, CACHE_DIR)
@@ -89,6 +89,7 @@ class App:
     def _changed(self):
         self.version += 1
         self.mpris.refresh()
+        self.store.poke()
         waiters, self._waiters = self._waiters, []
         for w in waiters:
             if not w.done():
@@ -132,6 +133,16 @@ class App:
         await self.player.start()
         if "volume" in self.prefs:
             await self.player.set_volume(self.prefs["volume"])
+        # The saved queue goes back before the port opens, so the first /status
+        # already has it. It is only data: the stream resolves on play.
+        try:
+            snap = self.store.load()
+            if snap and await self.player.restore(snap):
+                self.store.mark_saved()
+                log.info("restored a %d-track queue at %d, %.0f s in, paused",
+                         len(self.player.queue), self.player.pos, self.player.position)
+        except Exception as e:
+            log.warning("couldn't restore the queue: %s", e)
         try:
             await self.mpris.start()
         except Exception as e:
@@ -142,17 +153,7 @@ class App:
         await runner.setup()
         await web.TCPSite(runner, "127.0.0.1", port).start()
         log.info("orpheusd listening on 127.0.0.1:%d (%s)", port, self.tidal.login_state["state"])
-        # Resuming re-resolves the saved track's stream, which can take TIDAL
-        # 15 s. Do it after the port is up, so the player answers meanwhile.
-        if self.tidal.signed_in and RESUME.exists():
-            asyncio.create_task(self._resume())
         return runner
-
-    async def _resume(self):
-        try:
-            await self.player.restore(json.loads(RESUME.read_text()))
-        except Exception as e:
-            log.warning("couldn't resume: %s", e)
 
     def status(self) -> dict:
         player = self.player.state()
@@ -573,9 +574,9 @@ async def serve(port: int):
 async def shutdown(app, runner):
     await app.video.close()
     try:
-        RESUME.write_text(json.dumps(app.player.snapshot()))
+        app.store.save_now()
     except Exception as e:
-        log.warning("couldn't save resume state: %s", e)
+        log.warning("couldn't save the queue: %s", e)
     await app.player.stop()
     await runner.cleanup()
 

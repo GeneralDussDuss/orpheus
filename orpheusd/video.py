@@ -18,7 +18,7 @@ import json
 import logging
 from pathlib import Path
 
-from .system import mpv_path, WINDOWS, ipc_address, ipc_clear, ipc_connect
+from .system import mpv_path, WINDOWS, ipc_address, ipc_clear, ipc_connect, tie_to_daemon
 from .youtube import VIDEO_FORMAT, YouTube, watch_url, ytdlp_path
 
 log = logging.getLogger("orpheus.video")
@@ -84,6 +84,10 @@ class Video:
             mpv_path(), *args, f"--input-ipc-server={self.socket_path}",
             stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL)
+        try:
+            tie_to_daemon(self._proc.pid)
+        except OSError as e:
+            log.warning("video mpv will outlive a killed daemon: %s", e)
         self._reader, self._writer = await ipc_connect(self.socket_path)
         asyncio.create_task(self._read_loop())
         for i, prop in enumerate(["pause", "duration", "time-pos"]):
