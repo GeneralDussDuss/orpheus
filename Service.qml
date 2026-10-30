@@ -58,6 +58,11 @@ Item {
   // Post-process glow over the visualizers (Bloom.qml); dark themes only.
   readonly property var blooms: ["off", "subtle", "full"]
   readonly property string bloom: blooms.indexOf(config.bloom) >= 0 ? config.bloom : "subtle"
+  // MilkDrop-style trails under every visualizer (VizPost.qml), and the album
+  // cover inside the visuals (Prism's sun, Halo's record, the Tunnel walls...).
+  readonly property var feedbacks: ["off", "subtle", "full"]
+  readonly property string feedback: feedbacks.indexOf(config.feedback) >= 0 ? config.feedback : "subtle"
+  readonly property bool albumArt: config.albumArt !== false
   readonly property var widget: {
     var w = {}
     for (var k in defaults.widget) w[k] = defaults.widget[k]
@@ -730,7 +735,7 @@ Item {
   }
   // The stage's on/off switches: autoStyle, trackTitle, lyricsOverViz, autoQuality, showFps.
   function setStageFlag(key, on) {
-    var keys = ["autoStyle", "trackTitle", "lyricsOverViz", "autoQuality", "showFps"]
+    var keys = ["autoStyle", "trackTitle", "lyricsOverViz", "autoQuality", "showFps", "albumArt"]
     if (keys.indexOf(key) < 0) return "unknown setting: " + key + " (" + keys.join("|") + ")"
     var v = on === "toggle" ? !root[key] : (on === true || on === "on" || on === "true" || on === "1")
     updateConfig(function(c) { c[key] = v })
@@ -741,6 +746,13 @@ Item {
     if (level === "next") level = blooms[(blooms.indexOf(bloom) + 1) % blooms.length]
     if (blooms.indexOf(level) < 0) return "unknown bloom: " + level + " (" + blooms.join("|") + "|next)"
     updateConfig(function(c) { c.bloom = level })
+    return statusText()
+  }
+  // Visualizer trails: off | subtle | full, or "next".
+  function setFeedback(level) {
+    if (level === "next") level = feedbacks[(feedbacks.indexOf(feedback) + 1) % feedbacks.length]
+    if (feedbacks.indexOf(level) < 0) return "unknown feedback: " + level + " (" + feedbacks.join("|") + "|next)"
+    updateConfig(function(c) { c.feedback = level })
     return statusText()
   }
   function setWidget(key, value) {
@@ -832,6 +844,8 @@ Item {
     function autoQuality(on: string): string { return root.setStageFlag("autoQuality", on) }
     function showFps(on: string): string { return root.setStageFlag("showFps", on) }
     function bloom(level: string): string { return root.setBloom(level) }
+    function feedback(level: string): string { return root.setFeedback(level) }
+    function albumArt(on: string): string { return root.setStageFlag("albumArt", on) }
     function widget(key: string, value: string): string { return root.setWidget(key, value) }
   }
 
