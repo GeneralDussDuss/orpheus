@@ -365,6 +365,9 @@ class Tracker:
             return
         if self.track is None:
             return
+        if player.ended:
+            self.finish(end_slack)   # the queue ran out: this play is over now, not at the next one
+            return
         if player.playing:
             self.listened += dt_
             self.last_pos = player.position
