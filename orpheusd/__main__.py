@@ -84,6 +84,7 @@ class App:
         self._endless_last: dict = {}
 
         self.version = 0
+        self.stop = asyncio.Event()     # set by POST /quit (or a signal): shut down cleanly
         self._cache: OrderedDict[str, dict] = OrderedDict()
         self._waiters: list[asyncio.Future] = []
 
@@ -189,7 +190,9 @@ class App:
         self.scrobbler.start()
         asyncio.create_task(self._listen_loop())
         asyncio.create_task(self.remote.loop())
-        runner = web.AppRunner(self.routes())
+        # No access log: the UIs long-poll /status, and a line per request
+        # buried everything worth reading in orpheusd.log.
+        runner = web.AppRunner(self.routes(), access_log=None)
         await runner.setup()
         await web.TCPSite(runner, "127.0.0.1", port).start()
         log.info("orpheusd listening on 127.0.0.1:%d (%s)", port, self.tidal.login_state["state"])
@@ -407,6 +410,14 @@ class App:
             if since is not None:
                 await self.wait_change(int(since), 25)
             return J(self.status())
+
+        @r.post("/quit")
+        async def quit_(req):
+            # The desktop app's Quit: stop the way a signal would, so the queue
+            # and the last play are saved. Windows has no SIGTERM to send.
+            log.info("quit requested")
+            asyncio.get_running_loop().call_later(0.05, self.stop.set)
+            return J({"ok": True})
 
         @r.post("/login/link")
         async def login_link(req):
@@ -801,19 +812,19 @@ class App:
 async def serve(port: int):
     app = App()
     runner = await app.start(port)
-    stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     if WINDOWS:
         # No add_signal_handler on Windows: Ctrl+C makes asyncio.run cancel this
-        # task, and the finally still saves the queue on the way out.
+        # task, POST /quit sets app.stop, and the finally saves the queue either way.
         try:
-            await stop.wait()
+            await app.stop.wait()
         finally:
             await shutdown(app, runner)
+            log.info("stopped")
         return
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
-    await stop.wait()
+        loop.add_signal_handler(sig, app.stop.set)
+    await app.stop.wait()
     await shutdown(app, runner)
 
 
@@ -837,10 +848,25 @@ def main():
     ap = argparse.ArgumentParser(prog="orpheusd", description="Orpheus TIDAL player daemon")
     ap.add_argument("--port", type=int, default=int(os.environ.get("ORPHEUS_PORT", DEFAULT_PORT)))
     ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("--log", metavar="FILE", help="log to FILE, rotated at 1 MB (3 kept), not stderr")
     args = ap.parse_args()
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(levelname)s %(name)s: %(message)s")
-    asyncio.run(serve(args.port))
+    level = logging.DEBUG if args.verbose else logging.INFO
+    if args.log:
+        from logging.handlers import RotatingFileHandler
+        Path(args.log).parent.mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(args.log, maxBytes=1 << 20, backupCount=3, encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s",
+                                               "%m-%d %H:%M:%S"))
+        logging.basicConfig(level=level, handlers=[handler])
+    else:
+        logging.basicConfig(level=level, format="%(levelname)s %(name)s: %(message)s")
+    try:
+        asyncio.run(serve(args.port))
+    except KeyboardInterrupt:
+        pass
+    except BaseException:
+        log.exception("orpheusd died")   # with --log, stderr may lead nowhere
+        raise
 
 
 if __name__ == "__main__":
