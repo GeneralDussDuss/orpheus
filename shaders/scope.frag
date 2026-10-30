@@ -7,7 +7,9 @@
 // half second, from the shared spectrum history) fall back into the dark.
 // The floor mirrors the beam, light shafts cut through the haze, and the
 // camera pushes in when it's loud and settles back when it's quiet.
-// Kicks slam: the beam overdrives and flashes, the camera punches in, the
+// Kicks slam (kick), each jolting the camera its own way (kicks); snares make
+// the grid and shafts shimmer (snap); swell drives the push-in. The beam
+// overdrives and flashes, the camera punches in, the
 // floor grid flares. Quiet passages go thin and calm, so the contrast is the show.
 
 //#common
@@ -62,18 +64,21 @@ void main() {
 
     // ---- camera: pushes in with the loudness, punches on kicks, drifts slowly ----
     float loud = smoothstep(0.05, 0.7, energy);
-    float zoom = 1.0 + loud * 0.14 + beat * 0.07;
+    float zoom = 1.0 + swell * 0.14 + kick * 0.07;             // swell pushes in, kicks punch
     vec2 q = (px - res * 0.5) / H;                           // view-height units, centred
     q = rotateAround(q, vec2(0.0), camRoll() * 0.6);
     q /= zoom;
-    q += vec2(sin(time * 0.11) * 0.025, camBob(1.0) - beat * 0.012);
+    // Each kick jolts the camera a different way (kicks counts them).
+    float ja = hash(vec2(kicks, 3.7)) * 6.2831853;
+    vec2 jolt = vec2(cos(ja), sin(ja) * 0.6 - 0.5) * kick * 0.014;
+    q += vec2(sin(time * 0.11) * 0.025, camBob(1.0)) + jolt;
     float pxU = 1.0 / (H * zoom);                            // one screen pixel in q units
 
     // ---- amplitudes: current bands (or their falling peaks, whichever is higher) ----
     vec4 bb[8] = vec4[8](b0, b1, b2, b3, b4, b5, b6, b7);
     vec4 pp[8] = vec4[8](p0, p1, p2, p3, p4, p5, p6, p7);
     float amp[8];
-    float drive = 1.0 + beat * 0.7;                          // a brief overdrive spike on kicks
+    float drive = 1.0 + kick * 0.7;                          // a brief overdrive spike on kicks
     for (int k = 0; k < 8; k++) {
         float g = dot(bb[k], vec4(0.25));
         float pk = dot(pp[k], vec4(0.25));
@@ -94,7 +99,7 @@ void main() {
     float xn = q.x / W + 0.5;
     if (xn > 0.0 && xn < 1.0) {
         float near = abs(q.y - YC) - R0;                     // > 0: outside the beam's envelope
-        float glowR = (0.008 + hot * 0.016 + beat * 0.010) * (1.0 - 0.5 * light);
+        float glowR = (0.008 + hot * 0.016 + kick * 0.010) * (1.0 - 0.5 * light);
         float ends = smoothstep(0.0, 0.03, xn) * smoothstep(1.0, 0.97, xn);   // the beam fades into the wings
         if (near < glowR * 4.0) {
             for (int s = 0; s < 3; s++) {
@@ -102,12 +107,12 @@ void main() {
                 float sc = 1.0 - fs * 0.18;                  // back strands are a little quieter
                 vec2 w = wave(xn, amp, time, fs * 2.1, 1.0 + fs * 0.25) * sc;
                 float d = abs(q.y - (YC + w.x)) / sqrt(1.0 + (w.y / W) * (w.y / W)) / pxU;   // pixels
-                float width = 0.6 + (1.0 - fs * 0.2) * (0.4 + hot * 3.2) + beat * 2.2;
+                float width = 0.6 + (1.0 - fs * 0.2) * (0.4 + hot * 3.2) + kick * 2.2;
                 float core = clamp(width - d + 0.5, 0.0, 1.0) * ends;
-                vec3 hc = mix(cs[s], fg.rgb, (0.20 + 0.30 * hot + 0.25 * beat) * (1.0 - light));
+                vec3 hc = mix(cs[s], fg.rgb, (0.20 + 0.30 * hot + 0.25 * kick) * (1.0 - light));
                 col.rgb += (1.0 - col.a) * core * hc;
                 col.a += (1.0 - col.a) * core;
-                float halo = lit(glow(d * pxU, glowR)) * (0.15 + hot * 0.45 + beat * 0.30) * ends;
+                float halo = lit(glow(d * pxU, glowR)) * (0.15 + hot * 0.45 + kick * 0.30) * ends;
                 haloSum += halo * cs[s];
                 haloA += halo;
             }
@@ -155,12 +160,14 @@ void main() {
         float lines = max(1.0 - smoothstep(0.0, aZ * 1.5, cross), 1.0 - smoothstep(0.0, aX * 1.5, side));
         float distFade = smoothstep(VPY, VPY - 0.10, q.y);
         float pool = exp(-(xw * xw) / (0.35 + loud * 0.4) - (zw * zw) / 0.5);
-        lines *= distFade * (0.07 + 0.16 * loud + 0.45 * beat) * (0.5 + pool) * (1.0 - 0.4 * light);
-        vec3 lc = mix(c2.rgb, c1.rgb, 0.35 + 0.5 * beat);
+        // Snares and hats make the grid shimmer: alternate lines catch the light.
+        float shimmer = snap * (0.5 + 0.5 * sin(floor(zw * 1.4 + flow * 0.55) * 2.7 + floor(xw * 5.0 + 0.5) * 1.9));
+        lines *= distFade * (0.07 + 0.16 * loud + 0.45 * kick + 0.35 * shimmer) * (0.5 + pool) * (1.0 - 0.4 * light);
+        vec3 lc = mix(c2.rgb, c1.rgb, 0.35 + 0.5 * kick);
         col.rgb += (1.0 - col.a) * lines * lc;
         col.a += (1.0 - col.a) * lines;
 
-        float lp = lit(pool * distFade * (0.06 + loud * 0.22 + beat * 0.25));
+        float lp = lit(pool * distFade * (0.06 + loud * 0.22 + kick * 0.25));
         col.rgb += lp * mix(c1.rgb, c3.rgb, 0.5);
         col.a += lp * 0.4;
 
@@ -197,11 +204,11 @@ void main() {
         float dl = length(q - (top + ax * t));
         float wide = 0.02 + t * 0.20;
         float shaft = lit(glow(dl, wide) * smoothstep(0.0, 0.35, t) * smoothstep(1.2, 0.8, t)
-                    * (0.03 + loud * 0.12 + beat * 0.22));
+                    * (0.03 + loud * 0.12 + kick * 0.22 + snap * 0.12));
         col.rgb += shaft * cs[i * 2];
         col.a += shaft * 0.5;
     }
-    float back = lit(glow(q.y - (YC + 0.05), 0.22) * glow(q.x, 0.9) * (0.04 + loud * 0.12 + beat * 0.15));
+    float back = lit(glow(q.y - (YC + 0.05), 0.22) * glow(q.x, 0.9) * (0.04 + loud * 0.12 + kick * 0.15));
     col.rgb += back * c2.rgb;
     col.a += back * 0.5;
 
