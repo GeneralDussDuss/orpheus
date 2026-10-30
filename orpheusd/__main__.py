@@ -848,7 +848,7 @@ async def guard_middleware(req: web.Request, handler):
     if req.headers.get("Sec-Fetch-Site", "").lower() in ("cross-site", "same-site"):
         raise web.HTTPForbidden(text="cross-site request refused")
     origin = req.headers.get("Origin")
-    if origin is not None and origin.strip().lower() != "null":
+    if origin is not None:
         try:
             u = urlsplit(origin.strip())
             ok = u.scheme in ("http", "https") and _loopback_host(u.netloc)

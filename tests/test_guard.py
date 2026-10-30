@@ -30,14 +30,14 @@ class GuardTest(unittest.IsolatedAsyncioTestCase):
         for h in ("localhost", "localhost:47837", "127.0.0.1:1", "[::1]", "[::1]:47837"):
             self.assertEqual(await self.status(Host=h), 200, h)
 
-    async def test_loopback_and_null_origin_pass(self):
-        for o in ("http://127.0.0.1:47837", "http://localhost", "http://[::1]:5", "null"):
+    async def test_loopback_origin_pass(self):
+        for o in ("http://127.0.0.1:47837", "http://localhost", "http://[::1]:5"):
             self.assertEqual(await self.status("POST", Origin=o), 200, o)
         self.assertEqual(await self.status(**{"Sec-Fetch-Site": "same-origin"}), 200)
         self.assertEqual(await self.status(**{"Sec-Fetch-Site": "none"}), 200)
 
     async def test_evil_origin_403(self):
-        for o in ("https://evil.example", "http://127.0.0.1.evil.com", "http://localhost.evil.com:80", "ftp://127.0.0.1", "garbage"):
+        for o in ("https://evil.example", "http://127.0.0.1.evil.com", "http://localhost.evil.com:80", "ftp://127.0.0.1", "garbage", "null"):
             self.assertEqual(await self.status("POST", Origin=o), 403, o)
 
     async def test_evil_host_403(self):
