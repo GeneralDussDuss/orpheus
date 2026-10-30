@@ -89,7 +89,9 @@ PanelWindow {
   property string liveStyle: ""
   readonly property string current: engine ? (engine.autoStyle && liveStyle ? liveStyle : engine.style) : "skyline"
 
-  function pick(name) { liveStyle = ""; engine.setStyle(name) }
+  // Every manual change says what it changed to (VizLabel over the visuals).
+  signal picked(string name)
+  function pick(name) { liveStyle = ""; engine.setStyle(name); picked(engine.styleLabels[name] || name) }
   function stepStyle(d) {
     var s = engine.styles, i = s.indexOf(current)
     pick(s[(i + d + s.length) % s.length])
@@ -184,14 +186,24 @@ PanelWindow {
 
     // The show takes the mouse for style changes; the wallpaper takes nothing.
     MouseArea {
+      id: showMouse
       anchors.fill: parent
       enabled: win.show
       visible: win.show
       acceptedButtons: Qt.LeftButton | Qt.RightButton
+      property real wheelAcc: 0
       onClicked: function(m) { win.stepStyle(m.button === Qt.RightButton ? -1 : 1) }
       onDoubleClicked: win.engine.setPlacement("overlay")
-      onWheel: function(w) { win.stepStyle(w.angleDelta.y > 0 ? -1 : 1) }
+      // one style per notch: a touchpad's stream of small deltas used to race through them
+      onWheel: function(w) { var n = Tui.notches(showMouse, w.angleDelta.y); if (n) win.stepStyle(-n) }
     }
+    VizLabel {
+      id: showLabel
+      anchors.fill: parent
+      visible: win.show
+      pixelSize: Style.font.body * 2
+    }
+    Connections { target: win; function onPicked(name) { if (win.show) showLabel.flash(name) } }
   }
 
   // ┌─ orpheus · skyline ──────── ←→ style  p player  esc ┐
@@ -201,7 +213,12 @@ PanelWindow {
     width: parent.width
     height: column.implicitHeight + ch * 2
     title: "orpheus · " + (win.engine ? win.engine.styleLabels[win.current].toLowerCase() : "")
-    keyHint: win.desktop ? "" : Tui.hints([["←→", "style"], ["p", "player"], ["f", "full"], ["space", "⏯"], ["esc", ""]], win.accentText, win.dim)
+    hintItems: win.desktop ? [] : [
+      { k: "←→", l: "style" },
+      { k: "p", l: "player", run: function() { win.engine.setMiniPlayer(!win.engine.miniPlayer) }, tip: (win.engine && win.engine.miniPlayer ? "hide" : "show") + " the mini player" },
+      { k: "f", l: "full", run: function() { win.engine.setPlacement("fullscreen") }, tip: "fullscreen show" },
+      { k: "space", l: "⏯", run: function() { if (win.engine.player) win.engine.player.togglePlaying() }, tip: "play / pause" },
+      { k: "esc", l: "", run: function() { win.engine.open = false }, tip: "close the visualizer" }]
     footer: win.engine && !win.engine.hasCava ? "install cava to hear the music" : ""
     focused: !win.desktop
     clock: win.engine ? win.engine.time : -1
@@ -232,9 +249,11 @@ PanelWindow {
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
               font.bold: current
-              color: current ? win.accentText : win.dim
+              color: current || tabMouse.containsMouse ? win.accentText : win.dim
+              font.underline: tabMouse.containsMouse && !current
               Behavior on color { ColorAnimation { duration: 180 } }
-              MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.pick(parent.modelData) }
+              MouseArea { id: tabMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: win.pick(parent.modelData)
+                          TuiTip { text: win.engine.styleLabels[modelData].toLowerCase(); key: String(index + 1) } }
             }
           }
         }
@@ -261,11 +280,18 @@ PanelWindow {
           styleName: win.current
 
           MouseArea {
+            id: cardMouse
             anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
             acceptedButtons: Qt.LeftButton | Qt.RightButton
+            property real wheelAcc: 0
             onClicked: function(m) { win.stepStyle(m.button === Qt.RightButton ? -1 : 1) }
-            onWheel: function(w) { win.stepStyle(w.angleDelta.y > 0 ? -1 : 1) }
+            onWheel: function(w) { var n = Tui.notches(cardMouse, w.angleDelta.y); if (n) win.stepStyle(-n) }
+            TuiTip { text: "click: next style · right-click: back · scroll"; key: "← →"; delay: 900 }
           }
+          VizLabel { id: cardLabel; anchors.fill: parent }
+          Connections { target: win; function onPicked(name) { cardLabel.flash(name) } }
         }
       }
 

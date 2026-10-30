@@ -79,13 +79,23 @@ TuiBox {
       height: box.fill ? Math.max(box.ch * 4, box.height - box.ch * 2.4 - nowRow.height - content.spacing) : box.ch * 9
       engine: box.engine
       styleName: box.engine ? box.engine.widgetViz : "prism"
-      // Cycle styles right here: click/scroll forward, right-click back.
+      // Cycle styles right here: click forward, right-click back, the wheel
+      // one style per notch -- the same as the player's rail and the stage.
       MouseArea {
+        id: vizMouse
         anchors.fill: parent
+        hoverEnabled: true
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         cursorShape: Qt.PointingHandCursor
+        property real wheelAcc: 0
         onClicked: function(m) { if (box.engine) box.engine.cycleWidgetViz(m.button === Qt.RightButton ? -1 : 1) }
-        onWheel: function(w) { if (box.engine) box.engine.cycleWidgetViz(w.angleDelta.y > 0 ? -1 : 1) }
+        onWheel: function(w) { var n = Tui.notches(vizMouse, w.angleDelta.y); if (n && box.engine) box.engine.cycleWidgetViz(-n) }
+        TuiTip { text: "click: next style · right-click: back · scroll"; delay: 900 }
+      }
+      VizLabel { id: vizLabel; anchors.fill: parent }
+      Connections {
+        target: box.engine
+        function onWidgetVizChanged() { if (box.full) vizLabel.flash(box.engine.styleLabels[box.engine.widgetViz] || box.engine.widgetViz) }
       }
     }
 
@@ -106,7 +116,8 @@ TuiBox {
           asynchronous: true
           sourceSize: Qt.size(art.width * 2, art.height * 2)
         }
-        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: if (box.engine) box.engine.libraryOpen = true }
+        MouseArea { anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: if (box.engine) box.engine.libraryOpen = true
+                    TuiTip { text: "open the player" } }
       }
 
       Column {
@@ -128,14 +139,36 @@ TuiBox {
           glow: box.player ? box.bloom * 0.35 : 0
           glowRadius: 6
           readonly property int cells: Math.max(6, Math.floor(width / box.cw) - 12)
-          text: Tui.meter(box.position / Math.max(1, box.length), cells, "━", "─", "●") + " " + box.clock(box.position)
+          // drag to scrub: the line follows the pointer, the seek goes out on release
+          property bool scrubbing: false
+          property real scrubFrac: 0
+          readonly property real frac: scrubbing ? scrubFrac : box.position / Math.max(1, box.length)
+          text: Tui.meter(frac, cells, "━", "─", "●") + " " + box.clock(scrubbing ? scrubFrac * box.length : box.position)
           font.family: Style.font.family; font.pixelSize: Style.font.caption; color: Color.accent
+          // the line's own width, measured in its font (the old maths scaled the body cell)
+          TextMetrics { id: seekLine; font: seek.font; text: Tui.meter(0, seek.cells, "━", "─", "●") }
           MouseArea {
-            width: seek.cells * box.cw * (Style.font.caption / Style.font.body)
+            id: seekMouse
+            width: seekLine.advanceWidth
             height: parent.height
-            enabled: !!(box.player && box.player.canSeek)
+            enabled: !!(box.player && box.player.canSeek) && box.length > 0
+            hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: function(m) { box.player.position = (m.x / width) * box.length }
+            function fracAt(x) { return Math.max(0, Math.min(1, x / Math.max(1, width))) }
+            onPressed: function(m) { seek.scrubFrac = fracAt(m.x); seek.scrubbing = true }
+            onPositionChanged: function(m) { if (pressed) seek.scrubFrac = fracAt(m.x) }
+            onReleased: {
+              if (!seek.scrubbing) return
+              if (box.player) box.player.position = seek.scrubFrac * box.length
+              seek.scrubbing = false
+            }
+            onCanceled: seek.scrubbing = false
+            TuiTip {
+              follow: true
+              force: seek.scrubbing
+              at: Math.max(0, Math.min(seekMouse.width, seekMouse.mouseX))
+              text: box.length > 0 ? box.clock((seek.scrubbing ? seek.scrubFrac : seekMouse.fracAt(seekMouse.mouseX)) * box.length) : ""
+            }
           }
         }
         Row {
@@ -143,11 +176,11 @@ TuiBox {
           topPadding: box.ch * 0.2
           Repeater {
             model: [
-              { g: "󰒮", a: "previous" },
-              { g: box.player && box.player.isPlaying ? "󰏤" : "󰐊", a: "toggle" },
-              { g: "󰒭", a: "next" },
-              { g: box.liked ? "󰋑" : "󰋕", a: "like" },
-              { g: "󰺢", a: "stage" }
+              { g: "󰒮", a: "previous", tip: "previous track" },
+              { g: box.player && box.player.isPlaying ? "󰏤" : "󰐊", a: "toggle", tip: box.playing ? "pause" : "play" },
+              { g: "󰒭", a: "next", tip: "next track" },
+              { g: box.liked ? "󰋑" : "󰋕", a: "like", tip: box.liked ? "unlike" : "like" },
+              { g: "󰺢", a: "stage", tip: "open or close the big visualizer" }
             ]
             GlowText {
               required property var modelData
@@ -174,6 +207,7 @@ TuiBox {
                   else if (a === "next" && p.canGoNext) p.next()
                   else if (a === "previous" && p.canGoPrevious) p.previous()
                 }
+                TuiTip { text: cm.parent.modelData.tip }
               }
             }
           }

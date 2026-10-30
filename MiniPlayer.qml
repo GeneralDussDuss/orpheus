@@ -112,20 +112,41 @@ Item {
     Row {
       spacing: root.cw
       Text {
-        text: root.clock(root.position)
+        text: root.clock(meter.scrubbing ? meter.scrubFrac * root.length : root.position)
         font.family: Style.font.family; font.pixelSize: Style.font.body; color: root.dim
       }
       Text {
         id: meter
         readonly property int cells: Math.max(8, Math.floor((root.width - art.width) / root.cw) - 26)
+        // drag to scrub: the bar follows the pointer, the seek goes out on release
+        property bool scrubbing: false
+        property real scrubFrac: 0
+        readonly property real frac: scrubbing ? scrubFrac : Math.max(0, Math.min(1, root.position / Math.max(1, root.length)))
         textFormat: Text.StyledText
-        text: Tui.meterRich(root.position / Math.max(1, root.length), cells, root.accent, Tui.mix(root.dim, root.bg, 0.4))
+        text: Tui.meterRich(frac, cells, root.accent, Tui.mix(root.dim, root.bg, 0.4))
         font.family: Style.font.family; font.pixelSize: Style.font.body
         MouseArea {
+          id: meterMouse
           anchors.fill: parent
-          enabled: !!(root.player && root.player.canSeek)
+          anchors.topMargin: -root.ch * 0.25; anchors.bottomMargin: -root.ch * 0.25
+          enabled: !!(root.player && root.player.canSeek) && root.length > 0
+          hoverEnabled: true
           cursorShape: Qt.PointingHandCursor
-          onClicked: function(m) { root.player.position = (m.x / meter.width) * root.length }
+          function fracAt(x) { return Math.max(0, Math.min(1, x / Math.max(1, width))) }
+          onPressed: function(m) { meter.scrubFrac = fracAt(m.x); meter.scrubbing = true }
+          onPositionChanged: function(m) { if (pressed) meter.scrubFrac = fracAt(m.x) }
+          onReleased: {
+            if (!meter.scrubbing) return
+            if (root.player) root.player.position = meter.scrubFrac * root.length
+            meter.scrubbing = false
+          }
+          onCanceled: meter.scrubbing = false
+          TuiTip {
+            follow: true
+            force: meter.scrubbing
+            at: Math.max(0, Math.min(meterMouse.width, meterMouse.mouseX))
+            text: root.length > 0 ? root.clock((meter.scrubbing ? meter.scrubFrac : meterMouse.fracAt(meterMouse.mouseX)) * root.length) : ""
+          }
         }
       }
       Text {
@@ -135,9 +156,9 @@ Item {
       Item { width: root.cw; height: 1 }
       Repeater {
         model: [
-          { glyph: "󰒮", action: "previous" },
-          { glyph: root.player && root.player.isPlaying ? "󰏤" : "󰐊", action: "toggle" },
-          { glyph: "󰒭", action: "next" }
+          { glyph: "󰒮", action: "previous", tip: "previous track", key: "" },
+          { glyph: root.player && root.player.isPlaying ? "󰏤" : "󰐊", action: "toggle", tip: root.playing ? "pause" : "play", key: "space" },
+          { glyph: "󰒭", action: "next", tip: "next track", key: "" }
         ]
         GlowText {
           required property var modelData
@@ -166,6 +187,7 @@ Item {
               else if (parent.modelData.action === "next" && p.canGoNext) p.next()
               else if (parent.modelData.action === "previous" && p.canGoPrevious) p.previous()
             }
+            TuiTip { text: hover.parent.modelData.tip; key: hover.parent.modelData.key }
           }
         }
       }
