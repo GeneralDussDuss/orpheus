@@ -803,6 +803,14 @@ FloatingWindow {
             Keys.onReturnPressed: { list.forceActiveFocus(); win.activate(list.currentIndex) }
             Keys.onEscapePressed: list.forceActiveFocus()
             Keys.onTabPressed: if (win.videoPage) win.vprovider = win.vproviders[(win.providerIndex + 1) % win.vproviders.length].id
+            // The video page opens with the cursor here, so `c` would only type a c.
+            // An empty anime search has nothing to lose: hand over to Curd, which
+            // has its own search.
+            Keys.onPressed: function(e) {
+              if (win.videoPage && win.vprovider === "anime" && !text && e.text === "c" && !(e.modifiers & Qt.ControlModifier)) {
+                win.videoKey(e); e.accepted = true
+              }
+            }
             Text {
               visible: !parent.text
               text: win.videoPage ? (win.vprovider === "anime" ? "a series, by name"
@@ -1010,7 +1018,7 @@ FloatingWindow {
                                ? (win.providers.curd ? "c opens curd · search, watch and track there" : "anime needs ani-cli or curd")
                              : win.vquery ? "nothing found on " + win.vprovider
                              : "type to search " + win.vprovider + (win.vprovider === "soundcloud" ? " · ⏎ listen"
-                                                                 : win.vprovider === "anime" ? " · ⏎ watch · c curd" : " · ⏎ watch · a listen"))
+                                                                 : win.vprovider === "anime" ? " · ⏎ watch · or c for curd" : " · ⏎ watch · a listen"))
               : win.page.type === "search" ? (win.query ? "no results" : "type to search · ⏎ play · esc back")
               : "nothing here yet"
           font.family: win.family; font.pixelSize: Style.font.body
