@@ -510,13 +510,28 @@ class App:
                 # Its own console; Curd plays through the mpv its installer bundles.
                 cmd, how = [curd, *args], {"creationflags": subprocess.CREATE_NEW_CONSOLE}
             else:
-                term = os.environ.get("TERMINAL") or "alacritty"
-                cmd = [term, "--title", "Orpheus ╱╱ curd", "-e", curd, "-player", str(ANI_PLAYER), *args]
+                run = [curd, "-player", str(ANI_PLAYER), *args]
+                term = os.environ.get("TERMINAL") or ""
+                if not term or os.path.basename(term) == "xdg-terminal-exec":
+                    # Omarchy's TERMINAL: the desktop's default terminal, which takes
+                    # --title= and the command after --, not a terminal's own -e.
+                    cmd = ["xdg-terminal-exec", "--title=Orpheus ╱╱ curd", "--", *run]
+                else:
+                    cmd = [term, "--title", "Orpheus ╱╱ curd", "-e", *run]
                 how = {"stdin": asyncio.subprocess.DEVNULL}
             try:
-                await asyncio.create_subprocess_exec(*cmd, **how)
+                proc = await asyncio.create_subprocess_exec(*cmd, **how)
             except OSError as e:
                 raise web.HTTPBadGateway(text=f"could not start curd: {e}")
+            # A launcher that rejects its arguments exits at once; say so instead
+            # of reporting a hand-over that never happened.
+            try:
+                code = await asyncio.wait_for(proc.wait(), 1.0)
+            except asyncio.TimeoutError:
+                code = None
+            if code:
+                log.warning("curd launcher %s exited %s", cmd[0], code)
+                raise web.HTTPBadGateway(text=f"curd's terminal would not open ({cmd[0]} exited {code})")
             return J(self.status())
 
         @r.post("/video/{action}")
