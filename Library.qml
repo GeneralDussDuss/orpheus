@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
@@ -140,6 +141,10 @@ FloatingWindow {
   readonly property color accent: Tui.ensure(Color.accent, bg, 3)
   readonly property color accentText: Tui.ensure(Color.accent, bg, 4.5)
   readonly property color cursorFill: Tui.alpha(Color.accent, 0.16)
+  // Glow, only where light means something: the play key on the beat, the
+  // playhead, the playing row, the focused pane, and the cover's own light.
+  readonly property real bloom: Tui.bloom(engine)
+  readonly property real beat: engine && st.playing ? Math.max(0, Math.min(1, engine.beat || 0)) : 0
 
   function clockText(s) {
     s = Math.max(0, Math.floor(s || 0))
@@ -704,6 +709,7 @@ FloatingWindow {
       footer: win.history.length ? "esc back" : ""
       focused: list.activeFocus || searchInput.activeFocus || (settingsLoader.item && settingsLoader.item.activeFocus) || false
       clock: win.clock
+      glow: win.bloom
 
       // Detail header: art + title + actions.
       Item {
@@ -967,8 +973,10 @@ FloatingWindow {
             color: win.dim
           }
 
-          Text {
+          GlowText {
             visible: !!rowItem.it
+            glow: rowItem.isPlaying ? win.bloom * 0.3 : 0
+            glowRadius: 6
             anchors.verticalCenter: parent.verticalCenter
             x: win.cw
             width: parent.width - win.cw * 2
@@ -1091,6 +1099,74 @@ FloatingWindow {
         title: !!win.engine && win.engine.railViz !== "off" ? "now · " + win.engine.railViz : "now"
         keyHint: Tui.hints([["v", "viz"], ["V", "stage"], ["y", "share"]], win.accentText, win.dim)
         clock: win.clock
+        // Ambient light: the cover, blurred and a little larger, behind itself,
+        // so it spills its own colour into the panel. Two layers, so a new cover
+        // crossfades in over the old one once it has loaded. A tiny decode
+        // blurred once per track; after the fade it is a static texture.
+        Item {
+          id: ambient
+          readonly property real level: plane.showViz ? 0 : win.bloom
+          readonly property string art: win.track ? (win.track.art || "") : ""
+          property int front: 0
+          visible: level > 0
+          width: plane.width
+          height: plane.height
+          // Load the new cover into the back layer; it takes the front once ready.
+          function load() {
+            var back = front ? amb0 : amb1
+            if (String(back.source) !== art) back.source = art
+            else if (back.status === Image.Ready) front = 1 - front
+          }
+          function ready(i) { if (front !== i) front = i }
+          onArtChanged: load()
+          onVisibleChanged: if (visible) load()
+          Component.onCompleted: load()
+
+          Image {
+            id: amb0
+            anchors.fill: parent
+            visible: false
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            sourceSize: Qt.size(48, 48)
+            onStatusChanged: if (status === Image.Ready) ambient.ready(0)
+          }
+          Image {
+            id: amb1
+            anchors.fill: parent
+            visible: false
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            sourceSize: Qt.size(48, 48)
+            onStatusChanged: if (status === Image.Ready) ambient.ready(1)
+          }
+          MultiEffect {
+            source: amb0
+            anchors.fill: parent
+            scale: 1.14
+            autoPaddingEnabled: true
+            blurEnabled: true
+            blur: 1
+            blurMax: 64
+            saturation: 0.25
+            visible: opacity > 0.005
+            opacity: ambient.visible && ambient.art !== "" && amb0.status === Image.Ready && ambient.front === 0 ? ambient.level * 0.7 : 0
+            Behavior on opacity { NumberAnimation { duration: 700; easing.type: Easing.InOutSine } }
+          }
+          MultiEffect {
+            source: amb1
+            anchors.fill: parent
+            scale: 1.14
+            autoPaddingEnabled: true
+            blurEnabled: true
+            blur: 1
+            blurMax: 64
+            saturation: 0.25
+            visible: opacity > 0.005
+            opacity: ambient.visible && ambient.art !== "" && amb1.status === Image.Ready && ambient.front === 1 ? ambient.level * 0.7 : 0
+            Behavior on opacity { NumberAnimation { duration: 700; easing.type: Easing.InOutSine } }
+          }
+        }
         Column {
           width: parent.width
           spacing: win.ch * 0.2
@@ -1308,11 +1384,16 @@ FloatingWindow {
             { t: win.st.playing ? "󰏤" : "󰐊", a: "toggle" },
             { t: "󰒭", a: "next" }
           ]
-          Text {
+          GlowText {
             required property var modelData
+            readonly property bool isPlay: modelData.a === "toggle"
             text: modelData.t
             font.family: win.family; font.pixelSize: Style.font.body + 2
-            color: tm.containsMouse ? win.accentText : win.fg
+            // Play breathes toward the accent with the beat, and its halo with it.
+            color: tm.containsMouse ? win.accentText
+                   : (isPlay && win.st.playing ? Tui.mix(win.fg, win.accentText, 0.45 + 0.55 * win.beat) : win.fg)
+            glowLive: isPlay && win.st.playing === true && win.bloom > 0
+            glow: glowLive ? win.bloom * (0.3 + 0.7 * win.beat) : 0
             MouseArea { id: tm; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: win.api.control(modelData.a) }
           }
         }
@@ -1350,6 +1431,18 @@ FloatingWindow {
           textFormat: Text.StyledText
           text: Tui.meterRich(((win.api ? win.api.position : 0)) / Math.max(1, win.st.duration || 1), cells, win.accent, Tui.mix(win.dim, win.bg, 0.4))
           font.family: win.family; font.pixelSize: Style.font.body
+          // The playhead carries a halo: the one cell of the bar that is "now".
+          TextMetrics { id: seekCell; font: seekMeter.font; text: "━" }
+          GlowText {
+            visible: !!win.track && win.bloom > 0
+            x: Math.round(Math.max(0, Math.min(1, (win.api ? win.api.position : 0) / Math.max(1, win.st.duration || 1)))
+                          * (seekMeter.cells - 1)) * seekCell.advanceWidth
+            text: "╸"
+            font: seekMeter.font
+            color: win.accent
+            glow: win.bloom * (win.st.playing ? 0.9 : 0.45)
+            glowRadius: 8
+          }
           MouseArea {
             anchors.fill: parent
             cursorShape: Qt.PointingHandCursor

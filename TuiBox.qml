@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import qs.Commons
 import "Tui.js" as Tui
 
@@ -18,6 +19,7 @@ Item {
   property color line: Tui.ensure(Tui.mix(Color.foreground, Color.background, 0.72), Color.background, 1.6)
   property color text: Color.foreground
   property real clock: -1               // engine heartbeat (seconds), for callers that animate content
+  property real glow: 0                 // bloom budget (Tui.bloom) for the focused edge; 0 = none (menus, sheets)
   default property alias content: inner.data
 
   readonly property real cw: fm.advanceWidth("M")
@@ -35,13 +37,42 @@ Item {
   NumberAnimation on decodeProgress { id: decodeAnim; from: 0; to: 1; duration: 350; running: true }
   onTitleChanged: decodeAnim.restart()
 
+  // Focused: a soft bloom around the border, breathing with it. The halo is a
+  // fixed accent ring blurred once; only its opacity follows the breath, so
+  // the breathing costs a composite per frame, never a re-blur. It sits
+  // behind the frame, whose fill hides the inner half: light spills outward.
+  Loader {
+    active: box.focused && box.glow > 0
+    anchors.fill: parent
+    anchors.topMargin: box.ch / 2
+    sourceComponent: Item {
+      Rectangle {
+        id: ring
+        anchors.fill: parent
+        color: "transparent"
+        border.width: 3
+        border.color: Color.accent
+        visible: false
+      }
+      MultiEffect {
+        source: ring
+        anchors.fill: ring
+        autoPaddingEnabled: true
+        blurEnabled: true
+        blur: 1
+        blurMax: 16
+        brightness: 0.15
+        opacity: box.glow * (0.35 + 0.65 * box.breath)
+      }
+    }
+  }
+
   Rectangle {
     anchors.fill: parent
     anchors.topMargin: box.ch / 2
     color: box.background
     border.width: 1
     border.color: box.edge
-
   }
 
   Rectangle {

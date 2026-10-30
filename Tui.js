@@ -129,3 +129,12 @@ function eq(time, seed) {
   for (var i = 0; i < 3; i++) s += EQ.charAt(Math.floor((Math.sin(time * (5 + i * 1.7) + seed + i) * 0.5 + 0.5) * 6.99))
   return s
 }
+
+// The glow budget, 0..1, from config `bloom`: "off" 0, "subtle" 0.5 (the
+// default, and what anything unknown reads as), "full" 1. Light themes get
+// none: a halo on a pale ground reads as a smudge, not as light.
+function bloom(engine) {
+  if (!engine || engine.lightTheme) return 0
+  var b = engine.config ? engine.config.bloom : undefined
+  return b === "off" ? 0 : b === "full" ? 1 : 0.5
+}
