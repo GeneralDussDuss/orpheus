@@ -196,7 +196,7 @@ Rectangle {
           readonly property bool on: index === pane.rangeIndex
           text: (on ? "▰ " : "▱ ") + modelData.label
           font.family: host.family; font.pixelSize: Style.font.body; font.bold: on
-          color: on ? host.accentText : (rangeArea.containsMouse ? pane.fg : pane.dim)
+          color: on || rangeArea.containsMouse ? host.accentText : pane.dim
           MouseArea { id: rangeArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                       onClicked: { pane.range = parent.modelData.id; pane.forceActiveFocus() } }
         }

@@ -130,7 +130,8 @@ FloatingWindow {
     scale: hm.pressed ? 0.85 : 1
     Behavior on scale { SpringAnimation { spring: 6; damping: 0.4 } }
     MouseArea { id: hm; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                onClicked: win.api.toggleLike(parent.kind, parent.itemId) }
+                onClicked: win.api.toggleLike(parent.kind, parent.itemId)
+                TuiTip { text: (on ? "unlike" : "like") + " this " + kind; key: kind === "track" ? "F" : "" } }
   }
   readonly property real cw: fm.advanceWidth("M")
   readonly property real ch: fm.height
@@ -483,8 +484,8 @@ FloatingWindow {
     return null
   }
 
-  function share(universal) {
-    var it = shareTarget()
+  function share(universal) { return shareItem(shareTarget(), universal) }
+  function shareItem(it, universal) {
     if (!it) { say("nothing to share"); return true }
     if (!engine) return true
     var url = engine.shareUrl(it.kind, it.id, universal)
@@ -502,21 +503,87 @@ FloatingWindow {
   property string flash: ""
   Timer { id: flashOff; interval: 2800; onTriggered: win.flash = "" }
   function say(msg) { flash = msg; flashOff.restart() }
+  function dismissHint() { if (engine) engine.updateConfig(function(c) { c.playerHint = false }) }
+
+  // ---- the context menu ----------------------------------------------------------
+  //
+  // Right-click on anything that is a track, album, artist or playlist. Every
+  // entry is something a key already does (the key is printed beside it), plus
+  // the few that had no key: add to the end of the queue, radio, go to.
+  // `play` is how this particular row plays (a row on a page plays the page
+  // from there; a queue row jumps to it).
+  function menuFor(it, play) {
+    var m = [], a = api, e = engine
+    if (!it || !a) return m
+    function add(label, key, run) { m.push({ label: label, key: key || "", run: run }) }
+    function sep() { if (m.length && !m[m.length - 1].sep) m.push({ sep: true }) }
+    var kind = it.kind
+    if (videoPage || kind === "video" || kind === "show") {
+      add(kind === "show" ? "open" : "watch", "⏎", play)
+      if (it.provider === "youtube" || it.provider === "soundcloud") add("listen in the player", "a", listenHere)
+      return m
+    }
+    if (kind === "track") {
+      if (play) add("play", "⏎", play)
+      add("play next", "a", function() { queueItem(it, true) })
+      add("add to the end of the queue", "", function() { queueItem(it, false) })
+      add("start radio from this track", "", function() { a.play(it); say("radio ╱╱ " + it.title) })
+    } else {
+      add("open", "⏎", function() { go({ type: "detail", kind: kind, id: it.id, title: it.title }) })
+      if (kind !== "artist") {
+        add("play", "", function() { a.play({ kind: kind, id: it.id }, 0) })
+        add("play next", "a", function() { queueItem(it, true) })
+        add("add to the end of the queue", "", function() { queueItem(it, false) })
+      }
+    }
+    sep()
+    if (kind !== "mix") {
+      var liked = a.isLiked(kind, it.id)
+      add(liked ? "unlike" : "like", "f", function() { a.toggleLike(kind, it.id); say((liked ? "unliked ╱╱ " : "liked ╱╱ ") + it.title) })
+    }
+    if (kind === "track" && it.albumId)
+      add("go to the album", "", function() { go({ type: "detail", kind: "album", id: it.albumId, title: it.album || "album" }) })
+    if ((kind === "track" || kind === "album") && it.artistId)
+      add("go to the artist", "", function() { go({ type: "detail", kind: "artist", id: it.artistId, title: artists(it.artists) || "artist" }) })
+    if (e && e.shareUrl(kind, it.id, false)) {
+      sep()
+      add("copy link", "y", function() { shareItem(it, false) })
+      if (e.universalUrl(kind, it.id)) add("copy universal link", "Y", function() { shareItem(it, true) })
+    }
+    return m
+  }
+  function rowMenu(index, from, x, y) {
+    var r = rows[index]
+    if (!r || !r.item) return
+    list.currentIndex = index
+    var label = r.item.kind === "track" || videoPage ? (videoPage ? "video" : "track") : r.item.kind
+    ctxMenu.popup(from, x, y, label, menuFor(r.item, function() { list.forceActiveFocus(); activate(index) }))
+  }
+  function trackMenu(t, from, x, y, play) {
+    // the keys beside the entries act on the cursor's row, not on this one
+    if (t) ctxMenu.popup(from, x, y, "track", menuFor(t, play || null).map(function(e) { return e.sep ? e : { label: e.label, run: e.run } }))
+  }
+
+  // ---- the player rail's visualizer ----------------------------------------------
+  function railName(v) { return v === "off" ? "album art" : (engine && engine.styleLabels[v] ? engine.styleLabels[v].toLowerCase() : v) }
+  function railMenu(from, x, y) {
+    var e = engine, m = []
+    if (!e) return
+    for (var i = 0; i < e.styles.length; i++)
+      (function(s) { m.push({ label: railName(s), on: e.railViz === s, run: function() { e.setRailViz(s) } }) })(e.styles[i])
+    m.push({ sep: true })
+    m.push({ label: "album art", on: e.railViz === "off", run: function() { e.setRailViz("off") } })
+    m.push({ sep: true })
+    m.push({ label: (e.open ? "close" : "open") + " the big visualizer", key: "V", run: function() { e.open = !e.open } })
+    ctxMenu.popup(from, x, y, "visualizer", m)
+  }
 
   // ---- keys -------------------------------------------------------------------
   function videoKey(e) {
     var k = e.key, t = e.text
-    if (k === Qt.Key_Tab || t === "\t") {
-      vprovider = vproviders[(providerIndex + 1) % vproviders.length].id
-      return true
-    }
+    if (k === Qt.Key_Tab || t === "\t") { nextProvider(); return true }
     if (t === "a") { listenHere(); return true }
-    if (t === "c") {
-      if (!providers.curd) { say("curd is not installed"); return true }
-      say("handing over to curd · it owns the player from here")
-      api.curd(true, function(ok, d) { if (!ok) say(errText(d, "couldn't start curd")) })
-      return true
-    }
+    if (t === "c") { openCurd(); return true }
     if (!watching) return false
     var pos = videoState.position || 0
     if (k === Qt.Key_Space) { api.videoControl("toggle"); return true }
@@ -529,6 +596,27 @@ FloatingWindow {
   readonly property int providerIndex: {
     for (var i = 0; i < vproviders.length; i++) if (vproviders[i].id === vprovider) return i
     return 0
+  }
+
+  // ---- row actions (keys, hint buttons and the context menu share these) ------
+  function cursorItem() { var r = rows[list.currentIndex]; return r && r.item ? r.item : null }
+  function queueItem(it, next) {
+    if (!it || !api) return
+    api.enqueue(it, next)
+    // queueing was silent before: nothing on screen moved until the next track
+    say((next ? "playing next ╱╱ " : "added to the queue ╱╱ ") + (it.title || it.kind))
+  }
+  function likeCursor() {
+    // Like/unlike what's under the cursor; on a detail page with no row, the page itself.
+    var it = cursorItem()
+    if (it && it.kind !== "mix") api.toggleLike(it.kind, it.id)
+    else if (page.type === "detail" && page.kind !== "mix") api.toggleLike(page.kind, page.id)
+  }
+  function nextProvider() { vprovider = vproviders[(providerIndex + 1) % vproviders.length].id }
+  function openCurd() {
+    if (!providers.curd) { say("curd is not installed"); return }
+    say("handing over to curd · it owns the player from here")
+    api.curd(true, function(ok, d) { if (!ok) say(errText(d, "couldn't start curd")) })
   }
 
   function handleKey(e) {
@@ -557,14 +645,8 @@ FloatingWindow {
     if (t === "V") { engine.open = !engine.open; return true }
     if (t === "P") { playPage(false); return true }
     if (t === "S") { playPage(true); return true }
-    if (t === "a") { var r = rows[list.currentIndex]; if (r && r.item) api.enqueue(r.item, true); return true }
-    if (t === "f") {
-      // Like/unlike what's under the cursor; on a detail page with no row, the page itself.
-      var f = rows[list.currentIndex]
-      if (f && f.item && f.item.kind !== "mix") api.toggleLike(f.item.kind, f.item.id)
-      else if (page.type === "detail" && page.kind !== "mix") api.toggleLike(page.kind, page.id)
-      return true
-    }
+    if (t === "a") { queueItem(cursorItem(), true); return true }
+    if (t === "f") { likeCursor(); return true }
     if (t === "F") { if (track) api.toggleLike("track", track.id); return true }
     if (t === "y") return share(false)
     if (t === "Y") return share(true)
@@ -588,7 +670,32 @@ FloatingWindow {
         font.family: win.family; font.pixelSize: Style.font.body; font.letterSpacing: 2
         color: win.fg
       }
+      // First runs: one line naming the few things nothing else on screen
+      // says, until it is dismissed (remembered in config as playerHint: false).
+      Row {
+        id: firstHint
+        visible: !!win.engine && win.engine.config.playerHint !== false
+        anchors.left: brand.right; anchors.leftMargin: win.cw * 3
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: win.cw * 1.5
+        Text {
+          text: "tip ╱╱"
+          font.family: win.family; font.pixelSize: Style.font.caption; font.letterSpacing: 1
+          color: win.accentText
+          anchors.verticalCenter: parent.verticalCenter
+        }
+        HintBar {
+          anchors.verticalCenter: parent.verticalCenter
+          keyColor: win.accentText; labelColor: win.fg; hoverColor: win.accentText
+          items: [{ k: "v", l: "viz", run: function() { win.engine.cycleRailViz(1) }, tip: "cycle the visualizer by the art" },
+                  { k: "^K", l: "commands", run: function() { cmdPalette.open() }, tip: "every action, by name" },
+                  { k: "?", l: "keys", run: function() { keysSheet.open() }, tip: "every key and mouse gesture" },
+                  { k: "right-click", l: "for more" },
+                  { k: "✕", l: "", run: function() { win.dismissHint() }, tip: "got it, don't show this again", tipKey: "" }]
+        }
+      }
       Text {
+        visible: !firstHint.visible
         anchors.left: brand.right; anchors.leftMargin: win.cw * 3
         anchors.right: chain.left; anchors.rightMargin: win.cw * 3
         anchors.verticalCenter: parent.verticalCenter
@@ -599,6 +706,9 @@ FloatingWindow {
       }
       Text {
         id: chain
+        // the first-run tip takes the room first; the signal path comes back after
+        visible: !firstHint.visible
+                 || statusLine.width > brand.width + firstHint.width + implicitWidth + closeBtn.width + win.cw * 9
         anchors.right: closeBtn.left; anchors.rightMargin: win.cw * 2
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.StyledText
@@ -609,21 +719,16 @@ FloatingWindow {
         }
         font.family: win.family; font.pixelSize: Style.font.caption
       }
-      Text {
+      // Each hint is its own button now, rather than one line split by where
+      // the click happened to land.
+      HintBar {
         id: closeBtn
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        textFormat: Text.StyledText
-        text: Tui.hints([["^K", "commands"], ["?", "keys"], ["q", "close"]], closeArea.containsMouse ? win.fg : win.accentText, win.dim)
-        font.family: win.family; font.pixelSize: Style.font.caption
-        MouseArea {
-          id: closeArea; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-          // the three hints are one line of text: split the clicks by where they land
-          onClicked: function(m) {
-            var f = m.x / width
-            if (f < 0.45) cmdPalette.open(); else if (f < 0.72) keysSheet.open(); else win.engine.libraryOpen = false
-          }
-        }
+        keyColor: win.accentText; labelColor: win.dim; hoverColor: win.accentText
+        items: [{ k: "^K", l: "commands", run: function() { cmdPalette.open() }, tip: "every action, by name" },
+                { k: "?", l: "keys", run: function() { keysSheet.open() }, tip: "every key and mouse gesture" },
+                { k: "q", l: "close", run: function() { win.engine.libraryOpen = false }, tip: "close the player (music keeps playing)" }]
       }
     }
 
@@ -640,25 +745,35 @@ FloatingWindow {
         width: parent.width
         Repeater {
           model: win.navItems
+          // A section: lit when it is the page, and under the pointer it takes
+          // the cursor's fill and a ▸ of its own, so it reads as a button.
           Text {
             required property var modelData
             readonly property bool on: win.page.type === modelData.page.type && (win.page.what || "") === (modelData.page.what || "")
+            readonly property bool hot: navMouse.containsMouse
             width: parent.width
-            text: (on ? "▸ " : "  ") + modelData.label
+            text: (on || hot ? "▸ " : "  ") + modelData.label
             rightPadding: win.cw
             font.family: win.family
             font.pixelSize: Style.font.body
             font.bold: on
-            color: on ? win.accentText : win.dim
+            color: on || hot ? win.accentText : win.dim
+            Rectangle {
+              z: -1
+              visible: parent.hot && !parent.on
+              anchors.fill: parent
+              anchors.leftMargin: -win.cw * 0.5
+              color: win.cursorFill
+            }
             Text {
               anchors.right: parent.right
               text: modelData.key
               font.family: win.family
               font.pixelSize: Style.font.caption
-              color: parent.on ? win.accentText : win.dim
+              color: parent.on || parent.hot ? win.accentText : win.dim
               anchors.verticalCenter: parent.verticalCenter
             }
-            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.go(modelData.page) }
+            MouseArea { id: navMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: win.go(modelData.page) }
           }
         }
       }
@@ -673,9 +788,11 @@ FloatingWindow {
           text: (win.qualityText(win.st.stream) || "—").toLowerCase() + (capped ? "  · get hi-res" : "")
           font.family: win.family; font.pixelSize: Style.font.caption
           color: capped && qm.containsMouse ? win.accentText : win.dim
+          font.underline: capped && qm.containsMouse
           MouseArea { id: qm; anchors.fill: parent; hoverEnabled: true; enabled: parent.capped
                       cursorShape: Qt.PointingHandCursor
-                      onClicked: win.go({ type: "login", title: "sign in", hires: true }) }
+                      onClicked: win.go({ type: "login", title: "sign in", hires: true })
+                      TuiTip { text: "this sign-in tops out at lossless: sign in again for hi-res" } }
         }
         Item { width: 1; height: win.ch * 0.5 }
         Text {
@@ -685,8 +802,9 @@ FloatingWindow {
               : win.api.signedIn ? "● " + win.maskAccount(win.api.login.user) + (win.api.login.hires ? " · hi-res" : "")
               : "○ signed out"
           font.family: win.family; font.pixelSize: Style.font.caption
-          color: win.api && win.api.signedIn ? win.dim : Color.urgent
-          MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.go({ type: "login", title: "sign in" }) }
+          color: acct.containsMouse ? win.accentText : win.api && win.api.signedIn ? win.dim : Color.urgent
+          MouseArea { id: acct; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: win.go({ type: "login", title: "sign in" })
+                      TuiTip { text: "account and sign-in" } }
         }
       }
     }
@@ -700,14 +818,20 @@ FloatingWindow {
       height: nav.height
       title: win.page.type === "detail" ? win.page.kind + " · " + (win.pageData ? win.pageData.title : win.page.title || "")
            : (win.page.title || win.page.type)
-      keyHint: win.videoPage ? Tui.hints(win.page.show ? [["⏎", "watch"], ["esc", "back"]]
-                                                      : win.vprovider === "soundcloud" ? [["⇥", "provider"], ["⏎", "listen"]]
-                                                      : [["⇥", "provider"], ["⏎", "watch"], ["a", "listen"], ["c", "curd"]],
-                                       win.accentText, win.dim)
-             : win.page.type === "settings" ? Tui.hints([["⇥", "section"], ["h/l", "change"], ["⏎", "set"]], win.accentText, win.dim)
-             : win.page.type === "stats" ? Tui.hints([["⇥", "range"], ["w", "wrapped"]], win.accentText, win.dim)
-             : win.page.type === "search" ? Tui.hints([["/", "search"], ["⏎", "play"]], win.accentText, win.dim)
-                                          : Tui.hints([["⏎", "open"], ["a", "queue"], ["f", "♥ like"], ["P", "play all"]], win.accentText, win.dim)
+      hintItems: {
+        function h(k, l, run, tip) { return { k: k, l: l, run: run, tip: tip } }
+        var act = function() { list.forceActiveFocus(); win.activate(list.currentIndex) }
+        if (win.videoPage)
+          return win.page.show ? [h("⏎", "watch", act), h("esc", "back", win.back)]
+               : win.vprovider === "soundcloud" ? [h("⇥", "provider", win.nextProvider, "next provider"), h("⏎", "listen", act)]
+               : [h("⇥", "provider", win.nextProvider, "next provider"), h("⏎", "watch", act),
+                  h("a", "listen", win.listenHere, "play the sound through the music player"), h("c", "curd", win.openCurd, "hand over to curd")]
+        if (win.page.type === "settings") return [h("⇥", "section"), h("h/l", "change"), h("⏎", "set")]
+        if (win.page.type === "stats") return [h("⇥", "range"), h("w", "wrapped")]
+        if (win.page.type === "search") return [h("/", "search", function() { searchInput.forceActiveFocus() }), h("⏎", "play", act)]
+        return [h("⏎", "open", act, "open or play the row"), h("a", "next", function() { win.queueItem(win.cursorItem(), true) }, "play the row next"),
+                h("f", "♥ like", win.likeCursor, "like the row"), h("P", "play all", function() { win.playPage(false) }, "play this page")]
+      }
       footer: win.history.length ? "esc back" : ""
       focused: list.activeFocus || searchInput.activeFocus || (settingsLoader.item && settingsLoader.item.activeFocus)
                || (statsLoader.item && statsLoader.item.activeFocus) || false
@@ -759,10 +883,17 @@ FloatingWindow {
                 : win.page.kind === "artist" ? "artist"
                 : (win.pageData.subtitle ? win.pageData.subtitle + " · " : "") + (win.pageData.items || []).length + " tracks"
             }
-            Text {
-              text: "P play   S shuffle   f " + (win.api && win.api.isLiked(win.page.kind, win.page.id) ? "♥ liked" : "♡ like")
-              font.family: win.family; font.pixelSize: Style.font.caption; color: win.accentText
-              topPadding: win.ch * 0.4
+            Item { width: 1; height: win.ch * 0.2 }
+            HintBar {
+              keyColor: win.accentText; labelColor: win.fg; hoverColor: win.accentText
+              readonly property bool liked: !!win.api && win.api.isLiked(win.page.kind, win.page.id)
+              items: [{ k: "P", l: "play", run: function() { win.playPage(false) }, tip: "play from the top" },
+                      { k: "S", l: "shuffle", run: function() { win.playPage(true) }, tip: "shuffle all of it" }]
+                     // Not "f": with the cursor on a row, f likes the row, and the
+                     // header used to promise it would like the whole album.
+                     .concat(win.page.kind === "mix" ? [] : [{ k: liked ? "♥" : "♡", l: liked ? "liked" : "like",
+                                                              run: function() { win.api.toggleLike(win.page.kind, win.page.id) },
+                                                              tip: "like this " + win.page.kind + " (f likes the selected row)", tipKey: "" }])
             }
           }
         }
@@ -784,7 +915,7 @@ FloatingWindow {
               readonly property bool on: modelData.id === win.vprovider
               readonly property bool ready: win.providers[modelData.id] !== false
               textFormat: Text.StyledText
-              text: '<font color="' + Tui.hex(on ? win.accentText : win.dim) + '">'
+              text: '<font color="' + Tui.hex(on || pm.containsMouse ? win.accentText : win.dim) + '">'
                     + (on ? "▰ " : "▱ ") + Tui.esc(modelData.label) + '</font>'
                     + ' <font color="' + Tui.hex(Tui.mix(win.dim, win.bg, 0.3)) + '">'
                     + Tui.esc(ready ? modelData.by : "not installed") + '</font>'
@@ -792,7 +923,10 @@ FloatingWindow {
               Behavior on opacity { NumberAnimation { duration: 160 } }
               opacity: ready ? 1 : 0.55
               MouseArea {
+                id: pm
                 anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
                 onClicked: { win.vprovider = parent.modelData.id; list.forceActiveFocus() }
               }
             }
@@ -878,11 +1012,12 @@ FloatingWindow {
               font.family: win.family; font.pixelSize: Style.font.caption
               color: win.dim
             }
-            Text {
-              textFormat: Text.StyledText
-              text: Tui.hints([["␣", "⏯"], ["h l", "seek"], ["F", "full"], ["x", "close"]],
-                              win.accentText, Tui.mix(win.dim, win.bg, 0.25))
-              font.family: win.family; font.pixelSize: Style.font.caption
+            HintBar {
+              keyColor: win.accentText; labelColor: Tui.mix(win.dim, win.bg, 0.25); hoverColor: win.accentText
+              items: [{ k: "␣", l: "⏯", run: function() { win.api.videoControl("toggle") }, tip: "pause / play the video", tipKey: "space" },
+                      { k: "h l", l: "seek" },
+                      { k: "F", l: "full", run: function() { win.api.videoControl("fullscreen") }, tip: "fullscreen the video" },
+                      { k: "x", l: "close", run: function() { win.api.videoControl("close"); win.say("closed the video window") }, tip: "close the video window" }]
             }
           }
         }
@@ -1016,16 +1151,29 @@ FloatingWindow {
             }
           }
 
+          // Under the pointer a row takes a faint fill; the cursor's own fill
+          // and bar stay the stronger mark of where the keys are.
+          Rectangle {
+            z: -1
+            anchors.fill: parent
+            visible: rowMouse.containsMouse && !rowItem.isCursor && !!rowItem.it
+            color: Tui.alpha(Color.accent, 0.07)
+          }
+
+          // Click selects, double-click plays (or opens), right-click is the menu.
           MouseArea {
+            id: rowMouse
             anchors.fill: parent
             enabled: !!rowItem.it
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             onClicked: function(m) {
               list.currentIndex = rowItem.index
               list.forceActiveFocus()
-              if (m.button === Qt.RightButton) win.api.enqueue(rowItem.it, true)
+              if (m.button === Qt.RightButton) win.rowMenu(rowItem.index, rowMouse, m.x, m.y)
             }
-            onDoubleClicked: win.activate(rowItem.index)
+            onDoubleClicked: function(m) { if (m.button === Qt.LeftButton) win.activate(rowItem.index) }
           }
         }
 
@@ -1109,8 +1257,51 @@ FloatingWindow {
         id: nowBox
         width: parent.width
         height: Math.min(parent.height * 0.7, parent.width - win.cw * 3 + win.ch * 10)
-        title: !!win.engine && win.engine.railViz !== "off" ? "now · " + win.engine.railViz : "now"
-        keyHint: Tui.hints([["v", "viz"], ["V", "stage"], ["y", "share"]], win.accentText, win.dim)
+        title: "now"
+        // ‹ prism ›  on the top edge: the arrows step, the name lists them all.
+        titleExtra: Component {
+          Row {
+            readonly property string name: win.railName(win.engine ? win.engine.railViz : "off")
+            Text {
+              text: "‹"
+              font.family: win.family; font.pixelSize: Style.font.body; font.bold: true
+              color: prevMouse.containsMouse ? win.accentText : win.dim
+              leftPadding: win.cw * 0.3; rightPadding: win.cw * 0.5
+              MouseArea { id: prevMouse; anchors.fill: parent; anchors.margins: -2; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                          onClicked: win.engine.cycleRailViz(-1)
+                          TuiTip { text: "previous visualizer · or right-click the picture" } }
+            }
+            Text {
+              id: railNameText
+              text: parent.name
+              font.family: win.family; font.pixelSize: Style.font.body
+              font.underline: nameMouse.containsMouse
+              color: win.accentText
+              MouseArea { id: nameMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                          acceptedButtons: Qt.LeftButton | Qt.RightButton
+                          onClicked: win.railMenu(railNameText, 0, railNameText.height)
+                          TuiTip { text: "pick a visualizer, or album art" } }
+            }
+            Text {
+              text: "›"
+              font.family: win.family; font.pixelSize: Style.font.body; font.bold: true
+              color: nextMouse.containsMouse ? win.accentText : win.dim
+              leftPadding: win.cw * 0.5; rightPadding: win.cw * 0.3
+              MouseArea { id: nextMouse; anchors.fill: parent; anchors.margins: -2; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                          onClicked: win.engine.cycleRailViz(1)
+                          TuiTip { text: "next visualizer · or click the picture"; key: "v" } }
+            }
+          }
+        }
+        // `y` copies the selected row; this button copies what is playing, which
+        // is what a button beside the now-playing art can only mean.
+        hintItems: {
+          var h = [{ k: "V", l: "stage", run: function() { win.engine.open = !win.engine.open }, tip: "open or close the big visualizer" }]
+          if (width / win.cw >= 36)
+            h.push({ k: "y", l: "share", run: function() { if (win.track) win.shareItem(win.track, false); else win.say("nothing playing") },
+                     tip: "copy the playing track's link (y copies the selected row)", tipKey: "" })
+          return h
+        }
         clock: win.clock
         // Ambient light: the cover, blurred and a little larger, behind itself,
         // so it spills its own colour into the panel. Two layers, so a new cover
@@ -1215,7 +1406,25 @@ FloatingWindow {
               engine: win.engine
               styleName: plane.showViz ? win.engine.railViz : "prism"
             }
-            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.engine.open = !win.engine.open }
+            // Click: the next visualizer; right-click: the one before; the wheel
+            // steps either way. The same as the stage and the widget. (This
+            // used to open the stage, which left no way to change it by mouse.)
+            MouseArea {
+              id: planeMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              acceptedButtons: Qt.LeftButton | Qt.RightButton
+              property real wheelAcc: 0
+              onClicked: function(m) { win.engine.cycleRailViz(m.button === Qt.RightButton ? -1 : 1) }
+              onWheel: function(w) { var n = Tui.notches(planeMouse, w.angleDelta.y); if (n) win.engine.cycleRailViz(-n) }
+              TuiTip { text: "click: next visualizer · right-click: back · scroll"; key: "v"; delay: 900 }
+            }
+            VizLabel { id: railLabel; anchors.fill: parent }
+            Connections {
+              target: win.engine
+              function onRailVizChanged() { railLabel.flash(win.railName(win.engine.railViz)) }
+            }
           }
           // The visualizer took the big plane, so the art keeps its own tile
           // here beside the track info -- small, but pixels where they earn it.
@@ -1239,10 +1448,17 @@ FloatingWindow {
                 sourceSize: Qt.size(width * 2, height * 2)
               }
               MouseArea {
+                id: tileMouse
                 anchors.fill: parent
-                enabled: !!(win.track && win.track.albumId)
+                enabled: !!win.track
+                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: win.go({ type: "detail", kind: "album", id: win.track.albumId, title: win.track.album })
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                onClicked: function(m) {
+                  if (m.button === Qt.RightButton) win.trackMenu(win.track, tileMouse, m.x, m.y)
+                  else if (win.track.albumId) win.go({ type: "detail", kind: "album", id: win.track.albumId, title: win.track.album })
+                }
+                TuiTip { text: "go to the album · right-click for more" }
               }
             }
             Column {
@@ -1256,6 +1472,8 @@ FloatingWindow {
                   elide: Text.ElideRight
                   text: win.track ? win.track.title : "nothing playing"
                   font.family: win.family; font.pixelSize: Style.font.body + 2; font.bold: true; color: win.fg
+                  MouseArea { id: titleMouse; anchors.fill: parent; enabled: !!win.track; acceptedButtons: Qt.RightButton
+                              onClicked: function(m) { win.trackMenu(win.track, titleMouse, m.x, m.y) } }
                 }
                 Heart { kind: "track"; itemId: win.track ? win.track.id : "" }
               }
@@ -1265,12 +1483,19 @@ FloatingWindow {
                Text {
                 width: parent.width - win.cw * 3; elide: Text.ElideRight
                 text: win.track ? win.artists(win.track.artists) : "pick something · ⏎"
-                font.family: win.family; font.pixelSize: Style.font.body; color: win.dim
+                font.family: win.family; font.pixelSize: Style.font.body
+                color: artistMouse.containsMouse && !!(win.track && win.track.artistId) ? win.accentText : win.dim
                 MouseArea {
+                  id: artistMouse
                   anchors.fill: parent
-                  enabled: !!(win.track && win.track.artistId)
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: win.go({ type: "detail", kind: "artist", id: win.track.artistId, title: win.track.artists[0] })
+                  enabled: !!win.track
+                  hoverEnabled: true
+                  cursorShape: win.track && win.track.artistId ? Qt.PointingHandCursor : Qt.ArrowCursor
+                  acceptedButtons: Qt.LeftButton | Qt.RightButton
+                  onClicked: function(m) {
+                    if (m.button === Qt.RightButton) win.trackMenu(win.track, artistMouse, m.x, m.y)
+                    else if (win.track.artistId) win.go({ type: "detail", kind: "artist", id: win.track.artistId, title: win.track.artists[0] })
+                  }
                 }
                }
                Heart { kind: "artist"; itemId: win.track ? (win.track.artistId || "") : "" }
@@ -1278,12 +1503,19 @@ FloatingWindow {
               Text {
                 width: parent.width; elide: Text.ElideRight
                 text: win.track ? win.track.album : ""
-                font.family: win.family; font.pixelSize: Style.font.caption; color: win.dim
+                font.family: win.family; font.pixelSize: Style.font.caption
+                color: albumMouse.containsMouse && !!(win.track && win.track.albumId) ? win.accentText : win.dim
                 MouseArea {
+                  id: albumMouse
                   anchors.fill: parent
-                  enabled: !!(win.track && win.track.albumId)
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: win.go({ type: "detail", kind: "album", id: win.track.albumId, title: win.track.album })
+                  enabled: !!win.track
+                  hoverEnabled: true
+                  cursorShape: win.track && win.track.albumId ? Qt.PointingHandCursor : Qt.ArrowCursor
+                  acceptedButtons: Qt.LeftButton | Qt.RightButton
+                  onClicked: function(m) {
+                    if (m.button === Qt.RightButton) win.trackMenu(win.track, albumMouse, m.x, m.y)
+                    else if (win.track.albumId) win.go({ type: "detail", kind: "album", id: win.track.albumId, title: win.track.album })
+                  }
                 }
               }
             }
@@ -1363,7 +1595,13 @@ FloatingWindow {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: win.api.control("jump", { index: win.st.queueIndex + 1 + upRow.index })
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                function jump() { win.api.control("jump", { index: win.st.queueIndex + 1 + upRow.index }) }
+                onClicked: function(m) {
+                  if (m.button === Qt.RightButton) win.trackMenu(upRow.modelData, qm, m.x, m.y, jump)
+                  else jump()
+                }
+                TuiTip { text: "play this now · right-click for more" }
               }
             }
           }
@@ -1418,7 +1656,17 @@ FloatingWindow {
       width: parent.width
       height: win.ch * 4
       title: win.st.playing ? "playing" : "paused"
-      keyHint: Tui.hints([["space", "play"], ["n/p", "skip"], ["h/l", "seek"], ["+/-", "vol"], ["s", "shuffle"], ["r", "repeat"]], win.accentText, win.dim)
+      hintItems: {
+        var a = win.api
+        if (width / win.cw < 120)
+          return [{ k: "space", l: "play", run: function() { a.control("toggle") } }, { k: "n/p", l: "skip" }, { k: "h/l", l: "seek" }]
+        return [{ k: "space", l: win.st.playing ? "pause" : "play", run: function() { a.control("toggle") } },
+                { k: "n", l: "next", run: function() { a.control("next") } },
+                { k: "p", l: "prev", run: function() { a.control("previous") } },
+                { k: "h/l", l: "seek" }, { k: "+/-", l: "vol" },
+                { k: "s", l: "shuffle", run: function() { a.control("shuffle") } },
+                { k: "r", l: "repeat", run: function() { a.control("repeat") } }]
+      }
       clock: win.clock
 
       Row {
@@ -1428,9 +1676,9 @@ FloatingWindow {
 
         Repeater {
           model: [
-            { t: "󰒮", a: "previous" },
-            { t: win.st.playing ? "󰏤" : "󰐊", a: "toggle" },
-            { t: "󰒭", a: "next" }
+            { t: "󰒮", a: "previous", tip: "previous track", key: "p" },
+            { t: win.st.playing ? "󰏤" : "󰐊", a: "toggle", tip: win.st.playing ? "pause" : "play", key: "space" },
+            { t: "󰒭", a: "next", tip: "next track", key: "n" }
           ]
           GlowText {
             required property var modelData
@@ -1442,7 +1690,8 @@ FloatingWindow {
                    : (isPlay && win.st.playing ? Tui.mix(win.fg, win.accentText, 0.45 + 0.55 * win.beat) : win.fg)
             glowLive: isPlay && win.st.playing === true && win.bloom > 0
             glow: glowLive ? win.bloom * (0.3 + 0.7 * win.beat) : 0
-            MouseArea { id: tm; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: win.api.control(modelData.a) }
+            MouseArea { id: tm; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: win.api.control(modelData.a)
+                        TuiTip { text: modelData.tip; key: modelData.key } }
           }
         }
 
@@ -1450,10 +1699,11 @@ FloatingWindow {
           readonly property bool on: !!win.track && !!win.api && win.api.isLiked("track", win.track.id)
           text: on ? "󰋑" : "󰋕"
           font.family: win.family; font.pixelSize: Style.font.body + 2
-          color: on ? win.accentText : (thm.containsMouse ? win.fg : win.dim)
+          color: on || thm.containsMouse ? win.accentText : win.dim
           opacity: win.track ? 1 : 0.3
           MouseArea { id: thm; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                      onClicked: if (win.track) win.api.toggleLike("track", win.track.id) }
+                      onClicked: if (win.track) win.api.toggleLike("track", win.track.id)
+                      TuiTip { text: thm.parent.on ? "unlike what is playing" : "like what is playing"; key: "F" } }
         }
         // Below 96 columns the side rail is gone and nothing else says what is
         // playing, so the transport picks it up. Wide windows leave it to the
@@ -1469,22 +1719,28 @@ FloatingWindow {
         }
         Text {
           id: posText
-          text: win.lpad(win.clockText(win.api ? win.api.position : 0), 6)
+          text: win.lpad(win.clockText(seekMeter.scrubbing ? seekMeter.scrubFrac * seekMeter.dur : (win.api ? win.api.position : 0)), 6)
           font.family: win.family; font.pixelSize: Style.font.body; color: win.dim
         }
         Text {
           id: seekMeter
           readonly property int cells: Math.max(10, Math.floor(
               (transport.width - win.cw * 62 - (nowText.visible ? nowText.width + win.cw * 2 : 0)) / win.cw))
+          // While a drag is under way the bar shows where it will land, not
+          // where the music is; the seek goes out once, on release.
+          property bool scrubbing: false
+          property real scrubFrac: 0
+          readonly property real dur: win.st.duration || 0
+          readonly property real frac: scrubbing ? scrubFrac
+                                     : Math.max(0, Math.min(1, (win.api ? win.api.position : 0) / Math.max(1, dur || 1)))
           textFormat: Text.StyledText
-          text: Tui.meterRich(((win.api ? win.api.position : 0)) / Math.max(1, win.st.duration || 1), cells, win.accent, Tui.mix(win.dim, win.bg, 0.4))
+          text: Tui.meterRich(frac, cells, win.accent, Tui.mix(win.dim, win.bg, 0.4))
           font.family: win.family; font.pixelSize: Style.font.body
           // The playhead carries a halo: the one cell of the bar that is "now".
           TextMetrics { id: seekCell; font: seekMeter.font; text: "━" }
           GlowText {
             visible: !!win.track && win.bloom > 0
-            x: Math.round(Math.max(0, Math.min(1, (win.api ? win.api.position : 0) / Math.max(1, win.st.duration || 1)))
-                          * (seekMeter.cells - 1)) * seekCell.advanceWidth
+            x: Math.round(seekMeter.frac * (seekMeter.cells - 1)) * seekCell.advanceWidth
             text: "╸"
             font: seekMeter.font
             color: win.accent
@@ -1492,9 +1748,30 @@ FloatingWindow {
             glowRadius: 8
           }
           MouseArea {
+            id: seekMouse
             anchors.fill: parent
+            anchors.topMargin: -win.ch * 0.3; anchors.bottomMargin: -win.ch * 0.3   // an easier target than one text line
+            enabled: seekMeter.dur > 0
+            hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: function(m) { win.api.control("seek", { position: (m.x / parent.width) * (win.st.duration || 0) }) }
+            function fracAt(x) { return Math.max(0, Math.min(1, x / Math.max(1, width))) }
+            onPressed: function(m) { seekMeter.scrubFrac = fracAt(m.x); seekMeter.scrubbing = true }
+            onPositionChanged: function(m) { if (pressed) seekMeter.scrubFrac = fracAt(m.x) }
+            onReleased: {
+              if (!seekMeter.scrubbing) return
+              var to = seekMeter.scrubFrac * seekMeter.dur
+              win.api.control("seek", { position: to })
+              // land the clock there now rather than when the next status arrives
+              win.api.posBase = to; win.api.posAt = Date.now(); win.api.position = to
+              seekMeter.scrubbing = false
+            }
+            onCanceled: seekMeter.scrubbing = false
+            TuiTip {
+              follow: true
+              force: seekMeter.scrubbing
+              at: Math.max(0, Math.min(seekMouse.width, seekMouse.mouseX))
+              text: seekMeter.dur > 0 ? win.clockText((seekMeter.scrubbing ? seekMeter.scrubFrac : seekMouse.fracAt(seekMouse.mouseX)) * seekMeter.dur) : ""
+            }
           }
         }
         Text {
@@ -1504,16 +1781,20 @@ FloatingWindow {
         Text {
           text: "⇄ shuf"
           font.family: win.family; font.pixelSize: Style.font.caption; font.bold: win.st.shuffle === true
-          color: win.st.shuffle ? win.accentText : win.dim
+          color: win.st.shuffle || shufMouse.containsMouse ? win.accentText : win.dim
+          font.underline: shufMouse.containsMouse
           anchors.verticalCenter: parent.verticalCenter
-          MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.api.control("shuffle") }
+          MouseArea { id: shufMouse; anchors.fill: parent; anchors.margins: -3; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: win.api.control("shuffle")
+                      TuiTip { text: "shuffle " + (win.st.shuffle ? "off" : "on"); key: "s" } }
         }
         Text {
           text: "↻ " + (win.st.repeat || "off")
           font.family: win.family; font.pixelSize: Style.font.caption; font.bold: !!win.st.repeat && win.st.repeat !== "off"
-          color: win.st.repeat && win.st.repeat !== "off" ? win.accentText : win.dim
+          color: (win.st.repeat && win.st.repeat !== "off") || repMouse.containsMouse ? win.accentText : win.dim
+          font.underline: repMouse.containsMouse
           anchors.verticalCenter: parent.verticalCenter
-          MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.api.control("repeat") }
+          MouseArea { id: repMouse; anchors.fill: parent; anchors.margins: -3; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: win.api.control("repeat")
+                      TuiTip { text: "repeat: off, all or one (now " + (win.st.repeat || "off") + ")"; key: "r" } }
         }
         Text {
           id: volMeter
@@ -1530,15 +1811,19 @@ FloatingWindow {
           }
           Timer { id: settle; interval: 800; onTriggered: volMeter.pending = -1 }
           text: "vol " + Tui.meter(shown / 100, 8, "▰", "▱", "") + " " + win.lpad(String(shown), 3)
-          font.family: win.family; font.pixelSize: Style.font.caption; color: win.dim
+          font.family: win.family; font.pixelSize: Style.font.caption
+          color: volMouse.containsMouse ? win.accentText : win.dim
           anchors.verticalCenter: parent.verticalCenter
           // Measured in this text's own font: the bar's glyphs need not be as wide
           // as the body font's cells, which is what the old click maths assumed.
           TextMetrics { id: volHead; font: volMeter.font; text: "vol " }
           TextMetrics { id: volBar; font: volMeter.font; text: "vol " + Tui.meter(1, 8, "▰", "▱", "") }
           MouseArea {
+            id: volMouse
             anchors.fill: parent
+            hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
+            TuiTip { text: "volume: click, drag or scroll"; key: "+ -" }
             property real wheel: 0
             // A notch is 120; touchpads send it in small pieces. Step 5% per notch.
             onWheel: function(w) {
@@ -1566,19 +1851,24 @@ FloatingWindow {
           font.family: win.family; font.pixelSize: Style.font.caption; font.bold: true
           color: sl.fading ? Tui.mix(win.accentText, win.dim, 0.5) : win.accentText
           anchors.verticalCenter: parent.verticalCenter
-          MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                      onClicked: { win.api.cancelSleep(); win.say("sleep timer off") } }
+          font.underline: sleepMouse.containsMouse
+          MouseArea { id: sleepMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                      onClicked: { win.api.cancelSleep(); win.say("sleep timer off") }
+                      TuiTip { text: "cancel the sleep timer" } }
         }
         Text {
           id: eqMini
           text: "eq " + win.eqSpark()
           font.family: win.family; font.pixelSize: Style.font.caption
           font.bold: win.eqActive
-          color: win.eqActive ? win.accentText : win.dim
+          color: win.eqActive || eqMouse.containsMouse ? win.accentText : win.dim
           anchors.verticalCenter: parent.verticalCenter
           MouseArea {
+            id: eqMouse
             anchors.fill: parent
+            hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
+            TuiTip { text: "equalizer · right-click to " + (win.eqActive ? "bypass it" : "turn it on"); key: "e" }
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             // left opens the full equalizer, right toggles bypass without leaving
             // the page -- the same "no popout, no detour" rule as the widget
@@ -1698,6 +1988,7 @@ FloatingWindow {
   }
 
   CommandPalette { id: cmdPalette; host: win }
+  TuiMenu { id: ctxMenu; onClosed: win.refocus() }
   KeysSheet { id: keysSheet; host: win }
 
   Component.onCompleted: {

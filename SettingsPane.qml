@@ -383,7 +383,7 @@ Rectangle {
           readonly property bool on: index === pane.section
           text: (on ? "▰ " : "▱ ") + modelData.label
           font.family: host.family; font.pixelSize: Style.font.body; font.bold: on
-          color: on ? host.accentText : (tabArea.containsMouse ? host.fg : host.dim)
+          color: on || tabArea.containsMouse ? host.accentText : host.dim
           MouseArea { id: tabArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                       onClicked: { pane.section = parent.index; pane.forceActiveFocus() } }
         }
@@ -585,9 +585,19 @@ Rectangle {
         color: Tui.mix(host.dim, Color.urgent, 0.35)
       }
 
+      // under the pointer a row takes a faint fill, like the player's lists
+      Rectangle {
+        z: -1
+        anchors.fill: parent
+        visible: rowMouse.containsMouse && !rowItem.isCursor
+        color: Tui.alpha(Color.accent, 0.07)
+      }
       MouseArea {
+        id: rowMouse
         anchors.fill: parent
         enabled: pane.selectable(rowItem.r) && !rowItem.isEditing
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         onClicked: function(m) {
           pane.forceActiveFocus()

@@ -243,10 +243,14 @@ Item {
           font.family: host.family; font.pixelSize: Style.font.caption
           color: hit.isCursor ? host.accentText : host.dim
         }
+        // The pointer moves the cursor and a click runs, like ⏎: a double-click
+        // to run a command read as a palette that ignored the first click.
         MouseArea {
           anchors.fill: parent
-          onClicked: { pal.cursor = hit.index; input.forceActiveFocus() }
-          onDoubleClicked: pal.run(hit.index)
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onPositionChanged: if (pal.cursor !== hit.index) pal.cursor = hit.index
+          onClicked: pal.run(hit.index)
         }
       }
       Text {
