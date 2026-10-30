@@ -35,6 +35,8 @@ Item {
   readonly property bool hasTrack: !!(engine && engine.player)
   readonly property string loginState: api && api.login ? (api.login.state || "") : ""
   readonly property string idleWant: !engine ? ""
+                                     : api && api.reconnecting === true ? "reconnecting"
+                                     : api && api.connecting === true ? "connecting"
                                      : loginState === "signed-out" ? "signed out"
                                      : !hasTrack ? "nothing playing"
                                      : !engine.hasCava && playing ? "deaf"
@@ -513,6 +515,7 @@ Item {
       wrapMode: Text.WordWrap
       text: view.idle === "signed out" ? "sign in from the player" + (view.libraryKey ? " · " + view.libraryKey : "")
           : view.idle === "nothing playing" ? "pick something in the player" + (view.libraryKey ? " · " + view.libraryKey : "")
+          : view.idle === "reconnecting" || view.idle === "connecting" ? "waiting for the player service"
           : view.idle === "deaf" ? (Qt.platform.os === "windows" ? "the audio capture is not running" : "install cava to see the music")
           : ""
       font.family: view.family
