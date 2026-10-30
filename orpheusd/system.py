@@ -55,6 +55,15 @@ def mpv_path() -> str:
     return "mpv"
 
 
+def curd_path() -> str | None:
+    """Curd on PATH, or where its Windows installer puts it (per user, never on PATH)."""
+    found = shutil.which("curd")
+    if found or not WINDOWS:
+        return found
+    exe = Path(os.environ.get("APPDATA", "")) / "Curd" / "curd.exe"
+    return str(exe) if exe.is_file() else None
+
+
 def ipc_address(runtime_dir: Path, name: str) -> str:
     """Where an mpv instance called `name` should serve its IPC."""
     if WINDOWS:

@@ -42,6 +42,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from .system import curd_path
+
 log = logging.getLogger("orpheus.anime")
 
 BIN = Path(__file__).resolve().parent.parent / "bin"
@@ -84,8 +86,8 @@ class Anime:
 
     @property
     def curd(self) -> bool:
-        # Curd is opened in a Linux terminal; on Windows it has no launcher yet.
-        return pty is not None and bool(shutil.which("curd"))
+        # A launcher, not a resolver, so it needs no pty and works on Windows too.
+        return bool(curd_path())
 
     def _scratch(self, suffix: str) -> Path:
         # One file per call: two searches at once must not read each other's

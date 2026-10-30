@@ -2,7 +2,7 @@
 #
 #   irm https://raw.githubusercontent.com/GeneralDussDuss/orpheus/main/install.ps1 | iex
 #
-# installs what is missing with winget (git, uv, mpv, cava, yt-dlp), fetches
+# installs what is missing with winget (git, uv, mpv, cava, yt-dlp) plus Curd, fetches
 # Orpheus into %LOCALAPPDATA%\Orpheus\app (or updates it), builds its Python
 # environment, adds Orpheus to the Start menu and opens it. Safe to re-run;
 # that is how you update. To remove it again:
@@ -66,6 +66,7 @@ if ($Uninstall) {
   Ok 'app folder'
   Ok "done; $Home_\state is kept (delete it to forget your sign-in)"
   Note 'mpv, cava, uv and yt-dlp stay installed: winget uninstall <name> removes them'
+  Note 'curd stays installed: remove it from Settings > Apps'
   return
 }
 
@@ -86,6 +87,23 @@ foreach ($p in $need) {
   winget install --id $p.id --exact --silent --accept-source-agreements --accept-package-agreements | Out-Null
   Refresh-Path
   if (Has $p.cmd) { Ok $p.cmd } else { Note "$($p.cmd) installed; Orpheus finds it on its own" }
+}
+# Curd is the anime section on Windows (ani-cli is a bash script). It is not on
+# winget, so take its own per-user installer from its latest release.
+$Curd = Join-Path $env:APPDATA 'Curd\curd.exe'
+if ((Has curd) -or (Test-Path $Curd)) { Ok 'curd' } else {
+  Note 'installing curd'
+  try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 'Tls12'
+    $ProgressPreference = 'SilentlyContinue'   # 5.1's progress bar makes downloads crawl
+    $rel = Invoke-RestMethod 'https://api.github.com/repos/Wraient/curd/releases/latest'
+    $url = ($rel.assets | Where-Object name -eq 'curd-windows-installer.exe').browser_download_url
+    $setup = Join-Path $env:TEMP 'curd-setup.exe'
+    Invoke-WebRequest $url -OutFile $setup -UseBasicParsing
+    Start-Process $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/MERGETASKS="!desktopicon"' -Wait
+    Remove-Item $setup -ErrorAction SilentlyContinue
+    if (Test-Path $Curd) { Ok "curd $($rel.tag_name)" } else { Note 'curd did not install; anime stays off' }
+  } catch { Note "curd did not install ($($_.Exception.Message)); anime stays off" }
 }
 if (-not (Has git) -or -not (Has uv)) { Refresh-Path }
 if (-not (Has git)) { throw 'git did not install; install it from https://git-scm.com and run this again' }

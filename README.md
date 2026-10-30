@@ -105,7 +105,7 @@ Colours come from the active Omarchy theme, so it changes when your desktop does
 | **The bar** | A tiny always-on spectrum in the Omarchy bar. Click for the stage, scroll for the next style. |
 | **Five styles** | Prism, Skyline, Horizon, Tunnel, Orb — plus `mini` for bar-sized surfaces, and a GPU spectrum-history pass the first two build terrain from. |
 | **Hi-res** | Up to FLAC hi-res through the PKCE sign-in, lossless otherwise. The player shows which you got. |
-| **More than TIDAL** | Section `8` searches YouTube and SoundCloud through `yt-dlp`, and anime through `ani-cli`. Videos play in their own window; YouTube and SoundCloud also play as audio through the same queue, equalizer and visualizer. None of it needs a TIDAL sign-in. |
+| **More than TIDAL** | Section `8` searches YouTube and SoundCloud through `yt-dlp`, and anime through `ani-cli` (on Windows, `c` opens Curd). Videos play in their own window; YouTube and SoundCloud also play as audio through the same queue, equalizer and visualizer. None of it needs a TIDAL sign-in. |
 | **Desktop integration** | MPRIS, so your bar, your media keys and the rest of the desktop see the track. Favourites from anywhere in the UI. The queue and position survive a service restart. |
 
 ![the desktop widget](docs/media/widget.png)
@@ -160,7 +160,8 @@ breakbeat locking to half-time.
 - Linux: `mpv`, `cava`, `uv` and `jq`. The installer checks for them and offers to install
   anything missing. PipeWire is expected (the visualizers read its monitor).
 - Windows: `winget` (built into Windows 10 and 11 as App Installer). The installer uses it
-  for git, uv, mpv, cava and yt-dlp; mpv's installer asks for administrator approval once.
+  for git, uv, mpv, cava and yt-dlp, and installs Curd from its own release; mpv's
+  installer asks for administrator approval once.
 - Optional: `yt-dlp` for YouTube and SoundCloud, `ani-cli` for anime, `curd` for anime
   with AniList sync.
 - Optional: a paid TIDAL subscription, for the music library. Everything else works
@@ -217,13 +218,14 @@ irm https://raw.githubusercontent.com/GeneralDussDuss/orpheus/main/install.ps1 |
 ```
 
 [The script](install.ps1) installs whatever is missing with winget (git, uv, mpv, cava,
-yt-dlp), fetches Orpheus into `%LOCALAPPDATA%\Orpheus\app`, builds its Python environment,
+yt-dlp) plus Curd for anime, fetches Orpheus into `%LOCALAPPDATA%\Orpheus\app`, builds its Python environment,
 adds **Orpheus** to the Start menu and Settings → Apps, and opens it. It lives in the tray:
 click the icon for the player, right-click for the visualizer, the mini player and
 **Start with Windows**. From anywhere, **Win+Alt+M** opens the player, **Win+Alt+V** the
 visualizer and **Win+Alt+P** the mini player, and the keyboard's media keys and the
 Windows media overlay control playback. The player, the visualizers and the video
-section are the same code as on Linux; anime and the bar widget are Linux-only for now.
+section are the same code as on Linux. Anime is Curd's: in section `8`, `c` opens it in
+its own console with AniList sync. The bar widget is Linux-only.
 
 Run the same line again to update. To remove it, use Uninstall in Settings → Apps, or
 this, either way keeping your sign-in and settings in `%LOCALAPPDATA%\Orpheus\state`:

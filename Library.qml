@@ -265,7 +265,7 @@ FloatingWindow {
   readonly property var vproviders: [
     { id: "youtube", label: "youtube", by: "yt-dlp" },
     { id: "soundcloud", label: "soundcloud", by: "yt-dlp" },
-    { id: "anime", label: "anime", by: "ani-cli" }
+    { id: "anime", label: "anime", by: providers.anime || !providers.curd ? "ani-cli" : "curd" }
   ]
   onVproviderChanged: if (videoPage && !page.show) load()
 
@@ -390,6 +390,8 @@ FloatingWindow {
       if (!ok) { setRows([]); say(errText(d, "that search went nowhere")); return }
       setRows(section(prov, (d && d.results) || []))
     }
+    // Without ani-cli (Windows) anime is Curd's alone; the empty page says so.
+    if (prov === "anime" && !providers.anime) { setRows([]); return }
     if (prov === "anime") api.animeSearch(q, answer)
     else api.ytSearch(q, answer, prov)
   }
@@ -1004,8 +1006,11 @@ FloatingWindow {
           visible: win.loading || (!win.rows.length && win.page.type !== "login")
           text: win.loading ? Tui.decode("loading", (win.clock * 2) % 1, Math.floor(win.clock * 8))
               : win.videoPage ? (win.page.show ? "no episodes"
+                             : win.vprovider === "anime" && !win.providers.anime
+                               ? (win.providers.curd ? "c opens curd · search, watch and track there" : "anime needs ani-cli or curd")
                              : win.vquery ? "nothing found on " + win.vprovider
-                             : "type to search " + win.vprovider + (win.vprovider === "soundcloud" ? " · ⏎ listen" : " · ⏎ watch · a listen"))
+                             : "type to search " + win.vprovider + (win.vprovider === "soundcloud" ? " · ⏎ listen"
+                                                                 : win.vprovider === "anime" ? " · ⏎ watch · c curd" : " · ⏎ watch · a listen"))
               : win.page.type === "search" ? (win.query ? "no results" : "type to search · ⏎ play · esc back")
               : "nothing here yet"
           font.family: win.family; font.pixelSize: Style.font.body

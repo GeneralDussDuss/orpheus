@@ -89,6 +89,12 @@ jobs:
             throw "the app did not bring the daemon up"
           }
           Write-Host "daemon up, version $($s.version), $($s.login.state)"
+          if (-not $s.providers.curd) { throw "curd is not installed where the daemon looks" }
+          Invoke-RestMethod -Method Post http://127.0.0.1:47837/anime/curd -Body '{}' -ContentType 'application/json' | Out-Null
+          Start-Sleep 3
+          $c = Get-Process curd -ErrorAction SilentlyContinue
+          if (-not $c) { throw "c did not open curd" }
+          Write-Host "curd opened in its own console (pid $($c.Id))"; $c | Stop-Process -Force
           $apps = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Orpheus'
           if (-not (Test-Path "$env:LOCALAPPDATA\Orpheus\orpheus.ico")) { throw "no icon" }
           if (-not (Test-Path $apps)) { throw "no Settings > Apps entry" }

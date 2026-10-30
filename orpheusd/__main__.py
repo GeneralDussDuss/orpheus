@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import signal
+import subprocess
 from collections import OrderedDict
 from pathlib import Path
 
@@ -26,7 +27,7 @@ from .lyrics import Lyrics
 from .tidal import QUALITIES, Tidal
 from .video import Video
 from .soundcloud import SoundCloud
-from .system import CACHE_DIR, RUNTIME_DIR, STATE_DIR, WINDOWS
+from .system import CACHE_DIR, RUNTIME_DIR, STATE_DIR, WINDOWS, curd_path
 from .youtube import YouTube, YouTubeError
 
 log = logging.getLogger("orpheus")
@@ -504,14 +505,18 @@ class App:
             if not self.anime.curd:
                 raise web.HTTPNotFound(text="curd is not installed")
             args = ["-c"] if (await body(req)).get("resume") else []
-            term = os.environ.get("TERMINAL") or "alacritty"
+            curd = curd_path()
+            if WINDOWS:
+                # Its own console; Curd plays through the mpv its installer bundles.
+                cmd, how = [curd, *args], {"creationflags": subprocess.CREATE_NEW_CONSOLE}
+            else:
+                term = os.environ.get("TERMINAL") or "alacritty"
+                cmd = [term, "--title", "Orpheus ╱╱ curd", "-e", curd, "-player", str(ANI_PLAYER), *args]
+                how = {"stdin": asyncio.subprocess.DEVNULL}
             try:
-                await asyncio.create_subprocess_exec(
-                    term, "--title", "Orpheus ╱╱ curd", "-e",
-                    "curd", "-player", str(ANI_PLAYER), *args,
-                    stdin=asyncio.subprocess.DEVNULL)
+                await asyncio.create_subprocess_exec(*cmd, **how)
             except OSError as e:
-                raise web.HTTPBadGateway(text=f"could not start {term}: {e}")
+                raise web.HTTPBadGateway(text=f"could not start curd: {e}")
             return J(self.status())
 
         @r.post("/video/{action}")
