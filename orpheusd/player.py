@@ -47,6 +47,22 @@ MPV_ARGS = [
 ]
 
 
+FAILED_RUN_LIMIT = 5      # failing tracks skipped in a row before the player stops
+
+
+def offline_error(e: BaseException) -> bool:
+    """`e` says the network is down (no route, DNS, refused, timed out), as
+    opposed to this one track being unavailable."""
+    import socket
+    try:
+        import requests
+        if isinstance(e, (requests.ConnectionError, requests.Timeout)):
+            return True
+    except ImportError:
+        pass
+    return isinstance(e, (ConnectionError, TimeoutError, socket.gaierror))
+
+
 def _q(s: str) -> str:
     """mpv's length quoting (%n%text), for values that carry the commas, equals
     signs and semicolons that separate loadfile options and EDL fields."""
@@ -266,6 +282,7 @@ class Player:
         self._resume_at = 0.0
         self._http = None
         self._stopping = False               # stop() under way: mpv leaving is expected
+        self._failed_run = 0                 # tracks skipped for failing, in a row
 
         # ---- decks, crossfade and gain -------------------------------------
         self._deck: _Deck | None = None       # the current mpv
@@ -550,7 +567,16 @@ class Player:
                 self.error = "Couldn't play this track, skipping"
                 log.warning("mpv failed on entry %s: %s", msg.get("playlist_entry_id"), msg.get("file_error"))
                 if msg.get("playlist_entry_id") == self._current_entry:
-                    asyncio.create_task(self._advance_after_error())
+                    self._failed_run += 1
+                    if self._failed_run >= FAILED_RUN_LIMIT:
+                        # Track after track will not play: the connection went,
+                        # most likely. Stop here instead of running the queue out.
+                        self._failed_run = 0
+                        self.error = "Several tracks in a row wouldn't play: check the connection, then press play"
+                        self.idle, self._resume_at = True, 0.0
+                        self.on_change()
+                    else:
+                        asyncio.create_task(self._advance_after_error())
             elif reason == "eof" and msg.get("playlist_entry_id") == self._current_entry:
                 asyncio.create_task(self._after_eof(msg.get("playlist_entry_id")))
         elif ev == "seek" or ev == "playback-restart":
@@ -623,7 +649,9 @@ class Player:
             return await source.stream(track["id"])
         return await self.tidal.stream(track["id"], self.cache_dir)
 
-    async def _load(self, order_pos: int, start: float = 0, paused: bool = False):
+    async def _load(self, order_pos: int, start: float = 0, paused: bool = False, skip: bool = False):
+        if not skip:
+            self._failed_run = 0     # a fresh start; only skips past failures count
         await self._cancel_xfade()
         self._loading += 1
         token = self._loading
@@ -653,6 +681,22 @@ class Player:
                 self.error = str(e)
             else:
                 self.error = "This track isn't available to stream"
+            self._failed_run += 1
+            if offline_error(e) or self._failed_run >= FAILED_RUN_LIMIT:
+                # No network (or something else that fails every track): skipping
+                # on would run through the whole queue, or loop it on repeat.
+                # Stay on this track; play retries it.
+                self.error = ("Can't reach the stream: check the connection, then press play"
+                              if offline_error(e) else self.error + " (stopped after several in a row)")
+                self._resume_at = start
+                self._failed_run = 0
+                try:
+                    await self._send(["stop"])     # not the previous track, carrying on
+                except (ConnectionError, OSError, AttributeError, RuntimeError):
+                    pass
+                self.idle = True
+                self.on_change()
+                return
             self.on_change()
             return await self._advance_after_error()
         cover = await cover
@@ -765,7 +809,7 @@ class Player:
         nxt = self.next_pos(manual=True)
         if nxt >= 0 and nxt != self.pos:
             await asyncio.sleep(0.4)
-            await self._load(nxt)
+            await self._load(nxt, skip=True)
 
     # ---- resume across restarts --------------------------------------------------
 
