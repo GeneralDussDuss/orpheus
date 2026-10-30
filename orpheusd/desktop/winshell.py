@@ -651,20 +651,28 @@ def build_jump_list(icon_dir: Path, app_ico: Path | None, cwd: str) -> int:
     return hr_ok(dl(8), "CommitList")
 
 
+def desktop_shortcut() -> Path:
+    """The desktop's Orpheus.lnk. Ask the shell for the folder: OneDrive moves it."""
+    buf = ctypes.create_unicode_buffer(260)
+    ctypes.windll.shell32.SHGetFolderPathW(None, 0x10, None, 0, buf)  # CSIDL_DESKTOPDIRECTORY
+    return Path(buf.value) / "Orpheus.lnk"
+
+
 def tag_shortcut():
-    """Stamp the Start-menu shortcut with the app's AUMID, so a pinned taskbar
-    button, the running window and the jump list all belong to it."""
-    if not SHORTCUT.exists():
-        return
-    link = create(CLSID_ShellLink, IID_IShellLinkW)
-    pf = link.qi(IID_IPersistFile)
-    hr_ok(pf(5, (ctypes.c_wchar_p, wintypes.DWORD), str(SHORTCUT), 2), "IPersistFile::Load")  # STGM_READWRITE
-    store = link.qi(IID_IPropertyStore)
-    if get_prop(store, PKEY_AppUserModel_ID) == AUMID:
-        return
-    set_prop(store, PKEY_AppUserModel_ID, AUMID)
-    hr_ok(store(7), "IPropertyStore::Commit")
-    hr_ok(pf(6, (ctypes.c_wchar_p, wintypes.BOOL), None, True), "IPersistFile::Save")
+    """Stamp the Start-menu and desktop shortcuts with the app's AUMID, so a pinned
+    taskbar button, the running window and the jump list all belong to it."""
+    for path in (SHORTCUT, desktop_shortcut()):
+        if not path.exists():
+            continue
+        link = create(CLSID_ShellLink, IID_IShellLinkW)
+        pf = link.qi(IID_IPersistFile)
+        hr_ok(pf(5, (ctypes.c_wchar_p, wintypes.DWORD), str(path), 2), "IPersistFile::Load")  # STGM_READWRITE
+        store = link.qi(IID_IPropertyStore)
+        if get_prop(store, PKEY_AppUserModel_ID) == AUMID:
+            continue
+        set_prop(store, PKEY_AppUserModel_ID, AUMID)
+        hr_ok(store(7), "IPropertyStore::Commit")
+        hr_ok(pf(6, (ctypes.c_wchar_p, wintypes.BOOL), None, True), "IPersistFile::Save")
 
 
 # ---- wiring ---------------------------------------------------------------------
