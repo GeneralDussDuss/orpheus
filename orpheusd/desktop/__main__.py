@@ -103,6 +103,9 @@ def fire(action: str):
     if not arg:
         call("orpheus", action)
         return
+    if kind == "widget":
+        call("orpheus", "widget", "enabled", arg)
+        return
     if kind == "theme":
         from .shims import THEME
         if THEME:
@@ -170,9 +173,10 @@ def tray(app, quit_all, hotkeys):
     t.setToolTip("Orpheus")
     keys = {m: label for label, _, _, m in winsys.HOTKEYS if label in hotkeys.active}
     menu = QMenu()
-    for label, method in (("Player", "library"), ("Visualizer", "toggle"), ("Mini player", "miniPlayer")):
+    for label, method in (("Player", "library"), ("Visualizer", "toggle"), ("Mini player", "miniPlayer"),
+                          ("Show/hide widget", "widget:toggle")):
         a = QAction(label + (f"\t{keys[method]}" if method in keys else ""), menu)
-        a.triggered.connect(lambda _=False, m=method: call("orpheus", m))
+        a.triggered.connect(lambda _=False, m=method: fire(m))
         menu.addAction(a)
     menu.addSeparator()
     menu.addMenu(theme_menu(menu, keys.get("theme:next")))
