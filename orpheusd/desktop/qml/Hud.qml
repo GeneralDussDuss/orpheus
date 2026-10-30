@@ -51,6 +51,9 @@ Window {
   readonly property color c2: engine ? engine.c2 : Color.accent
   readonly property color c3: engine ? engine.c3 : Color.foreground
   readonly property real glow: engine ? Tui.bloom(engine) : 0
+  readonly property bool playing: !!(player && player.isPlaying)
+  readonly property bool hasTrack: !!(player && (player.trackTitle || player.trackArtist))
+  readonly property color dim: Tui.muted(fg, bg, 4.5)
 
   Item {
     id: slot
@@ -58,26 +61,45 @@ Window {
     width: hud.cardW; height: hud.cardH
     clip: false
 
+    // Square and 1px, like every other Orpheus box. Over a game the scene
+    // behind can be anything, so the card is nearly opaque and sits on a hard
+    // offset shadow that keeps its edge against white snow and black caves.
     Rectangle {
       id: card
       width: parent.width; height: parent.height
-      radius: 10
-      color: Qt.rgba(hud.bg.r, hud.bg.g, hud.bg.b, 0.86)
+      color: Qt.rgba(hud.bg.r, hud.bg.g, hud.bg.b, 0.93)
       border.width: 1
-      border.color: Qt.rgba(hud.c1.r, hud.c1.g, hud.c1.b, 0.55)
+      border.color: Tui.ensure(hud.c1, hud.bg, 3)
       x: hud.shown ? 0 : (hud.atLeft ? -1 : 1) * (hud.cardW * 0.6)
       opacity: hud.shown ? 1 : 0
-      Behavior on x { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
-      Behavior on opacity { NumberAnimation { duration: 220 } }
+      // In and out on the shared page pace; the fade is quicker, so the card is
+      // gone before hud.py hides the window (400 ms after the slide starts).
+      Behavior on x { NumberAnimation { duration: Tui.PAGE; easing.type: Easing.InOutCubic } }
+      Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Easing.InOutCubic } }
+
+      Rectangle {
+        z: -1
+        x: 3; y: 3
+        width: parent.width; height: parent.height
+        color: Qt.rgba(0, 0, 0, 0.45)
+      }
 
       Rectangle {   // the cover, or a block of the accent while it loads
         id: coverBox
         x: 10; y: 10
         width: card.height - 20; height: width
-        radius: 6
-        color: Qt.rgba(hud.c1.r, hud.c1.g, hud.c1.b, 0.25)
+        color: Qt.rgba(hud.c1.r, hud.c1.g, hud.c1.b, 0.18)
         clip: true
+        Text {
+          anchors.centerIn: parent
+          visible: cover.status !== Image.Ready
+          text: "╱╱╱\n╱╱╱"
+          horizontalAlignment: Text.AlignHCenter
+          font.family: Style.font.family; font.pixelSize: 13
+          color: hud.dim
+        }
         Image {
+          id: cover
           anchors.fill: parent
           source: hud.player ? hud.player.trackArtUrl : ""
           fillMode: Image.PreserveAspectCrop
@@ -95,7 +117,7 @@ Window {
 
         GlowText {
           width: parent.width
-          text: hud.player ? hud.player.trackTitle : ""
+          text: hud.hasTrack ? hud.player.trackTitle : "nothing playing"
           color: Tui.ensure(hud.c1, hud.bg, 4.5)
           font.family: Style.font.family
           font.pixelSize: 15
@@ -106,8 +128,11 @@ Window {
         }
         Text {
           width: parent.width
-          text: hud.player ? hud.player.trackArtist : ""
-          color: Tui.muted(hud.fg, hud.bg, 4.5)
+          textFormat: Text.StyledText
+          // what state it is in, then who: ▶ playing, ‖ paused
+          text: '<font color="' + Tui.hex(Tui.ensure(hud.c1, hud.bg, 4.5)) + '">' + (hud.playing ? "▶" : "‖") + '</font>&nbsp;'
+                + Tui.esc(hud.hasTrack ? (hud.player.trackArtist || "") + (hud.playing ? "" : " · paused") : "pick something in the player")
+          color: hud.dim
           font.family: Style.font.family
           font.pixelSize: 12
           elide: Text.ElideRight
