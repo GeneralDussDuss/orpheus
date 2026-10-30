@@ -156,6 +156,7 @@ PanelWindow {
     else if (e.key === Qt.Key_Left || e.text === "h") stepStyle(-1)
     else if (e.text === "p" && !bleed) engine.setMiniPlayer(!engine.miniPlayer)
     else if (e.text === "f") engine.setPlacement(show ? "overlay" : "fullscreen")
+    else if (e.text === "a") engine.setStageFlag("albumArt", "toggle")
     else if (e.text >= "1" && e.text <= "9" && Number(e.text) <= engine.styles.length) pick(engine.styles[Number(e.text) - 1])
     else if (e.key === Qt.Key_Space && engine.player) engine.player.togglePlaying()
     else return false
@@ -178,7 +179,7 @@ PanelWindow {
         engine: win.engine
         styleName: win.current
         showHints: win.show
-        hints: Tui.hints([["←→", "style"], ["f", "window"], ["space", "⏯"], ["esc", ""]], win.accentText, win.dim)
+        hints: Tui.hints([["←→", "style"], ["a", "art"], ["f", "window"], ["space", "⏯"], ["esc", ""]], win.accentText, win.dim)
       }
     }
 
@@ -201,7 +202,7 @@ PanelWindow {
     width: parent.width
     height: column.implicitHeight + ch * 2
     title: "orpheus · " + (win.engine ? win.engine.styleLabels[win.current].toLowerCase() : "")
-    keyHint: win.desktop ? "" : Tui.hints([["←→", "style"], ["p", "player"], ["f", "full"], ["space", "⏯"], ["esc", ""]], win.accentText, win.dim)
+    keyHint: win.desktop ? "" : Tui.hints([["←→", "style"], ["a", "art"], ["p", "player"], ["f", "full"], ["space", "⏯"], ["esc", ""]], win.accentText, win.dim)
     footer: win.engine && !win.engine.hasCava ? "install cava to hear the music" : ""
     focused: !win.desktop
     clock: win.engine ? win.engine.time : -1
