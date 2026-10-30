@@ -23,7 +23,7 @@ Item {
   // [title, [[keys, what], ...]]
   readonly property var sections: [
     ["anywhere", [["ctrl+k", "command palette"], ["?", "this sheet"], [",", "settings"], ["/", "search"],
-                  ["1-8", "library sections"], ["e", "equalizer"], ["L", "lyrics"], ["esc ⌫", "back"], ["q  ctrl+w", "close the player"]]],
+                  ["1-9", "library sections"], ["e", "equalizer"], ["L", "lyrics"], ["esc ⌫", "back"], ["q  ctrl+w", "close the player"]]],
     ["playback", [["space", "play / pause"], ["n  p", "next / previous"], ["h l  ← →", "seek 10 s"], ["+ -", "volume"],
                   ["s", "shuffle"], ["r", "repeat"], ["F", "like what is playing"], ["y  Y", "copy link / universal link"]]],
     ["lists", [["j k  ↑ ↓", "move"], ["pgup pgdn", "move 10"], ["g  G", "top / bottom"], ["⏎", "open or play"],

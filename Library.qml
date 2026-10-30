@@ -251,6 +251,7 @@ FloatingWindow {
     { key: "6", label: "tracks", page: { type: "collection", what: "tracks", title: "liked tracks" } },
     { key: "7", label: "artists", page: { type: "collection", what: "artists", title: "artists" } },
     { key: "8", label: "video", page: { type: "video", title: "video" } },
+    { key: "9", label: "stats", page: { type: "stats", title: "stats" } },
     { key: ",", label: "settings", page: { type: "settings", title: "settings" } }
   ]
   property var page: navItems[0].page
@@ -353,7 +354,7 @@ FloatingWindow {
 
   function load() {
     // Settings need no TIDAL session and nothing loaded behind them.
-    if (page.type === "settings") { rows = []; loading = false; return }
+    if (page.type === "settings" || page.type === "stats") { rows = []; loading = false; return }
     // The video section needs no TIDAL session: YouTube and ani-cli are not
     // TIDAL, and making someone sign in to watch something would be a lie.
     if (!api || (!api.signedIn && page.type !== "video")) return
@@ -539,7 +540,7 @@ FloatingWindow {
     if (t === "L") { go({ type: "lyrics", title: "lyrics" }); return true }
     if (t === ",") { showSettings(); return true }
     if (t === "?") { keysSheet.open(); return true }
-    if (t >= "1" && t <= "8") { go(navItems[Number(t) - 1].page); return true }
+    if (t >= "1" && t <= "9") { go(navItems[Number(t) - 1].page); return true }
     // On the video page the transport reaches the video window instead: it is
     // the thing you are looking at, and the music is paused behind it anyway.
     if (videoPage && videoKey(e)) return true
@@ -633,7 +634,7 @@ FloatingWindow {
       width: Math.round(win.cw * Math.max(16, Math.min(22, Math.floor(parent.width / win.cw * 0.15))))
       height: transport.y - y - win.ch * 0.2
       title: "library"
-      keyHint: Tui.hints([["1-7", ""]], win.accentText, win.dim)
+      keyHint: Tui.hints([["1-9", ""]], win.accentText, win.dim)
       clock: win.clock
       Column {
         width: parent.width
@@ -704,10 +705,12 @@ FloatingWindow {
                                                       : [["⇥", "provider"], ["⏎", "watch"], ["a", "listen"], ["c", "curd"]],
                                        win.accentText, win.dim)
              : win.page.type === "settings" ? Tui.hints([["⇥", "section"], ["h/l", "change"], ["⏎", "set"]], win.accentText, win.dim)
+             : win.page.type === "stats" ? Tui.hints([["⇥", "range"], ["w", "wrapped"]], win.accentText, win.dim)
              : win.page.type === "search" ? Tui.hints([["/", "search"], ["⏎", "play"]], win.accentText, win.dim)
                                           : Tui.hints([["⏎", "open"], ["a", "queue"], ["f", "♥ like"], ["P", "play all"]], win.accentText, win.dim)
       footer: win.history.length ? "esc back" : ""
-      focused: list.activeFocus || searchInput.activeFocus || (settingsLoader.item && settingsLoader.item.activeFocus) || false
+      focused: list.activeFocus || searchInput.activeFocus || (settingsLoader.item && settingsLoader.item.activeFocus)
+               || (statsLoader.item && statsLoader.item.activeFocus) || false
       clock: win.clock
       glow: win.bloom
 
@@ -1072,12 +1075,22 @@ FloatingWindow {
         onLoaded: item.forceActiveFocus()
       }
 
+      // Listening stats: the daemon's own history, so no TIDAL session needed.
+      Loader {
+        id: statsLoader
+        anchors.fill: parent
+        z: 2
+        active: win.page.type === "stats"
+        sourceComponent: StatsPane { host: win }
+        onLoaded: item.forceActiveFocus()
+      }
+
       // Sign-in / offline cover.
       Loader {
         anchors.fill: parent
         // The video section is not TIDAL's, so it stays reachable signed out.
         active: (!win.api || !win.api.online || win.page.type === "login"
-             || (!win.api.signedIn && !win.videoPage)) && win.page.type !== "settings"
+             || (!win.api.signedIn && !win.videoPage)) && win.page.type !== "settings" && win.page.type !== "stats"
         sourceComponent: LoginPane { host: win }
       }
     }
@@ -1312,25 +1325,60 @@ FloatingWindow {
         keyHint: win.st.context && win.st.context.title ? win.st.context.title : ""
         clock: win.clock
         ListView {
+          id: upNextList
           anchors.fill: parent
           clip: true
           model: win.st.upNext || []
-          delegate: Text {
+          // Where the queue gives way to endless radio, a line says so.
+          delegate: Item {
+            id: upRow
             required property var modelData
             required property int index
+            readonly property bool radioStart: !!modelData.radio
+                && (index === 0 || !(win.st.upNext[index - 1] || {}).radio)
             width: ListView.view.width
-            height: win.ch * 1.2
-            elide: Text.ElideRight
-            text: win.lpad(String(index + 1), 2) + "  " + modelData.title + "  · " + win.artists(modelData.artists)
-            font.family: win.family; font.pixelSize: Style.font.caption
-            color: qm.containsMouse ? win.fg : win.dim
-            MouseArea {
-              id: qm
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onClicked: win.api.control("jump", { index: win.st.queueIndex + 1 + index })
+            height: win.ch * (radioStart ? 2.4 : 1.2)
+            Text {
+              visible: upRow.radioStart
+              width: parent.width
+              height: win.ch * 1.2
+              elide: Text.ElideRight
+              verticalAlignment: Text.AlignBottom
+              textFormat: Text.StyledText
+              text: '<font color="' + Tui.hex(win.accent) + '">∞</font> radio · from '
+                    + Tui.esc(upRow.modelData.radio ? upRow.modelData.radio.from || "" : "")
+              font.family: win.family; font.pixelSize: Style.font.caption
+              color: win.accentText
             }
+            Text {
+              y: upRow.radioStart ? win.ch * 1.2 : 0
+              width: parent.width
+              height: win.ch * 1.2
+              elide: Text.ElideRight
+              text: win.lpad(String(upRow.index + 1), 2) + "  " + upRow.modelData.title + "  · " + win.artists(upRow.modelData.artists)
+              font.family: win.family; font.pixelSize: Style.font.caption
+              color: qm.containsMouse ? win.fg : win.dim
+              MouseArea {
+                id: qm
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: win.api.control("jump", { index: win.st.queueIndex + 1 + upRow.index })
+              }
+            }
+          }
+          // The end of the queue, with endless play on: what happens next.
+          footer: Text {
+            visible: !!win.track && !(win.st.upNext || []).length && !!win.api && (win.api.listening || {}).endless === true
+                     && win.st.repeat === "off"
+            width: upNextList.width
+            height: visible ? win.ch * 1.4 : 0
+            elide: Text.ElideRight
+            verticalAlignment: Text.AlignBottom
+            textFormat: Text.StyledText
+            text: '<font color="' + Tui.hex(win.accent) + '">∞</font> radio continues from ' + Tui.esc(win.track ? win.track.title : "")
+            font.family: win.family; font.pixelSize: Style.font.caption
+            color: win.dim
           }
         }
       }
@@ -1508,6 +1556,20 @@ FloatingWindow {
           }
         }
         Text {
+          id: sleepMini
+          readonly property var sl: win.api ? win.api.sleepState : ({ active: false })
+          visible: sl.active === true
+          // counts down by itself from the daemon's wall-clock deadline
+          property real now: Date.now()
+          Timer { interval: 1000; repeat: true; running: sleepMini.visible && !sleepMini.sl.endOfTrack; onTriggered: sleepMini.now = Date.now() }
+          text: "☾ " + (sl.endOfTrack ? "end of track" : Math.max(0, Math.ceil(((sl.at || 0) * 1000 - now) / 60000)) + "m")
+          font.family: win.family; font.pixelSize: Style.font.caption; font.bold: true
+          color: sl.fading ? Tui.mix(win.accentText, win.dim, 0.5) : win.accentText
+          anchors.verticalCenter: parent.verticalCenter
+          MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                      onClicked: { win.api.cancelSleep(); win.say("sleep timer off") } }
+        }
+        Text {
           id: eqMini
           text: "eq " + win.eqSpark()
           font.family: win.family; font.pixelSize: Style.font.caption
@@ -1624,7 +1686,8 @@ FloatingWindow {
 
   // Where the keys go once an overlay closes: the pane on screen, else the list.
   function refocus() {
-    var l = page.type === "settings" ? settingsLoader : page.type === "eq" ? eqLoader : page.type === "lyrics" ? lyricsLoader : null
+    var l = page.type === "settings" ? settingsLoader : page.type === "stats" ? statsLoader
+          : page.type === "eq" ? eqLoader : page.type === "lyrics" ? lyricsLoader : null
     if (l && l.item) l.item.forceActiveFocus()
     else list.forceActiveFocus()
   }

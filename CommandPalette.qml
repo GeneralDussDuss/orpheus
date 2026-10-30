@@ -80,7 +80,6 @@ Item {
     out.push({ group: "sleep", label: "sleep at the end of this track", key: "", run: function() { a.sleepAtEnd(); host.say("☾ sleeping at the end of this track") } })
     if (sl.active) out.push({ group: "sleep", label: "cancel the sleep timer", key: "", run: function() { a.cancelSleep(); host.say("sleep timer off") } })
     if (host.go) {
-      out.push({ group: "go", label: "stats", key: "9", run: function() { host.go({ type: "stats", title: "stats" }) } })
       out.push({ group: "go", label: "wrapped · this month", key: "", run: function() { host.go({ type: "stats", title: "stats", range: "wrapped" }) } })
     }
     if (!e || !e.updateConfig) return out
