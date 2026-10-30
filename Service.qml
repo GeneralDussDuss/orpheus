@@ -44,7 +44,7 @@ Item {
 
   // ---- Config ------------------------------------------------------------
   property var config: defaults
-  readonly property string style: styles.indexOf(config.style) >= 0 ? config.style : "skyline"
+  readonly property string style: styles.indexOf(config.style) >= 0 ? config.style : "prism"
   readonly property bool miniPlayer: config.miniPlayer !== false
   // overlay: a card over everything; desktop: on the wallpaper (on Windows, behind
   // the icons, full monitor); fullscreen: the show, full-bleed on showMonitor.
