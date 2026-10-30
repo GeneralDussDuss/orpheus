@@ -74,6 +74,11 @@ Item {
     configFile.setText(JSON.stringify(copy, null, 2) + "\n")
   }
 
+  // The desktop app's global hotkeys: config.json's `hotkeys` rebinds them live,
+  // e.g. { "widget:toggle": "Win+Alt+K" }. Off the desktop app there is no such thing.
+  readonly property var hotkeyConfig: config.hotkeys || ({})
+  onHotkeyConfigChanged: if (typeof OrpheusKeys !== "undefined") OrpheusKeys.apply(hotkeyConfig)
+
   FileView {
     id: configFile
     path: root.configPath
@@ -186,6 +191,8 @@ Item {
   property int eqHandled: 0
   property int lyricsRequests: 0     // ... and the lyrics
   property int lyricsHandled: 0
+  property int settingsRequests: 0   // ... and the settings page
+  property int settingsHandled: 0
   property int loginHandled: 0
   property int barWidgets: 0           // bar widgets register themselves
   readonly property bool widgetShown: widget.enabled !== false && (player !== null || widgetIsWindow)
@@ -728,6 +735,7 @@ Item {
     function login(): string { root.libraryOpen = true; root.loginRequests++; return root.statusText() }
     function eq(): string { root.libraryOpen = true; root.eqRequests++; return root.statusText() }
     function lyrics(): string { root.libraryOpen = true; root.lyricsRequests++; return root.statusText() }
+    function settings(): string { root.libraryOpen = true; root.settingsRequests++; return root.statusText() }
     function style(name: string): string { return root.setStyle(name) }
     function railViz(name: string): string { return root.setRailViz(name) }
     function nextRailViz(): string { return root.cycleRailViz(1) }
