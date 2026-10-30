@@ -14,6 +14,9 @@
 
 //#common
 
+// The album cover (Viz.qml, mipmapped): alpha 0 when there is none.
+layout(binding = 1) uniform sampler2D art;
+
 const float PI = 3.14159265;
 const int LAYERS = 8;
 const float SPD = 0.32;      // depth cycles per unit of flow: ~3 s from the far plane to you at rest pace
@@ -165,6 +168,10 @@ void main() {
         float n = fbm(q * 2.4 + vec2(time * 0.01, 0.0)) * 0.6 + fbm(polar) * 0.6;
         float neb = smoothstep(0.45, 1.0, n) * smoothstep(0.02, 0.25, r);
         vec3 nc = mix(pal(fract(n * 1.3 + 0.2)), tint, 0.4);
+        // The nebula is dyed with the cover: its colours, blurred and swirled
+        // by the same cloud, so the sky takes on the record's palette.
+        vec4 A = textureLod(art, clamp(q * 0.45 + 0.5 + (n - 0.5) * 0.25, 0.0, 1.0), 3.0);
+        nc = mix(nc, A.rgb * 1.25, A.a * 0.7);
         float amt = neb * (0.10 + loud * 0.14 + hit * 0.10);
         L += nc * amt * 0.8;
         float ink = neb * (0.20 + loud * 0.15) * light;

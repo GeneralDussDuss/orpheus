@@ -8,6 +8,9 @@
 
 //#common
 
+// The album cover (Viz.qml): alpha 0 when there is none.
+layout(binding = 1) uniform sampler2D art;
+
 vec3 sat3(vec3 x) { return x / (1.0 + max(max(x.r, x.g), x.b) * 0.6); }
 
 float swirl(vec2 q, float t) {
@@ -137,6 +140,14 @@ void main() {
                 float fres = pow(1.0 - z, 2.2);
                 float sw = swirl(q / rim, time * (0.6 + energy * 1.2));
                 vec3 body = mix(bg.rgb, pal(mirrored * 0.6 + 0.2 + sw * 0.15), 0.22 + diff * 0.45 + sw * 0.15);
+                // The cover, refracted through the glass: magnified in the middle,
+                // bent toward the rim, stirred by the plasma.
+                {
+                    vec2 ru = n.xy * (0.36 + 0.14 * (1.0 - z)) + (sw - 0.5) * 0.04 * vec2(cos(time * 0.7), sin(time * 0.5));
+                    vec4 A = texture(art, vec2(0.5 + ru.x, 0.5 - ru.y));
+                    float k = A.a * (0.62 - 0.45 * fres) * (1.0 - 0.25 * light);
+                    body = mix(body, A.rgb * (0.55 + 0.5 * diff) + pal(mirrored) * 0.08, k);
+                }
                 // Plasma core: hot light from inside, brighter with the loudness and on kicks.
                 float core = pow(z, 2.0) * smoothstep(0.45, 0.95, sw) * (0.12 + energy * 0.45 + kick * 0.25);
                 body += lit(core) * mix(c2.rgb, fg.rgb, 0.4);
