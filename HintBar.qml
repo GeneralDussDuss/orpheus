@@ -32,6 +32,10 @@ Row {
       font.family: Style.font.family
       font.pixelSize: bar.pixelSize
       font.underline: hot
+      // A press answers in the same frame (the dip is instant); the release
+      // eases back, so a click reads as one.
+      opacity: live && ma.pressed ? 0.55 : 1
+      Behavior on opacity { enabled: cell.opacity < 1; NumberAnimation { duration: Tui.HOVER; easing.type: Easing.InOutCubic } }
       MouseArea {
         id: ma
         anchors.fill: parent

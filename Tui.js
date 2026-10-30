@@ -148,3 +148,17 @@ function notches(holder, delta) {
   holder.wheelAcc -= n * 120
   return n
 }
+
+// A one-cell busy spinner on the shared clock (seconds): ⠋⠙⠹… at ~12 fps.
+// For "this is working" where a page would otherwise sit frozen.
+var SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+function spinner(time) {
+  return SPIN.charAt(Math.floor(Math.max(0, time || 0) * 12) % SPIN.length)
+}
+
+// The motion scale every surface shares (ms; ease Easing.InOutCubic):
+// a hover answers in HOVER, a selection or state change takes STATE, a theme
+// or page-scale change takes PAGE.
+var HOVER = 120
+var STATE = 180
+var PAGE = 420
