@@ -1,0 +1,34 @@
+# Orpheus original: Purple dark and a neon magenta drop.
+
+mode = "dark"
+
+accent = "#c04dff"
+selection = "#3f1b57"
+muted = "#524b61"
+
+background = "#0d0716"
+dark_background = "#0a0510"
+darker_background = "#07040c"
+lighter_background = "#1e1829"
+
+foreground = "#e6dcff"
+dark_foreground = "#847c96"
+light_foreground = "#eae1ff"
+bright_foreground = "#efe8ff"
+
+red = "#e85b7f"
+orange = "#e8927f"
+yellow = "#e8ba7f"
+green = "#72d189"
+cyan = "#72c7f5"
+blue = "#7287f5"
+magenta = "#d45bf5"
+brown = "#b66567"
+
+bright_red = "#f5788d"
+bright_orange = "#f5ac8d"
+bright_yellow = "#f5d08d"
+bright_green = "#86e796"
+bright_cyan = "#86ddfc"
+bright_blue = "#86a1fc"
+bright_magenta = "#e278fc"

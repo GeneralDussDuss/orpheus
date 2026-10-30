@@ -603,19 +603,33 @@ def _accent() -> QColor:
     return QColor("#5b8cff")
 
 
-THEMES_DIR = Path(__file__).resolve().parent / "themes"   # Omarchy's palettes, bundled
+THEMES_DIR = Path(__file__).resolve().parent / "themes"   # orpheus/ originals, omarchy/ palettes
 DEFAULT_THEME = "orpheus"
 
 
-def _user_themes_dir() -> Path:
+def user_themes_dir() -> Path:
     home = os.environ.get("ORPHEUS_HOME") or os.environ.get("HOME") or str(Path.home())
     return Path(home) / ".config" / "orpheus" / "themes"
 
 
+def theme_groups() -> list[tuple[str, list[str]]]:
+    """The menu's sections. A user theme with a bundled name replaces it, so it
+    is listed once, under Yours."""
+    yours = sorted(p.stem for p in user_themes_dir().glob("*.toml")) if user_themes_dir().is_dir() else []
+    groups = [("Orpheus", [DEFAULT_THEME])]
+    for label, sub in (("Orpheus", "orpheus"), ("Omarchy", "omarchy")):
+        names = sorted(p.stem for p in (THEMES_DIR / sub).glob("*.toml") if p.stem not in yours)
+        if label == "Orpheus":
+            groups[0][1].extend(n for n in names if n != DEFAULT_THEME)
+        elif names:
+            groups.append((label, names))
+    if yours:
+        groups.append(("Yours", yours))
+    return groups
+
+
 def theme_names() -> list[str]:
-    """Orpheus's own look first, then every Omarchy palette and any user ones."""
-    found = {p.stem for d in (THEMES_DIR, _user_themes_dir()) if d.is_dir() for p in d.glob("*.toml")}
-    return [DEFAULT_THEME] + sorted(found - {DEFAULT_THEME})
+    return [n for _, names in theme_groups() for n in names]
 
 
 def theme_label(name: str) -> str:
@@ -623,7 +637,7 @@ def theme_label(name: str) -> str:
 
 
 def _theme_file(name: str) -> Path | None:
-    for d in (_user_themes_dir(), THEMES_DIR):
+    for d in (user_themes_dir(), THEMES_DIR / "orpheus", THEMES_DIR / "omarchy"):
         if (d / f"{name}.toml").is_file():
             return d / f"{name}.toml"
     return None
@@ -673,21 +687,30 @@ class Color(QObject):
         t = _read_toml(path) if path else {}
         if not t:
             name = DEFAULT_THEME
+        self._name = name
+        self._apply(t, path.read_text(encoding="utf-8") if path else "")
+        if save:
+            p = _prefs_path()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps({"theme": name}) + "\n", encoding="utf-8")
+
+    def preview(self, palette: dict):
+        """Show a palette without making it the theme: the builder's live view.
+        set_theme(name) afterwards puts the chosen one back."""
+        from .themegen import to_toml
+        self._apply(palette, to_toml(palette))
+
+    def _apply(self, t: dict, toml_text: str):
         bg = QColor(t.get("background", "#0b0d12"))
         bg.setAlphaF(0.94)
         self._v = {"background": bg,
                    "foreground": QColor(t.get("foreground", "#d7dbe6")),
                    "accent": QColor(t["accent"]) if "accent" in t else _accent(),
                    "urgent": QColor(t.get("red", "#ff5c7a"))}
-        self._name = name
-        self._write_palette(path)
-        if save:
-            p = _prefs_path()
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(json.dumps({"theme": name}) + "\n", encoding="utf-8")
+        self._write_palette(toml_text)
         self.changed.emit()
 
-    def _write_palette(self, path: Path | None):
+    def _write_palette(self, text: str):
         """Service.qml fills its second and third visualizer colours from the
         Omarchy theme's colors.toml. Off Omarchy nothing else owns that file, so
         put the chosen palette there; its file watch picks the change up live."""
@@ -696,12 +719,16 @@ class Color(QObject):
         home = os.environ.get("ORPHEUS_HOME") or os.environ.get("HOME") or str(Path.home())
         dest = Path(home) / ".local" / "state" / "omarchy" / "current" / "theme" / "colors.toml"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        text = path.read_text(encoding="utf-8") if path else ""
         try:
             if not dest.exists() or dest.read_text(encoding="utf-8") != text:
                 dest.write_text(text, encoding="utf-8")
         except OSError as e:
             print(f"orpheus-desktop: cannot write {dest}: {e}", file=sys.stderr)
+
+    def current_palette(self) -> dict:
+        path = _theme_file(self._name) if self._name != DEFAULT_THEME else None
+        return _read_toml(path) if path else {
+            "background": "#0b0d12", "foreground": "#d7dbe6", "accent": _accent().name()}
 
     @Slot(int)
     def cycle(self, step=1):

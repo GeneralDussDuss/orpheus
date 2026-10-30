@@ -1,0 +1,34 @@
+# Orpheus original: Pale dawn, rose ink. The way back up.
+
+mode = "light"
+
+accent = "#c2477a"
+selection = "#e7c1cb"
+muted = "#b5b0ae"
+
+background = "#f6f1ea"
+dark_background = "#ece7e1"
+darker_background = "#e2ddd7"
+lighter_background = "#e6e1db"
+
+foreground = "#2b2630"
+dark_foreground = "#868184"
+light_foreground = "#252029"
+bright_foreground = "#1c191f"
+
+red = "#a83943"
+orange = "#a86143"
+yellow = "#a87d43"
+green = "#518f4a"
+cyan = "#518899"
+blue = "#515999"
+magenta = "#993999"
+brown = "#653c3c"
+
+bright_red = "#92272d"
+bright_orange = "#92522d"
+bright_yellow = "#92702d"
+bright_green = "#368334"
+bright_cyan = "#367b89"
+bright_blue = "#364989"
+bright_magenta = "#822789"

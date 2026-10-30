@@ -1,0 +1,34 @@
+# Orpheus original: Warm black, label cream, a hot orange stylus.
+
+mode = "dark"
+
+accent = "#f28c28"
+selection = "#543618"
+muted = "#5b5751"
+
+background = "#161412"
+dark_background = "#100f0e"
+darker_background = "#0c0b0a"
+lighter_background = "#272522"
+
+foreground = "#efe6d8"
+dark_foreground = "#8d887f"
+light_foreground = "#f1eade"
+bright_foreground = "#f5efe6"
+
+red = "#f26854"
+orange = "#f29e54"
+yellow = "#f2c654"
+green = "#7cde5e"
+cyan = "#7cd4ca"
+blue = "#7c93ca"
+magenta = "#de68ca"
+brown = "#c0723c"
+
+bright_red = "#fb8074"
+bright_orange = "#fbb474"
+bright_yellow = "#fbd874"
+bright_green = "#8cef7c"
+bright_cyan = "#8ce5e3"
+bright_blue = "#8ca8e3"
+bright_magenta = "#e880e3"

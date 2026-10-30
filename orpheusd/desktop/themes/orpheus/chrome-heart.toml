@@ -1,0 +1,34 @@
+# Orpheus original: Brushed steel, one pink heartbeat.
+
+mode = "dark"
+
+accent = "#ff6fae"
+selection = "#542d41"
+muted = "#57585b"
+
+background = "#121316"
+dark_background = "#0e0e10"
+darker_background = "#0a0a0c"
+lighter_background = "#232427"
+
+foreground = "#e9eaee"
+dark_foreground = "#88898d"
+light_foreground = "#ecedf1"
+bright_foreground = "#f1f1f4"
+
+red = "#f5626f"
+orange = "#f5996f"
+yellow = "#f5c16f"
+green = "#7fd878"
+cyan = "#7fcee4"
+blue = "#7f8de4"
+magenta = "#e162e4"
+brown = "#c36c57"
+
+bright_red = "#fc7c84"
+bright_orange = "#fcb084"
+bright_yellow = "#fcd484"
+bright_green = "#8deb8d"
+bright_cyan = "#8de1f3"
+bright_blue = "#8da5f3"
+bright_magenta = "#ea7cf3"

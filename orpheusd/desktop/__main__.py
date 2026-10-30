@@ -138,19 +138,25 @@ def theme_menu(parent, key=None):
     hotkey switch or a .toml dropped into ~/.config/orpheus/themes shows up."""
     from PySide6.QtGui import QAction, QActionGroup
     from PySide6.QtWidgets import QMenu
-    from .shims import THEME, theme_label, theme_names
+    from .shims import THEME, theme_groups, theme_label
+    from .themebuilder import open_builder
     m = QMenu("Theme" + (f"\t{key}" if key else ""), parent)
 
     def fill():
         m.clear()
+        build = QAction("Theme builder…", m)
+        build.triggered.connect(open_builder)
+        m.addAction(build)
         group = QActionGroup(m)
         current = THEME[0].property("name") if THEME else ""
-        for name in theme_names():
-            a = QAction(theme_label(name), m, checkable=True)
-            a.setChecked(name == current)
-            a.triggered.connect(lambda _=False, n=name: THEME and THEME[0].set_theme(n))
-            group.addAction(a)
-            m.addAction(a)
+        for section, names in theme_groups():
+            m.addSection(section)
+            for name in names:
+                a = QAction(theme_label(name), m, checkable=True)
+                a.setChecked(name == current)
+                a.triggered.connect(lambda _=False, n=name: THEME and THEME[0].set_theme(n))
+                group.addAction(a)
+                m.addAction(a)
     m.aboutToShow.connect(fill)
     fill()
     return m
@@ -170,6 +176,10 @@ def tray(app, quit_all, hotkeys):
         menu.addAction(a)
     menu.addSeparator()
     menu.addMenu(theme_menu(menu, keys.get("theme:next")))
+    from .themebuilder import open_builder
+    build = QAction("Theme builder…", menu)
+    build.triggered.connect(open_builder)
+    menu.addAction(build)
     if winsys.WINDOWS:
         auto = QAction("Start with Windows", menu, checkable=True)
         auto.setChecked(winsys.starts_with_windows())

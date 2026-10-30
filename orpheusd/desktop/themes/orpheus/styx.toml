@@ -1,0 +1,34 @@
+# Orpheus original: Black water, teal current.
+
+mode = "dark"
+
+accent = "#2ec4b6"
+selection = "#124544"
+muted = "#475859"
+
+background = "#071417"
+dark_background = "#050f11"
+darker_background = "#040b0d"
+lighter_background = "#172528"
+
+foreground = "#cfe7e6"
+dark_foreground = "#758889"
+light_foreground = "#d6ebea"
+bright_foreground = "#e0efef"
+
+red = "#bb8380"
+orange = "#bbab80"
+yellow = "#bbc880"
+green = "#65d988"
+cyan = "#65d2d6"
+blue = "#65a2d6"
+magenta = "#ac83d6"
+brown = "#8c8065"
+
+bright_red = "#d59492"
+bright_orange = "#d5bb92"
+bright_yellow = "#d5d692"
+bright_green = "#82e799"
+bright_cyan = "#82e0e6"
+bright_blue = "#82b2e6"
+bright_magenta = "#c894e6"

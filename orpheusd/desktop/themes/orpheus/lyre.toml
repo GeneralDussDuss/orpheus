@@ -1,0 +1,34 @@
+# Orpheus original: Gold strings on deep plum: the instrument itself.
+
+mode = "dark"
+
+accent = "#e5b65c"
+selection = "#534031"
+muted = "#5d5355"
+
+background = "#1a1220"
+dark_background = "#140e18"
+darker_background = "#0e0a12"
+lighter_background = "#2b222d"
+
+foreground = "#ecdcc6"
+dark_foreground = "#8e817b"
+light_foreground = "#efe1cf"
+bright_foreground = "#f3e8da"
+
+red = "#e77866"
+orange = "#e7a866"
+yellow = "#e7c966"
+green = "#82dd6f"
+cyan = "#82d5cb"
+blue = "#829ecb"
+magenta = "#d678cb"
+brown = "#b77c4e"
+
+bright_red = "#f18c81"
+bright_orange = "#f1b981"
+bright_yellow = "#f1d981"
+bright_green = "#91ec89"
+bright_cyan = "#91e4e1"
+bright_blue = "#91afe1"
+bright_magenta = "#e18ce1"
