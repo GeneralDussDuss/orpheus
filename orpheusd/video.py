@@ -19,7 +19,7 @@ import logging
 from pathlib import Path
 
 from .system import mpv_path, WINDOWS, ipc_address, ipc_clear, ipc_connect
-from .youtube import VIDEO_FORMAT, watch_url
+from .youtube import VIDEO_FORMAT, YouTube, watch_url, ytdlp_path
 
 log = logging.getLogger("orpheus.video")
 
@@ -52,6 +52,7 @@ class Video:
         self._writer = None
         self._req = 0
         self._pending: dict[int, asyncio.Future] = {}
+        self._youtube = YouTube()
 
     @property
     def running(self) -> bool:
@@ -72,8 +73,15 @@ class Video:
         if self.running:
             return
         ipc_clear(self.socket_path)
+        args = list(VIDEO_ARGS)
+        ytdlp = ytdlp_path()
+        if ytdlp:
+            # For pages handed straight to mpv (not YouTube's: see `watch`): its
+            # hook looks on PATH and in its config folder, and a winget install
+            # is in neither until a new shell.
+            args.append(f"--script-opts=ytdl_hook-ytdl_path={ytdlp}")
         self._proc = await asyncio.create_subprocess_exec(
-            mpv_path(), *VIDEO_ARGS, f"--input-ipc-server={self.socket_path}",
+            mpv_path(), *args, f"--input-ipc-server={self.socket_path}",
             stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL)
         self._reader, self._writer = await ipc_connect(self.socket_path)
@@ -128,6 +136,11 @@ class Video:
                 if not fut.done():
                     fut.set_result(msg)
                 continue
+            if msg.get("event") == "end-file" and msg.get("reason") == "error":
+                # Otherwise the window just stays black: say why somewhere.
+                log.warning("video window could not play %s: %s",
+                            (self.entry or {}).get("id", "?"), msg.get("file_error", "error"))
+                continue
             if msg.get("event") == "property-change":
                 name, data = msg.get("name"), msg.get("data")
                 if name == "pause":
@@ -141,10 +154,20 @@ class Video:
     # ---- what it is for ----------------------------------------------------
 
     async def watch(self, entry: dict):
-        """Show a YouTube video, starting the window if it is not already up."""
-        # mpv resolves the watch URL through its own ytdl hook, which merges the
-        # separate video and audio streams for us.
-        await self.play(watch_url(entry["id"]), entry)
+        """Show a YouTube video, starting the window if it is not already up.
+
+        Raises YouTubeError when yt-dlp is missing or cannot resolve the page.
+        """
+        # The window first, so a click shows something while yt-dlp works.
+        await self._ensure()
+        page = entry.get("url") or watch_url(entry["id"])
+        try:
+            got = await self._youtube.video(page)
+        except Exception as e:
+            log.warning("video %s would not resolve: %s", entry.get("id"), e)
+            raise
+        entry = dict(entry, duration=entry.get("duration") or got["duration"])
+        await self.play(got["url"], entry, got["options"])
 
     async def play(self, url: str, entry: dict, options: dict | None = None):
         """Show any stream the window can take.

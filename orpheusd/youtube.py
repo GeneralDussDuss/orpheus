@@ -15,10 +15,15 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import glob
 import json
 import logging
+import os
 import re
+import shutil
 import time
+
+from .system import WINDOWS
 
 log = logging.getLogger("orpheus.youtube")
 
@@ -41,6 +46,51 @@ DATE_ARGS = ["--extractor-args", "youtubetab:approximate_date"]
 # Video for the window: mpv's own ytdl hook merges the separate video and audio
 # streams, which is work we would otherwise have to do ourselves.
 VIDEO_FORMAT = "bestvideo[height<=?1080]+bestaudio/best[height<=?1080]/best"
+# YouTube's TV clients now gate a stream behind its pre-roll: the signed URL
+# answers 403 until `available_at`, a few seconds after extraction. yt-dlp's own
+# downloader waits it out; anything handed the URL directly has to as well.
+# A wait longer than this is not an ad, and is not worth holding a request for.
+MAX_GATE_WAIT = 30
+
+
+def ytdlp_path() -> str | None:
+    """yt-dlp on PATH, or where winget puts it: winget only reaches PATH in a new
+    shell, and a daemon not started by the desktop app never gets the folder
+    `find_tools` adds. ORPHEUS_YTDLP overrides both."""
+    found = os.environ.get("ORPHEUS_YTDLP") or shutil.which("yt-dlp")
+    if found or not WINDOWS:
+        return found
+    local = os.environ.get("LOCALAPPDATA", "")
+    for pattern in (rf"{local}\Microsoft\WinGet\Links\yt-dlp.exe",
+                    rf"{local}\Microsoft\WinGet\Packages\*yt-dlp.yt-dlp*\**\yt-dlp.exe",
+                    rf"{os.environ.get('USERPROFILE', '')}\scoop\shims\yt-dlp.exe",
+                    rf"{os.environ.get('ProgramData', '')}\chocolatey\bin\yt-dlp.exe"):
+        hits = glob.glob(pattern, recursive=True)
+        if hits:
+            return hits[0]
+    return None
+
+
+MISSING = ("yt-dlp is not installed or not on PATH "
+           "(winget install --id yt-dlp.yt-dlp -e), or set ORPHEUS_YTDLP")
+
+
+async def until_available(available_at, what: str) -> None:
+    """Sleep out a stream's ad gate, so its first request is not a 403."""
+    try:
+        wait = float(available_at) - time.time()
+    except (TypeError, ValueError):
+        return
+    if wait > 0:
+        log.info("%s is gated for %.1fs; waiting", what, min(wait, MAX_GATE_WAIT))
+        await asyncio.sleep(min(wait, MAX_GATE_WAIT))
+
+
+def _edl(urls: list[str]) -> str:
+    """Separate streams as one file, the way mpv's own ytdl hook joins them.
+    Each URL is length-prefixed, so its `;` and `,` need no escaping."""
+    return "edl://" + ";".join(
+        f"!new_stream;!no_clip;!no_chapters;%{len(u.encode())}%{u}" for u in urls)
 
 
 def video_id(text: str) -> str | None:
@@ -85,9 +135,18 @@ class YouTube:
         self._streams: dict[str, tuple[float, dict]] = {}
 
     async def _run(self, *args: str, timeout: float = 30) -> str:
-        proc = await asyncio.create_subprocess_exec(
-            "yt-dlp", *args,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        exe = ytdlp_path()
+        if not exe:
+            log.error(MISSING)
+            raise YouTubeError(MISSING)
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                exe, *args,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        except OSError as e:
+            log.error("yt-dlp at %s would not start: %s", exe, e)
+            raise YouTubeError(MISSING)
         try:
             out, err = await asyncio.wait_for(proc.communicate(), timeout)
         except asyncio.TimeoutError:
@@ -181,12 +240,13 @@ class YouTube:
         if hit and time.time() - hit[0] < STREAM_TTL:
             return hit[1]
         out = await self._run("-f", AUDIO_FORMAT, "--no-warnings", "--no-playlist",
-                              "--print", "%(acodec)s|%(abr)s|%(asr)s|%(ext)s",
+                              "--print", "%(acodec)s|%(abr)s|%(asr)s|%(ext)s|%(available_at)s",
                               "--print", "urls", self.page(vid))
         lines = [l for l in out.splitlines() if l.strip()]
         if len(lines) < 2:
             raise YouTubeError("no audio stream for that video")
-        codec, abr, asr, ext = (lines[0].split("|") + ["", "", "", ""])[:4]
+        codec, abr, asr, ext, gate = (lines[0].split("|") + ["", "", "", "", ""])[:5]
+        await until_available(gate, f"{self.name} audio {vid}")
 
         def num(v):
             try:
@@ -207,6 +267,40 @@ class YouTube:
         }
         self._streams[vid] = (time.time(), info)
         return info
+
+    async def video(self, url: str) -> dict:
+        """What the video window loads for a page: a URL, and the mpv options
+        it needs to be fetched.
+
+        mpv's own ytdl hook could do this, but it loads the URLs the moment
+        yt-dlp hands them over, and a gated stream answers that with a 403 and
+        a black window. Resolving here lets the wait happen first.
+        """
+        out = await self._run("-J", "-f", VIDEO_FORMAT, "--no-warnings", "--no-playlist", url)
+        try:
+            data = json.loads(out)
+        except json.JSONDecodeError:
+            raise YouTubeError("could not read that video")
+        formats = data.get("requested_formats") or [data]
+        urls = [f.get("url") for f in formats]
+        if not all(urls):
+            raise YouTubeError("no playable stream for that video")
+        await until_available(max((f.get("available_at") or 0) for f in formats),
+                              f"{self.name} video {data.get('id') or url}")
+        headers = dict(formats[0].get("http_headers") or {})
+        options = {
+            "user-agent": headers.pop("User-Agent", None),
+            "referrer": headers.pop("Referer", None),
+            "force-media-title": data.get("title"),
+        }
+        # Whatever else yt-dlp says the server wants. Commas would split the
+        # list, and these headers are never more than accept-language noise.
+        rest = [f"{k}: {v}" for k, v in headers.items() if "," not in f"{k}{v}"]
+        if rest:
+            options["http-header-fields"] = ",".join(rest)
+        return {"url": urls[0] if len(urls) == 1 else _edl(urls),
+                "duration": float(data.get("duration") or 0),
+                "options": options}
 
     def forget(self, vid: str) -> None:
         """Drop a cached URL, so a failed play is retried properly."""

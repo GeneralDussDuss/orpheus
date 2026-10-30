@@ -440,7 +440,10 @@ class App:
             if b.get("mode") == "video":
                 # Never two things playing at once.
                 await self.player.set_paused(True)
-                await self.video.watch(items[index])
+                try:
+                    await self.video.watch(items[index])
+                except YouTubeError as e:
+                    raise web.HTTPBadGateway(text=str(e))
             else:
                 await self.video.pause()
                 await self.player.play_list(items, index,
