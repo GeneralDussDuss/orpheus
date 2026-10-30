@@ -2,17 +2,17 @@
 
 cava's Windows build loopback-captures the whole default output, so the
 visualizers dance to whatever else is playing: a game, Discord, a video. This
-captures only mpv's process tree, through WASAPI process loopback (Windows 10
-2004 / build 19041 and later), and prints exactly what cava's raw ascii output
-prints, so Service.qml reads it the same way:
+captures only orpheusd's process tree (so its mpv) through WASAPI process
+loopback (Windows 10 2004 and later), and prints exactly what cava's raw ascii
+output prints, so Service.qml reads it the same way:
 
     python -m orpheusd.desktop.audiocap [--fps 60] [--bars 32]
 
 One line per frame, `bars` values in 0..1000 each followed by ';'. The target
-is the daemon's mpv (/status player.mpvPid), followed across mpv restarts;
-with nothing to capture it prints zero frames, so the caller still sees a live
-stream. Exits 2 at once where process loopback is unavailable, so the caller
-can fall back to cava.
+comes from the daemon's /status (player.mpvPid and its parent) and is followed
+across restarts. With nothing to capture it prints zero frames, so the caller
+still sees a live stream. Exits 2 at once where process loopback is
+unavailable, so the caller can fall back to cava.
 """
 from __future__ import annotations
 
@@ -251,6 +251,45 @@ def daemon_mpv_pid() -> int:
         return 0
 
 
+class _ProcEntry(ctypes.Structure):                 # PROCESSENTRY32W
+    _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
+                ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long), ("dwFlags", wintypes.DWORD),
+                ("szExeFile", ctypes.c_wchar * 260)]
+
+
+def _processes() -> dict[int, tuple[int, str]]:
+    """pid -> (parent pid, exe name)."""
+    out = {}
+    kernel32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
+    snap = kernel32.CreateToolhelp32Snapshot(0x2, 0)       # TH32CS_SNAPPROCESS
+    if not snap or snap == ctypes.c_void_p(-1).value:
+        return out
+    try:
+        e = _ProcEntry(dwSize=ctypes.sizeof(_ProcEntry))
+        ok = kernel32.Process32FirstW(ctypes.c_void_p(snap), ctypes.byref(e))
+        while ok:
+            out[e.th32ProcessID] = (e.th32ParentProcessID, e.szExeFile.lower())
+            ok = kernel32.Process32NextW(ctypes.c_void_p(snap), ctypes.byref(e))
+    finally:
+        kernel32.CloseHandle(ctypes.c_void_p(snap))
+    return out
+
+
+def daemon_target() -> int:
+    """The process tree to capture: orpheusd itself, mpv's parent, so that a
+    recycled mpv, or a second one the daemon starts for a crossfade, is in it
+    from its first sample (process loopback includes children started later).
+    Plain mpv if the parent cannot be told apart from a reused pid."""
+    mpv = daemon_mpv_pid()
+    if not mpv:
+        return 0
+    procs = _processes()
+    parent = procs.get(mpv, (0, ""))[0]
+    name = procs.get(parent, (0, ""))[1] if parent else ""
+    return parent if name.startswith("python") else mpv
+
+
 class Alive:
     """A handle on the target, to notice it exit without asking the daemon."""
 
@@ -356,20 +395,24 @@ def run(fps: int, bars: int, noise_reduction: float, pid_override: int, seconds:
                 cap = alive = None
                 next_lookup = 0
             if cap is None and now >= next_lookup:
-                pid = pid_override or daemon_mpv_pid()
-                if pid:
+                pid = pid_override or daemon_target()
+                probe = Alive(pid) if pid else None
+                if probe:           # activation would accept a dead pid and hear nothing
                     try:
-                        cap = ProcessCapture(pid)
-                        alive = Alive(pid)
+                        cap, alive = ProcessCapture(pid), probe
                         print(f"audiocap: listening to pid {pid}", file=sys.stderr, flush=True)
                     except CaptureError as e:
                         print(f"audiocap: pid {pid}: {e}", file=sys.stderr, flush=True)
-                        cap = None
-                next_lookup = now + 1.0
+                        probe.close()
+                elif probe is not None:
+                    probe.close()
+                # A dead pid the daemon has yet to replace: ask again soon, not every frame.
+                next_lookup = now + (1.0 if cap or not pid else 0.25)
             elif cap is not None and not pid_override and now >= next_lookup:
-                # Belt and braces: a restart the handle missed (a new mpv before
-                # the old one fully exits).
-                pid = daemon_mpv_pid()
+                # Belt and braces: a target change the handle missed (the
+                # parent check fell back to mpv's pid, and mpv was replaced
+                # before the old one exited).
+                pid = daemon_target()
                 if pid and pid != cap.pid:
                     cap.close(); alive.close()
                     cap = alive = None
