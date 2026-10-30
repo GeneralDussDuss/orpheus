@@ -347,7 +347,7 @@ Item {
   Timer {
     interval: 2000
     repeat: true
-    running: root.listening && !cava.running
+    running: root.listening && !!cava && !cava.running   // cava can be gone first at teardown
     onTriggered: { cavaConfigFile.setText(root.cavaConfig()); cava.running = true }
   }
   onFpsChanged: if (configFile.loaded) cavaConfigFile.setText(cavaConfig())
