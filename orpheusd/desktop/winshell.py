@@ -31,7 +31,7 @@ from PySide6.QtGui import QColor, QGuiApplication, QIcon, QImage, QPainter, QPix
 WINDOWS = sys.platform == "win32"
 AUMID = "Orpheus.Desktop"
 PLAYER_TITLE = "Orpheus"          # Library.qml's window
-CONFIG = Path.home() / ".config" / "orpheus" / "config.json"
+CONFIG = Path(os.environ.get("ORPHEUS_HOME") or Path.home()) / ".config" / "orpheus" / "config.json"
 SHORTCUT = Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Orpheus.lnk"
 
 # Thumbnail buttons: (id, glyph, tooltip, action for __main__.fire)

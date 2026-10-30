@@ -46,12 +46,24 @@ SHELL_CLASSES = {"Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"
                  "ForegroundStaging", "MultitaskingViewFrame", "TaskSwitcherWnd"}
 
 
+_READ: list = [None, {}]     # (mtime, size) of config.json, and what it held
+
+
 def read_config() -> dict:
+    """config.json, parsed again only when it changes: game mode asks every 2 s
+    and the settings page's Discord line every 3. Treat the result as read-only."""
     try:
-        c = json.loads(CONFIG.read_text(encoding="utf-8"))
-        return c if isinstance(c, dict) else {}
-    except (OSError, ValueError):
+        st = CONFIG.stat()
+    except OSError:
         return {}
+    key = (st.st_mtime_ns, st.st_size)
+    if _READ[0] != key:
+        try:
+            c = json.loads(CONFIG.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}                      # mid-write: read it again next time
+        _READ[:] = [key, c if isinstance(c, dict) else {}]
+    return _READ[1]
 
 
 def setting(cfg: dict | None = None) -> str:

@@ -45,10 +45,8 @@ def log(*a):
 
 def client_id(cfg: dict | None = None) -> str:
     if cfg is None:
-        try:
-            cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            cfg = {}
+        from .gamemode import read_config    # cached; the same file
+        cfg = read_config()
     v = cfg.get("discordClientId", "") if isinstance(cfg, dict) else ""
     v = str(v or "").strip()
     return v if v.isdigit() else ""
