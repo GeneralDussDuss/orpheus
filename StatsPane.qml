@@ -83,13 +83,14 @@ Rectangle {
     return '<font color="' + Tui.hex(accent) + '">╱╱</font> ' + Tui.esc(title) + ' '
          + '<font color="' + Tui.hex(faint) + '">' + "─".repeat(220) + '</font>'
   }
-  // A horizontal bar in eighth blocks: █████▍░░░
+  // A horizontal bar, the seek bar's line: ━━━━━╸──── (a full block per row
+  // would run into the rows above and below and read as one slab)
   function bar(v, n) {
     v = Math.max(0, Math.min(1, v || 0))
-    var eighths = Math.round(v * n * 8), full = Math.floor(eighths / 8), part = eighths % 8
-    var s = "█".repeat(full) + (part ? "▏▎▍▌▋▊▉".charAt(part - 1) : "")
-    var rest = Math.max(0, n - full - (part ? 1 : 0))
-    return '<font color="' + Tui.hex(accent) + '">' + s + '</font><font color="' + Tui.hex(faint) + '">' + "░".repeat(rest) + '</font>'
+    var halves = Math.round(v * n * 2), full = Math.floor(halves / 2), half = halves % 2
+    var s = "━".repeat(full) + (half ? "╸" : "")
+    var rest = Math.max(0, n - full - half)
+    return '<font color="' + Tui.hex(accent) + '">' + s + '</font><font color="' + Tui.hex(faint) + '">' + "─".repeat(rest) + '</font>'
   }
   function hours(m) {
     m = Math.round(m || 0)
@@ -260,6 +261,16 @@ Rectangle {
           lineHeight: 0.95
         }
 
+        Text {
+          width: parent.width; clip: true; textFormat: Text.StyledText; text: pane.rule("when · minutes by weekday and hour")
+          font.family: host.family; font.pixelSize: Style.font.caption; color: pane.dim
+        }
+        Text {
+          textFormat: Text.StyledText
+          text: pane.d ? pane.heatmap(pane.d.heatmap) : ""
+          font.family: host.family; font.pixelSize: Style.font.body
+        }
+
         Grid {
           columns: pane.twoUp ? 2 : 1
           columnSpacing: pane.cw * 4
@@ -278,26 +289,13 @@ Rectangle {
           }
         }
 
-        Grid {
-          columns: pane.twoUp ? 2 : 1
-          columnSpacing: pane.cw * 4
-          rowSpacing: pane.ch * 0.9
-          Column {
-            width: pane.halfCols * pane.cw
-            spacing: pane.ch * 0.4
-            Text { width: parent.width; clip: true; textFormat: Text.StyledText; text: pane.rule("top albums")
-                   font.family: host.family; font.pixelSize: Style.font.caption; color: pane.dim }
-            Text { textFormat: Text.StyledText; text: pane.d ? pane.ranked(pane.d.albums, "album", 6) : ""
-                   font.family: host.family; font.pixelSize: Style.font.body }
-          }
-          Column {
-            width: pane.halfCols * pane.cw
-            spacing: pane.ch * 0.4
-            Text { width: parent.width; clip: true; textFormat: Text.StyledText; text: pane.rule("when · minutes by weekday and hour")
-                   font.family: host.family; font.pixelSize: Style.font.caption; color: pane.dim }
-            Text { textFormat: Text.StyledText; text: pane.d ? pane.heatmap(pane.d.heatmap) : ""
-                   font.family: host.family; font.pixelSize: Style.font.body }
-          }
+        Column {
+          width: pane.halfCols * pane.cw
+          spacing: pane.ch * 0.4
+          Text { width: parent.width; clip: true; textFormat: Text.StyledText; text: pane.rule("top albums")
+                 font.family: host.family; font.pixelSize: Style.font.caption; color: pane.dim }
+          Text { textFormat: Text.StyledText; text: pane.d ? pane.ranked(pane.d.albums, "album", 6) : ""
+                 font.family: host.family; font.pixelSize: Style.font.body }
         }
       }
 
@@ -339,7 +337,7 @@ Rectangle {
             if (w.newArtistCount !== undefined)
               row("new to you", w.newArtistCount + ' artist' + (w.newArtistCount === 1 ? '' : 's') + (w.newArtists && w.newArtists.length
                   ? ' <font color="' + Tui.hex(pane.dim) + '">· ' + w.newArtists.slice(0, 3).map(function(a) { return Tui.esc(a.name) }).join(", ") + '</font>' : ''))
-            if (d.streaks) row("streak", d.streaks.longest + ' day' + (d.streaks.longest === 1 ? '' : 's') + ' in a row <font color="' + Tui.hex(pane.dim) + '">· ' + d.streaks.days + ' days with music</font>')
+            if (d.streaks) row("streak", d.streaks.longest + ' day' + (d.streaks.longest === 1 ? '' : 's') + ' in a row <font color="' + Tui.hex(pane.dim) + '">· ' + d.streaks.days + (d.streaks.days === 1 ? ' day' : ' days') + ' with music</font>')
             row("skipped", pane.pct(d.skipRate) + ' <font color="' + Tui.hex(pane.dim) + '">of what started</font>')
             if (w.first) row("it began with", Tui.esc(w.first.title) + ' <font color="' + Tui.hex(pane.dim) + '">· ' + Tui.esc(pane.who(w.first.artists)) + '</font>')
             return rows.join("<br>")
