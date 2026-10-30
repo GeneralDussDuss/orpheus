@@ -20,7 +20,7 @@ Item {
   z: 50
 
   function open() {
-    all = host.commands().concat(bloomCommands())
+    all = host.commands().concat(bloomCommands()).concat(gamingCommands())
     input.text = ""
     filter()
     shown = true
@@ -35,6 +35,19 @@ Item {
       (function(b) {
         out.push({ group: "visualizer", label: "bloom · " + b + (e.bloom === b ? "  (now)" : ""), key: "", run: function() { e.setBloom(b) } })
       })(levels[i])
+    return out
+  }
+  // Game mode, the in-game HUD (desktop app only).
+  function gamingCommands() {
+    var e = host.engine, out = []
+    if (typeof OrpheusGame === "undefined" || !e || !e.updateConfig) return out
+    out.push({ group: "gaming", label: "show the in-game HUD", key: "", run: function() { OrpheusGame.showHud() } })
+    var gm = e.config.gameMode === "off" || e.config.gameMode === false ? "off" : "auto"
+    out.push({ group: "gaming", label: "game mode · " + (gm === "off" ? "auto" : "off") + "  (now " + gm + ")", key: "",
+               run: function() { e.updateConfig(function(c) { c.gameMode = gm === "off" ? "auto" : "off" }) } })
+    var hud = e.config.hud === "off" || e.config.hud === false ? "off" : "on"
+    out.push({ group: "gaming", label: "HUD on track change · " + (hud === "on" ? "off" : "on") + "  (now " + hud + ")", key: "",
+               run: function() { e.updateConfig(function(c) { c.hud = hud === "on" ? "off" : "on" }) } })
     return out
   }
   function close() {

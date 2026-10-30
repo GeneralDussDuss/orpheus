@@ -29,15 +29,17 @@ Rectangle {
   readonly property bool hasThemes: typeof Color.themeList !== "undefined" && Color.themeList !== null
   readonly property bool hasKeys: typeof OrpheusKeys !== "undefined"
   readonly property var keys: hasKeys ? OrpheusKeys : null
+  readonly property bool hasGame: typeof OrpheusGame !== "undefined"
 
   readonly property var sections: [
     { id: "theme", label: "theme" },
     { id: "viz", label: "visualizer" },
     { id: "widget", label: "widget" },
     { id: "show", label: "show mode" },
-    { id: "hotkeys", label: "hotkeys" },
+    { id: "hotkeys", label: "hotkeys" }
+  ].concat(hasGame ? [{ id: "gaming", label: "gaming" }] : []).concat([
     { id: "system", label: "system" }
-  ]
+  ])
   property int section: 0
   property int cursor: 0
   property string editing: ""        // the hotkey action being rebound, if any
@@ -90,6 +92,13 @@ Rectangle {
       var b = keys.bindings || []
       for (var k = 0; k < b.length; k++) r.push({ kind: "hotkey", id: b[k].action, label: b[k].label, row: b[k] })
       r.push({ kind: "action", id: "hotkeysReset", label: "all back to defaults" })
+    } else if (id === "gaming") {
+      r.push({ kind: "note", label: "now: " + (OrpheusGame.gameMode ? "game mode · " : "") + OrpheusGame.reason })
+      r.push({ kind: "choice", id: "gameMode", label: "game mode", options: ["auto", "off"], hint: "hide the widget and stage over a fullscreen game" })
+      r.push({ kind: "choice", id: "hud", label: "in-game HUD on track change", options: ["on", "off"] })
+      r.push({ kind: "choice", id: "hudCorner", label: "HUD corner", options: ["top-left", "top-right", "bottom-left", "bottom-right"] })
+      r.push({ kind: "action", id: "hudShow", label: "show the HUD now", hint: "the hud:show hotkey does this in game" })
+      r.push({ kind: "note", label: "discord: " + OrpheusGame.discord })
     } else if (id === "system") {
       r.push({ kind: "choice", id: "quality", label: "streaming quality", options: ["high", "lossless", "hires"] })
       if (hasKeys && keys.windows) r.push({ kind: "toggle", id: "startWithWindows", label: "start with Windows" })
@@ -130,6 +139,9 @@ Rectangle {
     case "showMonitor": return c.showMonitor || ""
     case "quality": return api && api.status ? api.status.quality : ""
     case "startWithWindows": return keys ? keys.startWithWindows : false
+    case "gameMode": return c.gameMode === "off" || c.gameMode === false ? "off" : "auto"
+    case "hud": return c.hud === "off" || c.hud === false ? "off" : "on"
+    case "hudCorner": return ["top-left", "top-right", "bottom-left", "bottom-right"].indexOf(c.hudCorner) >= 0 ? c.hudCorner : "top-left"
     }
     // the engine's own reading of a flag when it has one, so defaults agree
     if (r.kind === "toggle" && typeof engine[r.id] === "boolean") return engine[r.id]
@@ -189,6 +201,7 @@ Rectangle {
     if (r.kind === "theme") { Color.setTheme(r.id); host.say("theme ╱╱ " + r.label); return }
     if (r.kind === "hotkey") { startEdit(r); return }
     if (r.id === "builder") { Color.openBuilder(); return }
+    if (r.id === "hudShow") { OrpheusGame.showHud(); host.say("HUD ╱╱ shown on the screen in front"); return }
     if (r.id === "openConfig") { Qt.openUrlExternally("file:///" + String(engine.configPath).replace(/\\/g, "/").replace(/^\/+/, "")); return }
     if (r.id === "hotkeysReset") { engine.updateConfig(function(c) { delete c.hotkeys }); host.say("hotkeys back to defaults"); return }
   }
