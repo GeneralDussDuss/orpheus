@@ -394,6 +394,12 @@ def toasts_enabled() -> bool:
 
 def quiet_now() -> str:
     """Why a toast should not show right now, or '' if it may."""
+    # Game mode first, so toasts and the rest of game mode agree: it also covers
+    # borderless games, which Windows' notification state often calls "accepts".
+    # With gameMode off, Windows' own answer below still holds.
+    from . import gamemode
+    if gamemode.active():
+        return "game mode (a fullscreen game is in front)"
     user32 = ctypes.windll.user32
     user32.GetForegroundWindow.restype = c_void_p
     fg = user32.GetForegroundWindow()

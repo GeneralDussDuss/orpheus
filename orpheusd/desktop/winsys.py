@@ -44,6 +44,10 @@ HOTKEYS = [
     ("Win+Alt+Y", WIN_ALT, ord("Y"), "theme:next"),
     ("Win+Alt+=", WIN_ALT, VK_OEM_PLUS, "volume:+5"),
     ("Win+Alt+-", WIN_ALT, VK_OEM_MINUS, "volume:-5"),
+    # The in-game HUD; R, G, B and PrtScn under Win+Alt belong to the Game Bar.
+    ("Win+Alt+N", WIN_ALT, ord("N"), "hud:show"),
+    ("Win+Alt+I", WIN_ALT, ord("I"), "hud:show"),
+    ("Win+Alt+U", WIN_ALT, ord("U"), "hud:show"),
 ]
 
 
@@ -61,6 +65,7 @@ ACTION_LABELS = {
     "theme:next": "next theme",
     "volume:+5": "volume up",
     "volume:-5": "volume down",
+    "hud:show": "show the in-game HUD",
 }
 
 MODS = {"win": MOD_WIN, "super": MOD_WIN, "meta": MOD_WIN, "alt": MOD_ALT,

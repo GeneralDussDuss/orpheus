@@ -106,6 +106,10 @@ def fire(action: str):
     if kind == "widget":
         call("orpheus", "widget", "enabled", arg)
         return
+    if kind == "hud":
+        from . import hud
+        hud.show_now()       # the in-game HUD, now; it never takes focus
+        return
     if kind == "theme":
         from .shims import THEME
         if THEME:
@@ -280,7 +284,9 @@ def main():
     app.setApplicationName("Orpheus")
     app.setQuitOnLastWindowClosed(False)
     if args.write_icon:
-        sys.exit(0 if make_icon().save(args.write_icon) else 1)
+        # A .png at 1024 px: big enough for a Discord Rich Presence art asset.
+        size = 1024 if args.write_icon.lower().endswith(".png") else 256
+        sys.exit(0 if make_icon(size).save(args.write_icon) else 1)
     if not args.shot and hand_over(args.open):
         return
     if sys.stderr is None or "pythonw" in Path(sys.executable).name.lower():
@@ -337,11 +343,21 @@ def main():
             print("orpheus-desktop: hotkeys taken by another app:", ", ".join(hotkeys.failed), file=sys.stderr)
         keep = (tray(app, quit_all, hotkeys), launches)
         keep += (winshell.install(app, fire, keep[0][0], make_icon()),)   # thumbnail buttons, toasts, jump list
+        # Game mode (a fullscreen game in front: widget, stage and toasts step
+        # back), the in-game HUD, and Discord Rich Presence.
+        from . import discord, gamemode, hud
+        game = gamemode.install(app)
+        game.listeners.append(shims.game_changed)
+        keep += (game, hud.install(engine, engine.rootObjects()[0]), discord.install())
         if args.open != "none":
-            QTimer.singleShot(800, lambda: fire(args.open))
+            # Started mid-game (sign-in, a launcher): do not throw a window over it.
+            QTimer.singleShot(800, lambda: gamemode.active() or fire(args.open))
     code = app.exec()
     if hotkeys:
         hotkeys.release()
+    from .discord import PRESENCE
+    for p in PRESENCE:
+        p.stop()          # closing the pipe clears the presence
     if daemon:
         daemon.terminate()
     del keep

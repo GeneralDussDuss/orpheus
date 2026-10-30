@@ -926,3 +926,73 @@ class OrpheusKeys(QObject):
 
     windows = Property(bool, lambda self: sys.platform == "win32", constant=True)
     startWithWindows = Property(bool, _starts, notify=changed)
+
+
+# ---- qs.Commons: game mode, the in-game HUD and Discord, for the QML -------------
+
+QML_IMPORT_NAME = "qs.Commons"
+
+_GAME: list = []               # the OrpheusGame singleton(s), to tell about a change
+
+
+def game_changed(*_):
+    for g in _GAME:
+        g.changed.emit()
+
+
+@QmlElement
+@QmlSingleton
+class OrpheusGame(QObject):
+    """Whether a fullscreen game has the screen (gamemode.py), so the widget and
+    the stage step back, plus the HUD and Discord's state for the settings page.
+    Desktop only: QML checks `typeof OrpheusGame` before using it."""
+    changed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        _GAME.append(self)
+        self._discord = ""
+        t = QTimer(self)                       # Discord's state changes on its own thread
+        t.timeout.connect(self._check_discord)
+        t.start(3000)
+
+    def _check_discord(self):
+        s = self._discord_state()
+        if s != self._discord:
+            self._discord = s
+            self.changed.emit()
+
+    def _active(self):
+        from . import gamemode
+        return gamemode.active()
+
+    def _reason(self):
+        from . import gamemode
+        if not gamemode.DETECTOR:
+            return "not running"
+        d = gamemode.DETECTOR[0]
+        v = d.verdict
+        if not d.active:
+            return "off in config" if v.reason == "off in config" else "no game in front"
+        name = v.exe or v.title
+        return v.reason + (f" · {name}" if name else "")
+
+    def _discord_state(self):
+        from . import discord
+        if not discord.client_id():
+            return "off · set discordClientId in config.json"
+        if not discord.PRESENCE:
+            return "not running"
+        p = discord.PRESENCE[0]
+        if p.pipe:
+            return "connected"
+        return "waiting for Discord" + (f" · {p.last_error}" if p.last_error else "")
+
+    gameMode = Property(bool, _active, notify=changed)
+    reason = Property(str, _reason, notify=changed)
+    discord = Property(str, lambda self: self._discord or self._discord_state(), notify=changed)
+
+    @Slot()
+    def showHud(self):
+        from . import hud
+        hud.show_now()
