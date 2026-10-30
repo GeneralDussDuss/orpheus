@@ -235,7 +235,7 @@ def listen_for_launches(app):
         from PySide6.QtCore import QTimer
         from .shims import IPC_HANDLERS
         if "orpheus" in IPC_HANDLERS:
-            call("orpheus", method)
+            fire(method)   # an IPC method, or control:x from the jump list
         elif tries:
             QTimer.singleShot(250, lambda: deliver(method, tries - 1))
 
@@ -279,6 +279,9 @@ def main():
     # Listen straight away: a second launch during the few seconds the QML takes
     # to load must still find this one.
     launches = None if args.shot else listen_for_launches(app)
+    from . import winshell
+    if not args.shot:
+        winshell.set_app_id()   # before any window exists: taskbar, jump list and toasts key on it
     from PySide6.QtGui import QIcon
     app.setWindowIcon(QIcon(make_icon()))
 
@@ -318,8 +321,9 @@ def main():
         if hotkeys.failed:
             print("orpheus-desktop: hotkeys taken by another app:", ", ".join(hotkeys.failed), file=sys.stderr)
         keep = (tray(app, quit_all, hotkeys), launches)
+        keep += (winshell.install(app, fire, keep[0][0], make_icon()),)   # thumbnail buttons, toasts, jump list
         if args.open != "none":
-            QTimer.singleShot(800, lambda: call("orpheus", args.open))
+            QTimer.singleShot(800, lambda: fire(args.open))
     code = app.exec()
     if hotkeys:
         hotkeys.release()
