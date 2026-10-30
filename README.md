@@ -1,5 +1,7 @@
 <div align="center">
 
+<a href="docs/media/social.png"><img src="docs/media/social.png" alt="ORPHEUS: a hi-res TIDAL player that thinks it's a terminal" width="720"></a>
+
 ```
 █████ ████  ████  █   █ █████ █   █ █████
 █   █ █   █ █   █ █   █ █     █   █ █
@@ -10,19 +12,30 @@
 
 **a hi-res TIDAL player that thinks it's a terminal**
 
+`▌▌ SIDE A: THE IDEA  ·  SIDE B: THE MANUAL  ·  ORPHEUS//WIN EDITION ▐▐`
+
 [![licence](https://img.shields.io/badge/licence-GPL--3.0--or--later-2f5bff?style=flat-square)](LICENSE)
 [![version](https://img.shields.io/badge/version-0.1.0-5b8cff?style=flat-square)](manifest.json)
-[![platform](https://img.shields.io/badge/platform-Omarchy%20%C2%B7%20Windows-84a9ff?style=flat-square)](#-install)
-[![stack](https://img.shields.io/badge/QML%20·%20GLSL%20·%20Python-0a1020?style=flat-square)](#-how-it-fits-together)
+[![platform](https://img.shields.io/badge/platform-Omarchy%20%C2%B7%20Windows-84a9ff?style=flat-square)](#-side-a--the-idea)
+[![stack](https://img.shields.io/badge/QML%20·%20GLSL%20·%20Python-0a1020?style=flat-square)](#03--how-it-fits-together)
 [![stars](https://img.shields.io/github/stars/GeneralDussDuss/orpheus?style=flat-square&color=ffd98a&label=stars)](https://github.com/GeneralDussDuss/orpheus/stargazers)
 
-**[Live demo — the real shaders, running in your browser](https://generaldussduss.github.io/orpheus-site/)**
+**[▶ Live demo — the real shaders, running in your browser](https://generaldussduss.github.io/orpheus-site/)**
 
 </div>
 
+```
+ ORPHEUS BIOS v0.1                       (c) the underworld, all rights reversed
+ CPU ........ OK          MEM ........ OK
+ DSP ........ OK          GLSL ....... 8 STYLES LOADED
+ MPV ........ OK          EQ ......... 10 BANDS, FLAT
+ TIDAL LINK . ▮           MODE ....... HI-RES / LOSSLESS
+ > insert cassette, press play_
+```
+
 ![the player in motion](docs/media/player.gif)
 
-### Install
+### ▶ PRESS PLAY
 
 **Linux ([Omarchy](https://omarchy.org))** — paste this into a terminal:
 
@@ -38,11 +51,33 @@ irm https://raw.githubusercontent.com/GeneralDussDuss/orpheus/main/install.ps1 |
 
 Either one is the whole install. It adds whatever is missing, sets everything up, and
 opens the player when it is done. Run the same line again to update.
-[What they do, and how to undo them.](#-install)
+[What they do, and how to undo them.](#05--boot-sequence--install)
 
 ---
 
-## ╱╱ the idea
+## ▤ TRACKLIST ╱╱ contents
+
+| side | # | track | |
+|:-:|:-:|---|---|
+| **A** | 01 | [the idea](#01--the-idea) | pace, not loudness |
+| **A** | 02 | [what you get](#02--what-you-get) | the feature list |
+| **A** | 03 | [how it fits together](#03--how-it-fits-together) | daemon, plugin, shaders |
+| **A** | 04 | [requirements](#04--requirements) | what you need first |
+| **A** | 05 | [boot sequence](#05--boot-sequence--install) | install, update, uninstall |
+| **B** | 06 | [sign-in](#06--sign-in) | standard and hi-res |
+| **B** | 07 | [keybinds and usage](#07--keybinds-and-usage) | keys, CLI, widget |
+| **B** | 08 | [equalizer](#08--equalizer) | ten bands, headphone corrections |
+| **B** | 09 | [lyrics](#09--lyrics) | synced, cached, never bundled |
+| **B** | 10 | [configuration](#10--configuration) | where things live |
+| `//WIN` | | [liner notes](#-liner-notes--orpheuswin) | what the Windows edition adds |
+| B-sides | | [troubleshooting](#-b-sides--troubleshooting) · [status and known issues](#-b-sides--status-and-known-issues) | the honest list |
+| | | [credits and licence](#-credits--licence) | |
+
+---
+
+## ▶ SIDE A ╱╱ the idea
+
+### 01 · the idea
 
 Most music visualizers react to **loudness**. A kick lands, the bars jump, and that is
 the whole relationship. Orpheus reacts to **pace**: it estimates the tempo of what is
@@ -76,26 +111,7 @@ Colours come from the active Omarchy theme, so it changes when your desktop does
 > download, store or decrypt anything. TIDAL's terms may not permit third-party clients.
 > Whether to use one on your account is your call and your risk.
 
----
-
-## ╱╱ contents
-
-- [What you get](#-what-you-get)
-- [How it fits together](#-how-it-fits-together)
-- [Requirements](#-requirements)
-- [Install](#-install)
-- [Sign-in](#-sign-in)
-- [Keybinds and usage](#-keybinds-and-usage)
-- [Equalizer](#-equalizer)
-- [Lyrics](#-lyrics)
-- [Configuration](#-configuration)
-- [Troubleshooting](#-troubleshooting)
-- [Status and known issues](#-status-and-known-issues)
-- [Licence](#-licence)
-
----
-
-## ╱╱ what you get
+### 02 · what you get
 
 | | |
 |---|---|
@@ -103,7 +119,7 @@ Colours come from the active Omarchy theme, so it changes when your desktop does
 | **The stage** | The same engine fullscreen, with a mini-player. `Super+Ctrl+M`. |
 | **The widget** | A desktop widget that cycles styles inline — no popout. Five layer modes: `top`, `reserve`, `desktop`, `tile`, `float`. |
 | **The bar** | A tiny always-on spectrum in the Omarchy bar. Click for the stage, scroll for the next style. |
-| **Five styles** | Prism, Skyline, Horizon, Tunnel, Orb — plus `mini` for bar-sized surfaces, and a GPU spectrum-history pass the first two build terrain from. |
+| **Eight styles** | Prism, Skyline, Horizon, Orb, Tunnel, Halo, Scope and Nova — plus `mini` for bar-sized surfaces, and a GPU spectrum-history pass that Prism and Horizon build terrain from. |
 | **Hi-res** | Up to FLAC hi-res through the PKCE sign-in, lossless otherwise. The player shows which you got. |
 | **More than TIDAL** | Section `8` searches YouTube and SoundCloud through `yt-dlp`, and anime through `ani-cli` (on Windows, `c` opens Curd). Videos play in their own window; YouTube and SoundCloud also play as audio through the same queue, equalizer and visualizer. None of it needs a TIDAL sign-in. |
 | **Desktop integration** | MPRIS, so your bar, your media keys and the rest of the desktop see the track. Favourites from anywhere in the UI. The queue and position survive a service restart. |
@@ -112,7 +128,7 @@ Colours come from the active Omarchy theme, so it changes when your desktop does
 
 ---
 
-## ╱╱ how it fits together
+### 03 · how it fits together
 
 Two halves that talk over a loopback socket.
 
@@ -125,7 +141,7 @@ Two halves that talk over a loopback socket.
                  │  · tidalapi session      │  :47837│                      │
                  │  · mpv over JSON IPC     │        │  · Library / Stage   │
                  │  · MPRIS over dbus-next  │        │  · Widget / BarWidget│
-                 │  · queue + resume.json   │        │  · 7 fragment shaders│
+                 │  · queue + resume.json   │        │  · 8 style shaders│
                  └───┬──────────────────────┘        └──────────▲───────────┘
                      │                                          │
                     mpv ──► PipeWire ──────────► cava ──────────┘
@@ -152,7 +168,7 @@ breakbeat locking to half-time.
 
 ---
 
-## ╱╱ requirements
+### 04 · requirements
 
 - **Linux with [Omarchy](https://omarchy.org)** (Hyprland and its Quickshell-based shell),
   where Orpheus is a shell plugin, **or Windows 10 / 11**, where the same player runs as a
@@ -172,11 +188,9 @@ breakbeat locking to half-time.
 Orpheus has been run on very few machines so far (Arch-based Omarchy, Hyprland 0.56). If
 you get it working somewhere else, or it breaks, an issue is genuinely useful.
 
----
+### 05 · boot sequence ╱╱ install
 
-## ╱╱ install
-
-### Linux (Omarchy)
+#### Linux (Omarchy)
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/GeneralDussDuss/orpheus/main/install.sh | bash
@@ -211,7 +225,7 @@ undoes all of it, keeping your sign-in and settings in `~/.local/state/orpheus`.
 
 The shell does not hot-reload plugins, so after changing any QML, run `omarchy restart shell`.
 
-### Windows
+#### Windows
 
 ```powershell
 irm https://raw.githubusercontent.com/GeneralDussDuss/orpheus/main/install.ps1 | iex
@@ -237,7 +251,7 @@ this, either way keeping your sign-in and settings in `%LOCALAPPDATA%\Orpheus\st
 Windows support is new: it is tested on every change in CI, but has run on few real
 machines so far. If something is off, an issue helps a lot.
 
-### Rebuilding the shaders
+#### Rebuilding the shaders
 
 `shaders/*.frag` are compiled to `.qsb` by `build-shaders.sh`, which inlines
 `shaders/_common.glsl` at each `//#common` line and runs `qsb --qt6`.
@@ -256,7 +270,11 @@ visualizer renders black.
 
 ---
 
-## ╱╱ sign-in
+## ◀ SIDE B ╱╱ the manual
+
+*Flip the tape. Everything you press, tune and configure.*
+
+### 06 · sign-in
 
 Press `Ctrl+Shift+O` (once bound, see below), or run `orpheus login`. The sign-in page
 offers two flows:
@@ -270,9 +288,7 @@ offers two flows:
 The page shows `signed in as <user> · hi-res unlocked` when it worked. The session is
 kept in `~/.local/state/orpheus/tidal-session.json` — treat that file as a credential.
 
----
-
-## ╱╱ keybinds and usage
+### 07 · keybinds and usage
 
 The installer binds these through `hypr/orpheus.lua`. `Super+Shift+M` is Omarchy's own
 music key (Spotify by default), and Orpheus takes it over. To bring your own keys
@@ -289,9 +305,9 @@ instead, put `orpheus_bindings = false` in `hyprland.lua` above the
 And in the player: `e` opens the equalizer, `L` the lyrics, `y` copies a link to
 whatever the cursor is on.
 
-In the player: `v` cycles the visualizer plane, `V` opens the stage, `1`–`7` switch tabs
-(home, search, mixes, playlists, albums, tracks, artists), `↵` plays, `space` pauses,
-`f` favourites, `/` searches, `q` closes.
+In the player: `v` cycles the visualizer plane, `V` opens the stage, `1`–`9` switch sections
+(home, search, mixes, playlists, albums, tracks, artists, video, stats), `↵` plays, `space` pauses,
+`f` favourites, `/` searches, `,` opens settings, `Ctrl+K` the command palette, `?` the key sheet, `q` closes.
 
 **Sharing.** `y` copies a TIDAL link to the clipboard — for the row under the cursor,
 not necessarily what is playing, since what you want to send is usually what you are
@@ -335,9 +351,7 @@ Or call the shell directly — `omarchy-shell orpheus <method>` — with methods
 placement widget`. Note the widget's visualizer is `widget viz <style>`; there is no
 `widgetViz`.
 
----
-
-## ╱╱ equalizer
+### 08 · equalizer
 
 Ten bands at 31, 62, 125, 250, 500&nbsp;Hz and 1, 2, 4, 8, 16&nbsp;kHz, ±12&nbsp;dB in half-decibel
 steps. The two end bands are shelves rather than peaks, because a peaking filter at 31&nbsp;Hz
@@ -379,7 +393,7 @@ summarising the ten bands, accented while a filter is live and a flat dim line w
 not, so you can tell at a glance whether something is shaping the sound. Left click opens
 the pane, right click bypasses without leaving the page.
 
-### Headphone corrections
+#### Headphone corrections
 
 Orpheus ships **no measurement data**, deliberately. The obvious source is
 [AutoEq](https://github.com/jaakkopasanen/AutoEq), whose MIT licence covers its code and
@@ -406,9 +420,7 @@ where coupler measurements are reliable, so the 16&nbsp;kHz band often comes out
 that is an artefact of the fit rather than anything you would hear. The warning is advisory —
 your data is imported as written.
 
----
-
-## ╱╱ lyrics
+### 09 · lyrics
 
 `L` in the player, or `omarchy-shell orpheus lyrics`. Synced lyrics scroll with the track,
 the current line lit, lines already sung dimmed behind it.
@@ -425,9 +437,7 @@ have no lyrics anywhere and asking two services again on every play is rude to b
 Community LRC files are often a fraction of a second out. `[` and `]` nudge the sync a
 quarter second at a time and `\` resets it.
 
----
-
-## ╱╱ configuration
+### 10 · configuration
 
 Little is configurable, and most of it is by hand.
 
@@ -444,7 +454,29 @@ Little is configurable, and most of it is by hand.
 
 ---
 
-## ╱╱ troubleshooting
+## ✦ LINER NOTES ╱╱ ORPHEUS//WIN
+
+*Recorded on Windows 10 / 11. Same daemon, same QML as Linux, plus a lot of host.* The
+Windows edition (codename **`ORPHEUS//WIN`**) is a PySide6 tray app that loads the player and
+supplies stand-ins for the Quickshell and Omarchy pieces. The pressing:
+
+| # | track | what it adds |
+|:-:|---|---|
+| 01 | **Themes** | 10 originals (acid-rave, aurora, cassette, chrome-heart, eurydice, lyre, styx, sub-bass, underworld, vinyl) and 23 [Omarchy](https://omarchy.org) palettes, in the tray's Theme menu. A **theme builder** turns three colours (background, text, accent) into a whole palette, with a dice roll, and saves it to `~/.config/orpheus/themes`. **From Album Art** pulls a palette from the cover of whatever is playing. |
+| 02 | **Eight shader visualizers** | Prism, Skyline, Horizon, Orb, Tunnel, Halo, Scope, Nova. Feedback **trails** (off / subtle / full) and **bloom** (off / subtle / full) are settings. A **director** reads the song's structure (intro, build, drop, breakdown, steady): style changes land on the **downbeat** with a transition, and it can switch style when a drop lands. |
+| 03 | **The show** | A fullscreen **show**, a **wallpaper mode** that sits behind your desktop icons, and **kinetic lyrics** over the stage (entrance: wave, rain or plain). |
+| 04 | **Only Orpheus** | The visualizers capture the app's own audio through **WASAPI process loopback** (Windows 10 2004 and later), so a game or a call in the background does not drive them. Where that is missing, they fall back to `cava` on the whole output. |
+| 05 | **Controls** | Settings (`,`), a **Ctrl+K command palette**, a `?` key sheet, and **rebindable global hotkeys**: `Win+Alt+M` player, `Win+Alt+V` visualizer, `Win+Alt+P` mini player, `Win+Alt+Space` play / pause, `Win+Alt+←` / `→` previous / next, `Win+Alt+N` the HUD, and more (the `?` sheet lists the ones your run registered). |
+| 06 | **Windows shell** | Taskbar **thumbnail buttons** (previous, play / pause, next), **toasts** on track change, a **jump list**, and a frameless window drawn entirely by the TUI. |
+| 07 | **Game mode** | Notices a fullscreen game, stands the widget, stage and toasts down, and brings them back afterwards. An **in-game HUD** (cover, title, a mini spectrum) slides in on track changes, click-through and never taking focus. **Discord Rich Presence** with your own application ID. |
+| 08 | **Listening** | **Endless radio** when the queue runs out, **crossfade** (2 to 12 s, or gapless), **listening stats** (week, month, year, all time, wrapped; key `9`), **scrobbling** to ListenBrainz and Last.fm, a **sleep timer**, and a **LAN phone remote** behind a pairing token (QR code in settings; off by default). The queue survives restarts. |
+| 09 | **Locked door** | The daemon refuses cross-site and DNS-rebinding requests to its loopback API, so a web page you visit cannot drive it. |
+
+The developer guide is [docs/windows.md](docs/windows.md).
+
+---
+
+## ☾ B-SIDES ╱╱ troubleshooting
 
 - **Nothing happens on the keybind.** Check the plugin is loaded:
   `omarchy-shell orpheus status`. If it errors, the plugin symlink or the shell restart
@@ -477,7 +509,7 @@ Little is configurable, and most of it is by hand.
 
 ---
 
-## ╱╱ status and known issues
+## ☾ B-SIDES ╱╱ status and known issues
 
 Orpheus is a personal project. It has been run on one desktop, by one person, for a
 couple of weeks. It works well enough that it is the author's daily player — and it has
@@ -514,7 +546,7 @@ If you like it, a ⭐ is how the author finds out anyone else is running it.
 
 ---
 
-## ╱╱ licence
+## ♪ CREDITS ╱╱ licence
 
 **[GPL-3.0-or-later](LICENSE).** It sits naturally on this stack: both Quickshell and
 tidalapi are LGPL-3, so there is no compatibility friction.

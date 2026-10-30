@@ -1,11 +1,13 @@
-# Working on the Windows build
+# ╱╱ ORPHEUS//WIN ╱╱ working on the Windows build
+
+> *Dev guide, the roadie's copy. The user-facing liner notes live in the [README](../README.md#-liner-notes--orpheuswin).*
 
 Orpheus on Windows is the same daemon and the same QML as on Linux. What differs is
 the host: on Linux the QML runs as a Quickshell plugin inside the Omarchy shell; on
 Windows a small PySide6 app (`orpheusd/desktop/`) loads it, with stand-ins for the
 Quickshell and Omarchy types it uses.
 
-## Who owns what
+## ╱╱ who owns what
 
 Two people (or sessions) work on Orpheus at once, one per OS, all on `main`.
 
@@ -21,7 +23,7 @@ small, and branch on the OS instead of changing behaviour for both
 The Windows workflow runs on every push that touches the daemon, the QML, the shaders
 or the installer; check it went green. Linux is checked by hand on Omarchy.
 
-## Running it from a checkout
+## ╱╱ running it from a checkout
 
 Do not work in `%LOCALAPPDATA%\Orpheus\app`: that is the installed copy, a shallow
 clone that `install.ps1` updates and the uninstaller deletes. Use your own clone:
@@ -46,7 +48,7 @@ config somewhere else; `ORPHEUS_MPV` points at a specific `mpv.exe`.
 Logs: `%LOCALAPPDATA%\Orpheus\state\desktop.log` and `orpheusd.log`. Under `pythonw`
 there is no console, so everything goes there.
 
-## How the pieces fit
+## ╱╱ how the pieces fit
 
 - `orpheusd/system.py`: per-OS folders (`%LOCALAPPDATA%\Orpheus\{state,cache}`), finding
   mpv and Curd where winget and other installers put them (a fresh install is not on
@@ -71,7 +73,7 @@ there is no console, so everything goes there.
   `%APPDATA%\Curd\curd.exe`, not on PATH); `c` in section 8 opens it in a new console,
   where it plays through the mpv it bundles. ani-cli is a bash script and does not run.
 
-## Gaming: game mode, the HUD, Discord
+## ╱╱ gaming: game mode, the HUD, Discord
 
 - **Game mode** (`orpheusd/desktop/gamemode.py`): every 2 s it asks
   `SHQueryUserNotificationState` (D3D fullscreen, busy, presentation) and looks at the
@@ -118,7 +120,7 @@ there is no console, so everything goes there.
   Settings ▸ behaviour ▸ gaming shows what game mode sees; settings ▸ integrations shows
   Discord's state.
 
-## Gotchas already paid for
+## ╱╱ gotchas already paid for
 
 - Windows refuses to replace a file Qt is watching: `FileView.setText` stops watching,
   retries `os.replace`, then watches again.
@@ -132,7 +134,7 @@ there is no console, so everything goes there.
 - On a CI runner Win+Alt+M was already taken. The tray only lists hotkeys that actually
   registered.
 
-## Still unproven on a real PC
+## ╱╱ still unproven on a real PC
 
 Transport glyphs (icons vs boxes), cava following the music, the video window, whether
 Win+Alt+M is free, media keys and the overlay, and Curd finding streams (the released
