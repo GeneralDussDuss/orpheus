@@ -16,6 +16,7 @@ Rectangle {
   color: Color.background
   focus: true
 
+  function signOut() { api.post("/logout") }
   function linkSignIn() {
     hires = false
     api.post("/login/link", {}, function(ok, d) { if (ok && d.url) Qt.openUrlExternally(d.url) })
@@ -74,7 +75,7 @@ Rectangle {
     if (!api || !api.online) return
     if (e.text === "l") { linkSignIn(); e.accepted = true }
     else if (e.text === "h") { hiresSignIn(); e.accepted = true }
-    else if (e.text === "o" && api.signedIn) { api.post("/logout"); e.accepted = true }
+    else if (e.text === "o" && api.signedIn) { signOut(); e.accepted = true }
     else if (e.key === Qt.Key_Escape && api.signedIn) { host.back(); e.accepted = true }
   }
   Component.onCompleted: forceActiveFocus()
@@ -98,6 +99,13 @@ Rectangle {
       // On Windows orpheus-desktop starts the daemon itself, so a restart of the app is the fix.
       Text { text: Qt.platform.os === "windows" ? "❯ quit Orpheus from the tray and open it again"
                                                : "❯ systemctl --user start orpheusd"; font.family: host.family; font.pixelSize: Style.font.body; color: host.dim }
+      // it is already trying again on its own; say so, so the page isn't a dead end
+      Text {
+        topPadding: host.ch * 0.4
+        textFormat: Text.StyledText
+        text: '<font color="' + Tui.hex(host.accentText) + '">' + Tui.spinner(host.clock) + '</font>  reconnecting by itself'
+        font.family: host.family; font.pixelSize: Style.font.caption; color: host.dim
+      }
     }
 
     // Signed in (account page)
@@ -105,11 +113,30 @@ Rectangle {
       visible: !!pane.api && pane.api.online && pane.api.signedIn
       spacing: host.ch * 0.3
       Text {
-        text: "● signed in" + (pane.login.user ? " as " + pane.login.user : "") + (pane.login.hires ? " · hi-res unlocked" : " · lossless")
+        // masked like the rail's account line: this page ends up in screenshots too
+        text: "● signed in" + (pane.login.user ? " as " + host.maskAccount(pane.login.user) : "") + (pane.login.hires ? " · hi-res unlocked" : " · lossless")
         font.family: host.family; font.pixelSize: Style.font.body; color: host.fg
       }
-      Text { visible: !pane.login.hires; text: "[h] sign in again for hi-res (24-bit)"; font.family: host.family; font.pixelSize: Style.font.body; color: host.dim }
-      Text { text: "[o] sign out    [esc] back"; font.family: host.family; font.pixelSize: Style.font.body; color: host.dim }
+      Text {
+        visible: !pane.login.hires
+        text: "[h] sign in again for hi-res (24-bit)"
+        font.family: host.family; font.pixelSize: Style.font.body; color: him.containsMouse ? host.accentText : host.dim
+        MouseArea { id: him; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: pane.hiresSignIn() }
+      }
+      Row {
+        spacing: host.cw * 4
+        Text {
+          text: "[o] sign out"
+          font.family: host.family; font.pixelSize: Style.font.body; color: om.containsMouse ? host.accentText : host.dim
+          MouseArea { id: om; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: pane.signOut()
+                      TuiTip { text: "sign out of TIDAL"; key: "o" } }
+        }
+        Text {
+          text: "[esc] back"
+          font.family: host.family; font.pixelSize: Style.font.body; color: bm.containsMouse ? host.accentText : host.dim
+          MouseArea { id: bm; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: host.back() }
+        }
+      }
     }
 
     // Signed out

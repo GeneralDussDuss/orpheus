@@ -135,6 +135,18 @@ FloatingWindow {
   }
   readonly property real cw: fm.advanceWidth("M")
   readonly property real ch: fm.height
+  // `cw` is the layout cell (margins, widths) and stays as the panes were
+  // tuned. It is NOT the width of a printed character: advanceWidth() is a
+  // call, so its binding never sees FontMetrics' font arrive, and it measures
+  // the default font (10 px against JetBrains Mono's 8 at 13 px). Anything
+  // that counts characters to fill a width -- the track table, the seek
+  // bar -- counts in `colW`, measured the way the text is drawn. That is
+  // what left a fifth of every row empty, and a third on an ultrawide.
+  TextMetrics { id: bodyCells; font.family: Style.font.family; font.pixelSize: Style.font.body; text: "MMMMMMMMMM" }
+  TextMetrics { id: capCells; font.family: Style.font.family; font.pixelSize: Style.font.caption; text: "MMMMMMMMMM" }
+  readonly property real colW: bodyCells.advanceWidth > 0 ? bodyCells.advanceWidth / 10 : cw
+  readonly property real capW: capCells.advanceWidth > 0 ? capCells.advanceWidth / 10 : cw * 0.85
+  function colsIn(px) { return Math.max(1, Math.floor(px / colW)) }
   readonly property string family: Style.font.family
   readonly property color bg: Color.background
   readonly property color fg: Tui.ensure(Color.foreground, bg, 7)
@@ -142,6 +154,7 @@ FloatingWindow {
   readonly property color accent: Tui.ensure(Color.accent, bg, 3)
   readonly property color accentText: Tui.ensure(Color.accent, bg, 4.5)
   readonly property color cursorFill: Tui.alpha(Color.accent, 0.16)
+  readonly property color pressFill: Tui.alpha(Color.accent, 0.3)     // under a held button: the click landed
   // Glow, only where light means something: the play key on the beat, the
   // playhead, the playing row, the focused pane, and the cover's own light.
   readonly property real bloom: Tui.bloom(engine)
@@ -152,9 +165,12 @@ FloatingWindow {
     var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60
     return (h ? h + ":" + (m < 10 ? "0" : "") : "") + m + ":" + (r < 10 ? "0" : "") + r
   }
+  // Fit `s` to n cells. A cut keeps one blank cell at its end, so a cut
+  // column never runs into the next ("Everything In Its R…Radiohead").
   function pad(s, n) {
     s = String(s || "")
-    if (s.length > n) return s.slice(0, Math.max(0, n - 1)) + "…"
+    if (n <= 0) return ""
+    if (s.length >= n) return s.slice(0, Math.max(0, n - 2)) + (n >= 2 ? "… " : " ")
     while (s.length < n) s += " "
     return s
   }
@@ -165,14 +181,20 @@ FloatingWindow {
   function trackCols(cols) {
     var rest = cols - 4 - 10
     var showAlbum = page.kind !== "album" && rest > 60
+    // On a wide window the columns stop growing (the table stays left, the
+    // time beside it) rather than strewing one row across an ultrawide.
+    rest = Math.min(rest, showAlbum ? 150 : 110)
     var tw = Math.floor(rest * (showAlbum ? 0.45 : 0.6))
     var aw = Math.floor(rest * (showAlbum ? 0.3 : 0.4))
     return { tw: tw, aw: aw, bw: rest - tw - aw, album: showAlbum }
   }
+  // The explicit mark, one cell plus a space. It sits outside pad(): it is a
+  // surrogate pair, two units of .length for one cell on screen.
+  readonly property string explicitMark: "󰬌 "
   function trackLine(it, num, cols) {
     var c = trackCols(cols)
     var heart = api && api.isLiked("track", it.id) ? "󰋑 " : "  "
-    return num + " " + heart + pad((it.explicit ? "🅴 " : "") + it.title, c.tw - 2) + pad(artists(it.artists), c.aw)
+    return num + " " + heart + (it.explicit ? win.explicitMark : "") + pad(it.title, c.tw - 2 - (it.explicit ? 2 : 0)) + pad(artists(it.artists), c.aw)
          + pad(c.album ? it.album : "", c.bw) + (it.hires ? " HR " : "    ") + lpad(clockText(it.duration), 6)
   }
   function headerLine(cols) {
@@ -207,7 +229,7 @@ FloatingWindow {
   // A video row. The same line serves a YouTube result, a series and an
   // episode, because the section never learns which provider answered.
   function mediaLine(it, cols) {
-    var glyph = it.kind === "show" ? "❖" : (it.live ? "◉" : "▶")
+    var glyph = it.kind === "show" ? "◆" : (it.live ? "◉" : "▶")
     var right = it.kind === "show" ? (it.episodes ? it.episodes + " episodes" : "series")
               : it.live ? "LIVE" : clockText(it.duration)
     var sub = it.kind === "show" ? "" : (artists(it.artists) || (it.ep ? "episode " + it.ep : ""))
@@ -353,7 +375,48 @@ FloatingWindow {
     return -1
   }
 
+  // A page that could not load says so, in words, with a way to try again
+  // (⏎ or a click), instead of passing for an empty one.
+  property string loadError: ""
+  function failed(d, code, who) {
+    var why = code === 0 ? "the player service didn't answer"
+            : code === 401 ? "sign in to TIDAL first"
+            : (typeof d === "string" && d.trim() && d.length < 90 && !/^\d{3}\b|<html/i.test(d.trim())) ? d.trim().toLowerCase()
+            : (who || "TIDAL") + " didn't answer" + (code > 0 ? " (" + code + ")" : "")
+    rows = []; pageTracks = []; loading = false
+    loadError = why
+  }
+  function retry() { load() }
+
+  // An empty page says what would fill it, and offers somewhere to go.
+  function emptyText() {
+    var p = page
+    if (videoPage)
+      return p.show ? "no episodes"
+           : vprovider === "anime" && !providers.anime
+             ? (providers.curd ? "c opens curd · search, watch and track there" : "anime needs ani-cli or curd")
+           : vquery ? "nothing found on " + vprovider
+           : "type to search " + vprovider + (vprovider === "soundcloud" ? " · ⏎ listen"
+                                            : vprovider === "anime" ? " · ⏎ watch · or c for curd" : " · ⏎ watch · a listen")
+    if (p.type === "search") return query ? "nothing found for “" + query.trim() + "”" : "type to search · ⏎ play · esc back"
+    if (p.type === "home") return "your library is empty · liked albums, playlists and mixes show up here"
+    if (p.type === "detail") return "this " + p.kind + " is empty"
+    if (p.type === "collection") return {
+      mixes: "no mixes yet · TIDAL makes them as you listen",
+      playlists: "no playlists yet",
+      albums: "no liked albums yet · press f on any album to like it",
+      tracks: "no liked tracks yet · press f on any track to like it",
+      artists: "no followed artists yet"
+    }[p.what] || "nothing here yet"
+    return "nothing here yet"
+  }
+  function emptyActions() {
+    if (videoPage || page.type === "search") return []
+    return [{ k: "/", l: "search", run: function() { go({ type: "search", title: "search" }) }, tip: "search TIDAL" }]
+  }
+
   function load() {
+    loadError = ""
     // Settings need no TIDAL session and nothing loaded behind them.
     if (page.type === "settings" || page.type === "stats") { rows = []; loading = false; return }
     // The video section needs no TIDAL session: YouTube and ani-cli are not
@@ -362,28 +425,37 @@ FloatingWindow {
     rows = []; pageData = null; pageTracks = []; loading = true
     var p = page
     if (p.type === "home") {
-      var got = {}
+      var got = {}, bad = 0, why = null
       var done = function() {
         if (got.mixes === undefined || got.playlists === undefined || got.albums === undefined || page !== p) return
+        // all three failing is an error; one failing still shows the rest
+        if (bad === 3) { failed(why.d, why.code); return }
         setRows(section("mixes", got.mixes.slice(0, 8)).concat(section("playlists", got.playlists.slice(0, 8)), section("albums", got.albums.slice(0, 10))))
       }
       var kinds = ["mixes", "playlists", "albums"]
       for (var k = 0; k < kinds.length; k++) {
         (function(w) {
-          api.get("/collection/" + w, function(ok, d) { got[w] = ok && Array.isArray(d) ? d : []; done() })
+          api.get("/collection/" + w, function(ok, d, code) {
+            if (!ok) { bad++; why = { d: d, code: code } }
+            got[w] = ok && Array.isArray(d) ? d : []; done()
+          })
         })(kinds[k])
       }
     } else if (p.type === "search") {
       runSearch()
       searchInput.forceActiveFocus()
     } else if (p.type === "collection") {
-      api.get("/collection/" + p.what, function(ok, d) { if (page === p) setRows(section("", ok ? d : [])) })
+      api.get("/collection/" + p.what, function(ok, d, code) {
+        if (page !== p) return
+        if (!ok) failed(d, code); else setRows(section("", d))
+      })
     } else if (p.type === "video") {
       loadVideo(p)
     } else if (p.type === "detail") {
-      api.get("/" + p.kind + "/" + p.id, function(ok, d) {
+      api.get("/" + p.kind + "/" + p.id, function(ok, d, code) {
         if (page !== p) return
-        pageData = ok ? d : { title: "couldn't load this", items: [] }
+        if (!ok || !d) { failed(d, code); return }
+        pageData = d
         var r = section(p.kind === "artist" ? "top tracks" : "", pageData.items || [])
         if (p.kind === "artist") r = r.concat(section("albums", pageData.albums), section("singles & eps", pageData.singles))
         setRows(r)
@@ -395,7 +467,7 @@ FloatingWindow {
     if (p.show) {
       api.animeEpisodes(p.show.query, p.show.index, function(ok, d) {
         if (page !== p) return
-        if (!ok) { setRows([]); say(errText(d, "couldn't list the episodes")); return }
+        if (!ok) { failed(d, arguments[2], vprovider); return }
         setRows(section(p.show.title, (d && d.results) || []))
       })
       return
@@ -406,7 +478,7 @@ FloatingWindow {
     var prov = vprovider
     var answer = function(ok, d) {
       if (page !== p || prov !== vprovider || q !== vquery.trim()) return
-      if (!ok) { setRows([]); say(errText(d, "that search went nowhere")); return }
+      if (!ok) { failed(d, arguments[2], prov); return }
       setRows(section(prov, (d && d.results) || []))
     }
     // Without ani-cli (Windows) anime is Curd's alone; the empty page says so.
@@ -439,12 +511,13 @@ FloatingWindow {
 
   function runSearch() {
     var q = query.trim()
+    loadError = ""
     if (!q) { setRows([]); return }
     loading = true
     var p = page
-    api.get("/search?q=" + encodeURIComponent(q), function(ok, d) {
+    api.get("/search?q=" + encodeURIComponent(q), function(ok, d, code) {
       if (page !== p || q !== query.trim()) return
-      if (!ok) { setRows([]); return }
+      if (!ok || !d) { failed(d, code); return }
       setRows(section("top", d.top ? [d.top] : []).concat(
         section("tracks", d.tracks.slice(0, 10)), section("albums", d.albums.slice(0, 8)),
         section("artists", d.artists.slice(0, 6)), section("playlists", d.playlists.slice(0, 6))))
@@ -690,8 +763,9 @@ FloatingWindow {
           items: [{ k: "v", l: "viz", run: function() { win.engine.cycleRailViz(1) }, tip: "cycle the visualizer by the art" },
                   { k: "^K", l: "commands", run: function() { cmdPalette.open() }, tip: "every action, by name" },
                   { k: "?", l: "keys", run: function() { keysSheet.open() }, tip: "every key and mouse gesture" },
-                  { k: "right-click", l: "for more" },
-                  { k: "✕", l: "", run: function() { win.dismissHint() }, tip: "got it, don't show this again", tipKey: "" }]
+                  // the least needed line goes first when the window is narrow
+                  ].concat(statusLine.width / win.colW > 110 ? [{ k: "right-click", l: "for more" }] : []).concat([
+                  { k: "✕", l: "", run: function() { win.dismissHint() }, tip: "got it, don't show this again", tipKey: "" }])
         }
       }
       Text {
@@ -726,9 +800,11 @@ FloatingWindow {
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         keyColor: win.accentText; labelColor: win.dim; hoverColor: win.accentText
-        items: [{ k: "^K", l: "commands", run: function() { cmdPalette.open() }, tip: "every action, by name" },
-                { k: "?", l: "keys", run: function() { keysSheet.open() }, tip: "every key and mouse gesture" },
-                { k: "q", l: "close", run: function() { win.engine.libraryOpen = false }, tip: "close the player (music keeps playing)" }]
+        // While the first-run tip is up it already offers ^K and ?, so this
+        // keeps only close: printed twice, they collided on narrow windows.
+        items: (firstHint.visible ? [] : [{ k: "^K", l: "commands", run: function() { cmdPalette.open() }, tip: "every action, by name" },
+                                          { k: "?", l: "keys", run: function() { keysSheet.open() }, tip: "every key and mouse gesture" }])
+               .concat([{ k: "q", l: "close", run: function() { win.engine.libraryOpen = false }, tip: "close the player (music keeps playing)" }])
       }
     }
 
@@ -758,12 +834,15 @@ FloatingWindow {
             font.pixelSize: Style.font.body
             font.bold: on
             color: on || hot ? win.accentText : win.dim
+            Behavior on color { ColorAnimation { duration: Tui.HOVER; easing.type: Easing.InOutCubic } }
+            // hover fades the fill in; a press deepens it at once
             Rectangle {
               z: -1
-              visible: parent.hot && !parent.on
               anchors.fill: parent
               anchors.leftMargin: -win.cw * 0.5
-              color: win.cursorFill
+              color: navMouse.pressed ? win.pressFill : win.cursorFill
+              opacity: navMouse.pressed || (parent.hot && !parent.on) ? 1 : 0
+              Behavior on opacity { enabled: !navMouse.pressed; NumberAnimation { duration: Tui.HOVER; easing.type: Easing.InOutCubic } }
             }
             Text {
               anchors.right: parent.right
@@ -784,6 +863,8 @@ FloatingWindow {
         // the sign-in allows. A device-link sign-in tops out at lossless, so that
         // case links to the hi-res sign-in.
         Text {
+          width: parent.width
+          elide: Text.ElideRight
           readonly property bool capped: !!(win.api && win.api.signedIn && !win.api.login.hires)
           text: (win.qualityText(win.st.stream) || "—").toLowerCase() + (capped ? "  · get hi-res" : "")
           font.family: win.family; font.pixelSize: Style.font.caption
@@ -816,17 +897,32 @@ FloatingWindow {
       y: statusLine.height
       width: (side.visible ? side.x - win.cw : parent.width) - x
       height: nav.height
-      title: win.page.type === "detail" ? win.page.kind + " · " + (win.pageData ? win.pageData.title : win.page.title || "")
+      title: loginCover.active ? (!win.api || !win.api.online ? "offline" : win.api.signedIn ? "account" : "sign in")
+           : win.page.type === "detail" ? win.page.kind + " · " + (win.pageData ? win.pageData.title : win.page.title || "")
            : (win.page.title || win.page.type)
       hintItems: {
         function h(k, l, run, tip) { return { k: k, l: l, run: run, tip: tip } }
         var act = function() { list.forceActiveFocus(); win.activate(list.currentIndex) }
+        // The sign-in cover's own keys, not the list's it hides.
+        if (loginCover.active) {
+          var lp = loginCover.item
+          if (!win.api || !win.api.online || !lp) return []
+          if (win.api.signedIn)
+            return [h("o", "sign out", function() { lp.signOut() }, "sign out of TIDAL"), h("esc", "back", win.back)]
+          return [h("l", "link sign-in", function() { lp.linkSignIn() }, "sign in through a link in the browser"),
+                  h("h", "hi-res sign-in", function() { lp.hiresSignIn() }, "sign in for 24-bit")]
+        }
+        if (win.loadError) return [h("⏎", "retry", win.retry, "try loading it again"), h("esc", "back", win.back)]
         if (win.videoPage)
           return win.page.show ? [h("⏎", "watch", act), h("esc", "back", win.back)]
                : win.vprovider === "soundcloud" ? [h("⇥", "provider", win.nextProvider, "next provider"), h("⏎", "listen", act)]
                : [h("⇥", "provider", win.nextProvider, "next provider"), h("⏎", "watch", act),
                   h("a", "listen", win.listenHere, "play the sound through the music player"), h("c", "curd", win.openCurd, "hand over to curd")]
-        if (win.page.type === "settings") return [h("⇥", "section"), h("h/l", "change"), h("⏎", "set")]
+        // eq and lyrics print their own keys inside; up here only the way out
+        if (win.page.type === "eq" || win.page.type === "lyrics") return [h("esc", "back", win.back)]
+        if (win.page.type === "settings")
+          return [h("/", "search", function() { if (settingsLoader.item) settingsLoader.item.startSearch() }, "find a setting"),
+                  h("d", "default", null, "reset the selected setting"), h("esc", "back", win.back)]
         if (win.page.type === "stats") return [h("⇥", "range"), h("w", "wrapped")]
         if (win.page.type === "search") return [h("/", "search", function() { searchInput.forceActiveFocus() }), h("⏎", "play", act)]
         return [h("⏎", "open", act, "open or play the row"), h("a", "next", function() { win.queueItem(win.cursorItem(), true) }, "play the row next"),
@@ -841,15 +937,17 @@ FloatingWindow {
       // Detail header: art + title + actions.
       Item {
         id: header
-        visible: win.page.type === "detail" || win.page.type === "search" || win.videoPage
+        // a detail page that failed has no header to show: the error says it
+        readonly property bool detail: win.page.type === "detail" && win.loadError === ""
+        visible: detail || win.page.type === "search" || win.videoPage
         width: parent.width
-        height: win.page.type === "detail" ? win.ch * 9
+        height: detail ? win.ch * 9
               : win.page.type === "search" ? win.ch * 2
               : win.videoPage ? (win.page.show ? 0 : win.ch * 3.4) + (win.watching ? win.ch * 2.1 : 0)
               : 0
 
         Row {
-          visible: win.page.type === "detail"
+          visible: header.detail
           spacing: win.cw * 2
           Rectangle {
             width: win.ch * 8; height: width
@@ -870,7 +968,10 @@ FloatingWindow {
               font.family: win.family; font.pixelSize: Style.font.caption; font.letterSpacing: 2; color: win.dim
             }
             Text {
-              text: Tui.decode(win.pageData ? win.pageData.title : (win.page.title || ""), win.pageData ? 1 : 0.2, 3)
+              // the name we came in with, dim, until the page lands
+              text: win.pageData ? win.pageData.title : (win.page.title || "")
+              opacity: win.pageData ? 1 : 0.5
+              Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Easing.InOutCubic } }
               font.family: win.family; font.pixelSize: Style.font.body + 8; font.bold: true; color: win.fg
               width: mainBox.width - win.ch * 8 - win.cw * 8
               elide: Text.ElideRight
@@ -878,13 +979,16 @@ FloatingWindow {
             Text {
               color: win.dim
               font.family: win.family; font.pixelSize: Style.font.body
-              text: !win.pageData ? "loading…"
+              text: !win.pageData ? Tui.spinner(win.clock) + " loading…"
                 : win.page.kind === "album" ? win.artists(win.pageData.artists) + (win.pageData.year ? " · " + win.pageData.year : "") + " · " + (win.pageData.items || []).length + " tracks · " + win.clockText(win.pageData.duration)
-                : win.page.kind === "artist" ? "artist"
+                : win.page.kind === "artist" ? (win.pageData.items || []).length + " top tracks · "
+                                               + ((win.pageData.albums || []).length + (win.pageData.singles || []).length) + " releases"
                 : (win.pageData.subtitle ? win.pageData.subtitle + " · " : "") + (win.pageData.items || []).length + " tracks"
             }
             Item { width: 1; height: win.ch * 0.2 }
             HintBar {
+              // nothing to play or like until the page has arrived
+              visible: !!win.pageData
               keyColor: win.accentText; labelColor: win.fg; hoverColor: win.accentText
               readonly property bool liked: !!win.api && win.api.isLiked(win.page.kind, win.page.id)
               items: [{ k: "P", l: "play", run: function() { win.playPage(false) }, tip: "play from the top" },
@@ -952,7 +1056,7 @@ FloatingWindow {
               searchTimer.restart()
             }
             Keys.onDownPressed: list.forceActiveFocus()
-            Keys.onReturnPressed: { list.forceActiveFocus(); win.activate(list.currentIndex) }
+            Keys.onReturnPressed: { list.forceActiveFocus(); if (win.loadError) win.retry(); else win.activate(list.currentIndex) }
             Keys.onEscapePressed: list.forceActiveFocus()
             Keys.onTabPressed: if (win.videoPage) win.vprovider = win.vproviders[(win.providerIndex + 1) % win.vproviders.length].id
             // The video page opens with the cursor here, so `c` would only type a c.
@@ -1035,14 +1139,14 @@ FloatingWindow {
         keyNavigationEnabled: false
         highlightFollowsCurrentItem: false
 
-        // Cursor: slides between rows on a spring (spatial motion may overshoot).
+        // Cursor: slides between rows on the shared selection timing.
         highlight: Rectangle {
           width: list.width
           height: list.currentItem ? list.currentItem.height : 0
           y: list.currentItem ? list.currentItem.y : 0
           visible: !!list.currentItem && !!win.rows[list.currentIndex] && !!win.rows[list.currentIndex].item
           color: win.cursorFill
-          Behavior on y { SpringAnimation { spring: 6; damping: 0.45; epsilon: 0.3 } }
+          Behavior on y { NumberAnimation { duration: Tui.STATE; easing.type: Easing.InOutCubic } }
           Rectangle { width: Math.max(2, win.cw * 0.3); height: parent.height; color: win.accent }
         }
 
@@ -1052,8 +1156,9 @@ FloatingWindow {
           width: list.width
           x: win.cw
           verticalAlignment: Text.AlignVCenter
-          text: win.hasTrackTable ? win.headerLine(Math.floor((list.width - win.cw * 2) / win.cw)) : ""
-          font.family: win.family; font.pixelSize: Style.font.caption; font.letterSpacing: 1
+          text: win.hasTrackTable ? win.headerLine(win.colsIn(list.width - win.cw * 2)) : ""
+          // caption-sized, spaced out to the body's cell so it lines up over the rows
+          font.family: win.family; font.pixelSize: Style.font.caption; font.letterSpacing: win.colW - win.capW
           color: win.dim
         }
 
@@ -1065,7 +1170,7 @@ FloatingWindow {
           else if (e.key === Qt.Key_PageUp) { move(-10); e.accepted = true }
           else if (t === "g") { currentIndex = win.firstItemRow(); e.accepted = true }
           else if (t === "G") { currentIndex = count - 1; e.accepted = true }
-          else if (e.key === Qt.Key_Return || e.key === Qt.Key_Enter) { win.activate(currentIndex); e.accepted = true }
+          else if (e.key === Qt.Key_Return || e.key === Qt.Key_Enter) { if (win.loadError) win.retry(); else win.activate(currentIndex); e.accepted = true }
           else e.accepted = win.handleKey(e)
         }
         function move(d) {
@@ -1127,7 +1232,7 @@ FloatingWindow {
             text: {
               var it = rowItem.it
               if (!it) return ""
-              var cols = Math.floor(width / win.cw)
+              var cols = win.colsIn(width)
               var line
               // A YouTube result is a track - that is how it reaches the music
               // player - so the page, not the kind, decides how it is drawn.
@@ -1141,12 +1246,14 @@ FloatingWindow {
                 line = win.trackLine(it, num, cols)
                 return rowItem.reveal < 1 ? Tui.decode(line, rowItem.reveal, rowItem.index) : line
               }
-              var glyph = { album: "◉", playlist: "≡", mix: "∿", artist: "☺" }[it.kind] || "·"
+              // one cell each in the mono font (∿ and ☺ fell back to wider ones)
+              var glyph = { album: "◉", playlist: "≡", mix: "≈", artist: "◎" }[it.kind] || "·"
               var sub = it.kind === "album" ? win.artists(it.artists) + (it.year ? " · " + it.year : "")
                       : it.kind === "artist" ? "artist"
                       : (it.subtitle || "") + (it.tracks ? (it.subtitle ? " · " : "") + it.tracks + " tracks" : "")
-              var w = Math.floor((cols - 4) * 0.55)
-              line = " " + glyph + "  " + win.pad(it.title, w) + win.pad(sub, cols - 4 - w)
+              var span = Math.min(cols - 4, 120)      // capped like the track table
+              var w = Math.floor(span * 0.55)
+              line = " " + glyph + "  " + win.pad(it.title, w) + win.pad(sub, span - w)
               return rowItem.reveal < 1 ? Tui.decode(line, rowItem.reveal, rowItem.index) : line
             }
           }
@@ -1156,8 +1263,9 @@ FloatingWindow {
           Rectangle {
             z: -1
             anchors.fill: parent
-            visible: rowMouse.containsMouse && !rowItem.isCursor && !!rowItem.it
-            color: Tui.alpha(Color.accent, 0.07)
+            color: rowMouse.pressed ? win.pressFill : Tui.alpha(Color.accent, 0.07)
+            opacity: !!rowItem.it && (rowMouse.pressed || (rowMouse.containsMouse && !rowItem.isCursor)) ? 1 : 0
+            Behavior on opacity { enabled: !rowMouse.pressed; NumberAnimation { duration: Tui.HOVER; easing.type: Easing.InOutCubic } }
           }
 
           // Click selects, double-click plays (or opens), right-click is the menu.
@@ -1168,29 +1276,57 @@ FloatingWindow {
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             acceptedButtons: Qt.LeftButton | Qt.RightButton
+            // the cursor moves on the press, so the row answers before release
+            onPressed: { list.currentIndex = rowItem.index; list.forceActiveFocus() }
             onClicked: function(m) {
-              list.currentIndex = rowItem.index
-              list.forceActiveFocus()
               if (m.button === Qt.RightButton) win.rowMenu(rowItem.index, rowMouse, m.x, m.y)
             }
             onDoubleClicked: function(m) { if (m.button === Qt.LeftButton) win.activate(rowItem.index) }
           }
         }
 
-        Text {
+        // Loading, failed, or empty: what is going on, and what to do about it.
+        Column {
+          id: pageState
           anchors.centerIn: parent
-          visible: win.loading || (!win.rows.length && win.page.type !== "login")
-          text: win.loading ? Tui.decode("loading", (win.clock * 2) % 1, Math.floor(win.clock * 8))
-              : win.videoPage ? (win.page.show ? "no episodes"
-                             : win.vprovider === "anime" && !win.providers.anime
-                               ? (win.providers.curd ? "c opens curd · search, watch and track there" : "anime needs ani-cli or curd")
-                             : win.vquery ? "nothing found on " + win.vprovider
-                             : "type to search " + win.vprovider + (win.vprovider === "soundcloud" ? " · ⏎ listen"
-                                                                 : win.vprovider === "anime" ? " · ⏎ watch · or c for curd" : " · ⏎ watch · a listen"))
-              : win.page.type === "search" ? (win.query ? "no results" : "type to search · ⏎ play · esc back")
-              : "nothing here yet"
-          font.family: win.family; font.pixelSize: Style.font.body
-          color: win.dim
+          width: Math.min(parent.width - win.cw * 4, win.cw * 70)
+          spacing: win.ch * 0.4
+          visible: opacity > 0.01
+          // a detail page shows its own loading line in the header
+          opacity: (win.loading && !header.detail) || win.loadError !== "" || (!win.loading && !win.rows.length && win.page.type !== "login") ? 1 : 0
+          Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Easing.InOutCubic } }
+          readonly property string what: win.page.type === "detail" ? "this " + win.page.kind
+                                        : (win.page.title || win.page.type)
+          Text {
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+            textFormat: Text.StyledText
+            font.family: win.family; font.pixelSize: Style.font.body
+            color: win.loadError ? win.fg : win.dim
+            text: win.loading
+                ? '<font color="' + Tui.hex(win.accentText) + '">' + Tui.spinner(win.clock) + '</font>  loading ' + Tui.esc(pageState.what) + "…"
+                : win.loadError
+                ? '<font color="' + Tui.hex(Tui.ensure(Color.urgent, win.bg, 4.5)) + '">✕</font>  couldn\'t load ' + Tui.esc(pageState.what)
+                : Tui.esc(win.emptyText())
+          }
+          Text {
+            width: parent.width
+            visible: !win.loading && win.loadError !== ""
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+            text: win.loadError
+            font.family: win.family; font.pixelSize: Style.font.caption
+            color: win.dim
+          }
+          // what to do next, as buttons: retry, or somewhere to go from an empty page
+          HintBar {
+            anchors.horizontalCenter: parent.horizontalCenter
+            visible: !win.loading && items.length > 0
+            keyColor: win.accentText; labelColor: win.fg; hoverColor: win.accentText
+            items: win.loadError ? [{ k: "⏎", l: "retry", run: win.retry, tip: "try loading it again" }]
+                 : win.emptyActions()
+          }
         }
       }
 
@@ -1235,6 +1371,7 @@ FloatingWindow {
 
       // Sign-in / offline cover.
       Loader {
+        id: loginCover
         anchors.fill: parent
         // The video section is not TIDAL's, so it stays reachable signed out.
         active: (!win.api || !win.api.online || win.page.type === "login"
@@ -1482,7 +1619,7 @@ FloatingWindow {
                spacing: win.cw
                Text {
                 width: parent.width - win.cw * 3; elide: Text.ElideRight
-                text: win.track ? win.artists(win.track.artists) : "pick something · ⏎"
+                text: win.track ? win.artists(win.track.artists) : "⏎ plays the row under the cursor"
                 font.family: win.family; font.pixelSize: Style.font.body
                 color: artistMouse.containsMouse && !!(win.track && win.track.artistId) ? win.accentText : win.dim
                 MouseArea {
@@ -1556,6 +1693,14 @@ FloatingWindow {
         title: "up next"
         keyHint: win.st.context && win.st.context.title ? win.st.context.title : ""
         clock: win.clock
+        // Nothing queued and nothing to continue: say so, rather than a blank box.
+        Text {
+          anchors.centerIn: parent
+          visible: upNextList.count === 0 && !(upNextList.footerItem && upNextList.footerItem.visible)
+          text: win.track ? "nothing queued after this" : "the queue is empty"
+          font.family: win.family; font.pixelSize: Style.font.caption
+          color: win.dim
+        }
         ListView {
           id: upNextList
           anchors.fill: parent
@@ -1589,7 +1734,8 @@ FloatingWindow {
               elide: Text.ElideRight
               text: win.lpad(String(upRow.index + 1), 2) + "  " + upRow.modelData.title + "  · " + win.artists(upRow.modelData.artists)
               font.family: win.family; font.pixelSize: Style.font.caption
-              color: qm.containsMouse ? win.fg : win.dim
+              color: qm.pressed ? win.accentText : qm.containsMouse ? win.fg : win.dim
+              Rectangle { z: -1; anchors.fill: parent; anchors.leftMargin: -win.cw * 0.5; color: win.pressFill; visible: qm.pressed }
               MouseArea {
                 id: qm
                 anchors.fill: parent
@@ -1672,7 +1818,22 @@ FloatingWindow {
       Row {
         id: tline
         anchors.verticalCenter: parent.verticalCenter
-        spacing: win.cw * 2
+        // Below ~120 columns the row tightens -- one-cell gaps, glyph-only
+        // shuffle, a shorter volume bar, the eq without its curve -- so
+        // volume and eq stay on screen at the smallest window instead of
+        // being pushed off its right edge.
+        readonly property bool narrow: transport.width / win.colW < 120
+        // Everything but the seek bar, so the bar can take exactly what is left.
+        readonly property real othersWidth: {
+          var w = 0, n = 0
+          for (var i = 0; i < children.length; i++) {
+            var c = children[i]
+            if (c === seekMeter || !c.visible || c.width <= 0) continue
+            w += c.width; n++
+          }
+          return w + spacing * n
+        }
+        spacing: narrow ? win.cw : win.cw * 2
 
         Repeater {
           model: [
@@ -1689,6 +1850,9 @@ FloatingWindow {
             color: tm.containsMouse ? win.accentText
                    : (isPlay && win.st.playing ? Tui.mix(win.fg, win.accentText, 0.45 + 0.55 * win.beat) : win.fg)
             glowLive: isPlay && win.st.playing === true && win.bloom > 0
+            // a press shrinks the key at once; it eases back on release
+            scale: tm.pressed ? 0.8 : 1
+            Behavior on scale { enabled: !tm.pressed; NumberAnimation { duration: Tui.HOVER; easing.type: Easing.InOutCubic } }
             glow: glowLive ? win.bloom * (0.3 + 0.7 * win.beat) : 0
             MouseArea { id: tm; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: win.api.control(modelData.a)
                         TuiTip { text: modelData.tip; key: modelData.key } }
@@ -1711,7 +1875,7 @@ FloatingWindow {
         Text {
           id: nowText
           visible: !side.visible && !!win.track
-          width: visible ? Math.min(win.cw * 34, transport.width * 0.3) : 0
+          width: visible ? Math.min(win.cw * 34, transport.width * (tline.narrow ? 0.2 : 0.3)) : 0
           elide: Text.ElideRight
           text: win.track ? win.track.title + "  · " + win.artists(win.track.artists) : ""
           font.family: win.family; font.pixelSize: Style.font.caption; color: win.dim
@@ -1724,8 +1888,9 @@ FloatingWindow {
         }
         Text {
           id: seekMeter
-          readonly property int cells: Math.max(10, Math.floor(
-              (transport.width - win.cw * 62 - (nowText.visible ? nowText.width + win.cw * 2 : 0)) / win.cw))
+          // (bounded both ways: a metric that is still 0 must not ask for infinity cells)
+          readonly property int cells: Math.max(6, Math.min(600, Math.floor((tline.parent.width - tline.othersWidth - win.colW)
+                                                                          / Math.max(1, seekCell.advanceWidth || win.colW))))
           // While a drag is under way the bar shows where it will land, not
           // where the music is; the seek goes out once, on release.
           property bool scrubbing: false
@@ -1779,7 +1944,7 @@ FloatingWindow {
           font.family: win.family; font.pixelSize: Style.font.body; color: win.dim
         }
         Text {
-          text: "⇄ shuf"
+          text: tline.narrow ? "⇄" : "⇄ shuf"
           font.family: win.family; font.pixelSize: Style.font.caption; font.bold: win.st.shuffle === true
           color: win.st.shuffle || shufMouse.containsMouse ? win.accentText : win.dim
           font.underline: shufMouse.containsMouse
@@ -1810,14 +1975,15 @@ FloatingWindow {
             win.api.control("volume", { volume: v })
           }
           Timer { id: settle; interval: 800; onTriggered: volMeter.pending = -1 }
-          text: "vol " + Tui.meter(shown / 100, 8, "▰", "▱", "") + " " + win.lpad(String(shown), 3)
+          readonly property int bar: tline.narrow ? 5 : 8
+          text: "vol " + Tui.meter(shown / 100, bar, "▰", "▱", "") + " " + win.lpad(String(shown), 3)
           font.family: win.family; font.pixelSize: Style.font.caption
           color: volMouse.containsMouse ? win.accentText : win.dim
           anchors.verticalCenter: parent.verticalCenter
           // Measured in this text's own font: the bar's glyphs need not be as wide
           // as the body font's cells, which is what the old click maths assumed.
           TextMetrics { id: volHead; font: volMeter.font; text: "vol " }
-          TextMetrics { id: volBar; font: volMeter.font; text: "vol " + Tui.meter(1, 8, "▰", "▱", "") }
+          TextMetrics { id: volBar; font: volMeter.font; text: "vol " + Tui.meter(1, volMeter.bar, "▰", "▱", "") }
           MouseArea {
             id: volMouse
             anchors.fill: parent
@@ -1858,7 +2024,7 @@ FloatingWindow {
         }
         Text {
           id: eqMini
-          text: "eq " + win.eqSpark()
+          text: tline.narrow ? "eq" : "eq " + win.eqSpark()
           font.family: win.family; font.pixelSize: Style.font.caption
           font.bold: win.eqActive
           color: win.eqActive || eqMouse.containsMouse ? win.accentText : win.dim
