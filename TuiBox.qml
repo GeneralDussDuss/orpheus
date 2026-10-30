@@ -13,6 +13,10 @@ Item {
 
   property string title: ""
   property string keyHint: ""
+  // Clickable hints, drawn in place of keyHint: [{ k, l, run, tip }] (HintBar).
+  property var hintItems: []
+  // Drawn just after the title on the top edge (the player's viz switcher).
+  property Component titleExtra: null
   property string footer: ""
   property bool focused: false
   property color background: Color.background
@@ -92,7 +96,37 @@ Item {
   }
 
   Rectangle {
-    visible: box.keyHint !== ""
+    id: titleExtraBox
+    visible: box.titleExtra !== null
+    x: box.cw + (box.title !== "" ? titleText.implicitWidth : 0)
+    height: box.ch
+    width: titleExtraLoader.item ? titleExtraLoader.item.implicitWidth : 0
+    color: box.background
+    Loader { id: titleExtraLoader; sourceComponent: box.titleExtra; anchors.verticalCenter: parent.verticalCenter }
+  }
+
+  Rectangle {
+    visible: box.hintItems.length > 0
+    anchors.right: parent.right
+    anchors.rightMargin: box.cw
+    height: box.ch
+    width: hintBar.implicitWidth + hintPad.advanceWidth * 2
+    color: box.background
+    TextMetrics { id: hintPad; font.family: Style.font.family; font.pixelSize: Style.font.caption; text: " " }
+    HintBar {
+      id: hintBar
+      x: hintPad.advanceWidth
+      anchors.verticalCenter: parent.verticalCenter
+      items: box.hintItems
+      readonly property color opaque: Qt.rgba(box.background.r, box.background.g, box.background.b, 1)
+      keyColor: Tui.ensure(Color.accent, opaque, 4.5)
+      labelColor: Tui.muted(Color.foreground, opaque, 4.5)
+      hoverColor: Tui.ensure(Color.accent, opaque, 4.5)
+    }
+  }
+
+  Rectangle {
+    visible: box.keyHint !== "" && box.hintItems.length === 0
     anchors.right: parent.right
     anchors.rightMargin: box.cw
     height: box.ch

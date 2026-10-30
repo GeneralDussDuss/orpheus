@@ -138,3 +138,13 @@ function bloom(engine) {
   var b = engine.config ? engine.config.bloom : undefined
   return b === "off" ? 0 : b === "full" ? 1 : 0.5
 }
+
+// Whole wheel notches from a wheel event, for one-step-per-notch controls. A
+// notch is 120; touchpads send it in small pieces, so the remainder is kept
+// on `holder.wheelAcc` (declare `property real wheelAcc: 0` on the caller).
+function notches(holder, delta) {
+  holder.wheelAcc += delta
+  var n = holder.wheelAcc > 0 ? Math.floor(holder.wheelAcc / 120) : Math.ceil(holder.wheelAcc / 120)
+  holder.wheelAcc -= n * 120
+  return n
+}
