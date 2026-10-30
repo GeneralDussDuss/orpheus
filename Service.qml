@@ -36,13 +36,24 @@ Item {
   // art there instead. Prism is the default because it measured as the cheapest
   // style by a wide margin (+0.7% shell CPU, against +13 to +20 for the others).
   readonly property var defaults: ({ style: "prism", railViz: "prism", miniPlayer: true, placement: "overlay", fps: 60, syncViz: true,
+                                     showMonitor: "", autoStyle: false, trackTitle: true, lyricsOverViz: false,
+                                     autoQuality: true, showFps: false,
                                      widget: { enabled: true, style: "full", corner: "bottom-right", monitor: "", viz: "prism", layer: "top" } })
 
   // ---- Config ------------------------------------------------------------
   property var config: defaults
   readonly property string style: styles.indexOf(config.style) >= 0 ? config.style : "skyline"
   readonly property bool miniPlayer: config.miniPlayer !== false
-  readonly property string placement: config.placement === "desktop" ? "desktop" : "overlay"
+  // overlay: a card over everything; desktop: on the wallpaper (on Windows, behind
+  // the icons, full monitor); fullscreen: the show, full-bleed on showMonitor.
+  readonly property var placements: ["overlay", "desktop", "fullscreen"]
+  readonly property string placement: placements.indexOf(config.placement) >= 0 ? config.placement : "overlay"
+  readonly property string showMonitor: typeof config.showMonitor === "string" ? config.showMonitor : ""  // "" = focused
+  readonly property bool autoStyle: config.autoStyle === true          // switch style on big drops
+  readonly property bool trackTitle: config.trackTitle !== false       // title card when the track changes
+  readonly property bool lyricsOverViz: config.lyricsOverViz === true  // karaoke line over the stage
+  readonly property bool autoQuality: config.autoQuality !== false     // drop render scale when frames drop
+  readonly property bool showFps: config.showFps === true
   readonly property int fps: Math.max(20, Math.min(120, config.fps || 60))
   readonly property var widget: {
     var w = {}
@@ -595,9 +606,21 @@ Item {
   }
 
   // ---- Stage -------------------------------------------------------------
+  // One loader per placement, so switching makes a fresh window: the flags,
+  // layer and (on Windows) wallpaper parenting are all decided at creation.
   Loader {
-    active: root.open
-    sourceComponent: Stage { engine: root }
+    active: root.open && root.placement === "overlay"
+    sourceComponent: Stage { engine: root; mode: "overlay" }
+  }
+  Loader {
+    id: desktopStage
+    active: root.open && root.placement === "desktop"
+    sourceComponent: Stage { engine: root; mode: "desktop"; onRebuild: desktopStage.reload() }
+    function reload() { active = false; Qt.callLater(function() { desktopStage.active = Qt.binding(function() { return root.open && root.placement === "desktop" }) }) }
+  }
+  Loader {
+    active: root.open && root.placement === "fullscreen"
+    sourceComponent: Stage { engine: root; mode: "fullscreen" }
   }
 
   // Widget: a corner widget on a layer (top/reserve/desktop), or a real
@@ -656,8 +679,20 @@ Item {
     return statusText()
   }
   function setPlacement(where) {
-    if (where !== "overlay" && where !== "desktop") return "unknown placement: " + where + " (overlay|desktop)"
+    if (placements.indexOf(where) < 0) return "unknown placement: " + where + " (" + placements.join("|") + ")"
     updateConfig(function(c) { c.placement = where })
+    return statusText()
+  }
+  function setShowMonitor(name) {
+    updateConfig(function(c) { c.showMonitor = name || "" })
+    return statusText()
+  }
+  // The stage's on/off switches: autoStyle, trackTitle, lyricsOverViz, autoQuality, showFps.
+  function setStageFlag(key, on) {
+    var keys = ["autoStyle", "trackTitle", "lyricsOverViz", "autoQuality", "showFps"]
+    if (keys.indexOf(key) < 0) return "unknown setting: " + key + " (" + keys.join("|") + ")"
+    var v = on === "toggle" ? !root[key] : (on === true || on === "on" || on === "true" || on === "1")
+    updateConfig(function(c) { c[key] = v })
     return statusText()
   }
   function setWidget(key, value) {
@@ -742,6 +777,12 @@ Item {
     function nextStyle(): string { return root.nextStyle(1) }
     function miniPlayer(on: string): string { return root.setMiniPlayer(on) }
     function placement(where: string): string { return root.setPlacement(where) }
+    function showMonitor(name: string): string { return root.setShowMonitor(name) }
+    function autoStyle(on: string): string { return root.setStageFlag("autoStyle", on) }
+    function trackTitle(on: string): string { return root.setStageFlag("trackTitle", on) }
+    function lyricsOverViz(on: string): string { return root.setStageFlag("lyricsOverViz", on) }
+    function autoQuality(on: string): string { return root.setStageFlag("autoQuality", on) }
+    function showFps(on: string): string { return root.setStageFlag("showFps", on) }
     function widget(key: string, value: string): string { return root.setWidget(key, value) }
   }
 

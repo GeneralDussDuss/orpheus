@@ -11,7 +11,9 @@ PanelWindow {
   id: win
 
   property var engine: null
-  readonly property bool desktop: engine && engine.placement === "desktop"
+  property string mode: engine ? engine.placement : "overlay"
+  signal rebuild()
+  readonly property bool desktop: mode === "desktop"
   readonly property var hyprMonitor: Hyprland.monitorFor(screen)
   readonly property bool fullscreen: !!(hyprMonitor && hyprMonitor.activeWorkspace
                                         && hyprMonitor.activeWorkspace.hasFullscreen)
