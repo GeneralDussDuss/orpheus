@@ -287,6 +287,8 @@ class Player:
             "queueLength": len(self.order),
             "upNext": upcoming,
             "error": self.error,
+            # The desktop's audio capture listens to this process tree only.
+            "mpvPid": self._proc.pid if self._proc and self._proc.returncode is None else 0,
         }
 
     # ---- mpv process & IPC ---------------------------------------------------
