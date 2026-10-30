@@ -265,6 +265,7 @@ class Player:
         # since TIDAL's stream URLs expire.
         self._resume_at = 0.0
         self._http = None
+        self._stopping = False               # stop() under way: mpv leaving is expected
 
         # ---- decks, crossfade and gain -------------------------------------
         self._deck: _Deck | None = None       # the current mpv
@@ -341,6 +342,7 @@ class Player:
     # ---- mpv process & IPC ---------------------------------------------------
 
     async def start(self):
+        self._stopping = False
         await self._adopt(await self._spawn())
         if not self._clock_task:
             self._clock_task = asyncio.create_task(self._clock_loop())
@@ -406,7 +408,25 @@ class Player:
         await self._send(["set_property", "volume", volume])
         log.info("recycled mpv at %d MB of heap", mb)
 
+    async def _respawn(self, resume: bool, at: float):
+        volume = self.volume
+        for attempt in range(1, 4):
+            await asyncio.sleep(0.5 * attempt)
+            if self._stopping:
+                return
+            try:
+                await self.start()
+                await self._send(["set_property", "volume", volume])   # before anything plays
+                log.info("mpv restarted (attempt %d)", attempt)
+                if resume and self.current:
+                    await self._load(self.pos, start=at)
+                self.on_change()
+                return
+            except Exception as e:
+                log.warning("mpv restart failed: %s", e)
+
     async def stop(self):
+        self._stopping = True
         if self._http is not None:
             await self._http.close()
             self._http = None
@@ -455,10 +475,15 @@ class Player:
             if not current and reader not in self._side:
                 return  # an mpv we recycled on purpose: its last words are stale
             if not line:
-                if current:
-                    log.error("mpv went away")
-                    self.idle = True
+                if current and not self._stopping:
+                    # A crash (or someone ending mpv): nothing would answer the
+                    # next play, so start another and pick up where it was.
+                    was_playing, at = self.playing, self.position
+                    log.error("mpv went away at %.0f s; starting another", at)
+                    self.idle, self._busy = True, False
+                    self._resume_at = self._pos_at = at
                     self.on_change()
+                    asyncio.create_task(self._respawn(was_playing, at))
                 self._side.discard(reader)
                 return
             try:
