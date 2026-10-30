@@ -638,11 +638,18 @@ FloatingWindow {
       Column {
         anchors.bottom: parent.bottom
         width: parent.width
+        // One button; the choices open under it on click and fold away once picked.
         Text {
-          text: "quality"
-          font.family: win.family; font.pixelSize: Style.font.caption; color: win.dim
+          id: qualityBtn
+          property bool open: false
+          text: open ? "[quality]" : " quality "
+          font.family: win.family; font.pixelSize: Style.font.caption; font.bold: open
+          color: qm.containsMouse || open ? win.accentText : win.dim
+          MouseArea { id: qm; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                      onClicked: qualityBtn.open = !qualityBtn.open }
         }
         Row {
+          visible: qualityBtn.open
           spacing: win.cw
           Repeater {
             model: [["high", "320k"], ["lossless", "flac"], ["hires", "hi-res"]]
@@ -657,8 +664,11 @@ FloatingWindow {
               MouseArea {
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
-                onClicked: parent.locked ? win.go({ type: "login", title: "sign in", hires: true })
-                                         : win.api.post("/quality", { quality: modelData[0] })
+                onClicked: {
+                  qualityBtn.open = false
+                  if (parent.locked) win.go({ type: "login", title: "sign in", hires: true })
+                  else win.api.post("/quality", { quality: modelData[0] })
+                }
               }
             }
           }
