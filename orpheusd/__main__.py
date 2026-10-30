@@ -181,6 +181,8 @@ class App:
         except Exception as e:
             log.warning("MPRIS unavailable: %s", e)
         await self.tidal.restore()
+        if getattr(self.tidal, "restore_pending", False):
+            asyncio.create_task(self._restore_loop())
         asyncio.create_task(self._liked_loop())
         try:
             for d in await asyncio.to_thread(self.history.close_dangling):
@@ -375,6 +377,19 @@ class App:
             await p.remove(int(b.get("index", -1)))
         else:
             raise web.HTTPNotFound(text=f"unknown action {a}")
+
+    async def _restore_loop(self):
+        """The saved session could not be checked (no network at start): try
+        again, 5 s apart rising to a minute, until it works or someone signs in."""
+        wait = 5
+        while self.tidal.restore_pending and not self.tidal.signed_in:
+            await asyncio.sleep(wait)
+            if self.tidal.signed_in:
+                break
+            if await self.tidal.restore():
+                log.info("TIDAL session restored")
+            wait = min(60, wait * 2)
+            self._changed()
 
     async def _liked_loop(self):
         # Load likes once per sign-in (also after signing in later).

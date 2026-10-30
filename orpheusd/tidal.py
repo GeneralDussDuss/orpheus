@@ -143,22 +143,60 @@ class Tidal:
         return self.login_state.get("state") == "signed-in"
 
     async def restore(self) -> bool:
+        import requests
+
+        def rejected(e) -> bool:
+            return isinstance(e, requests.HTTPError) and getattr(e.response, "status_code", 0) in (400, 401, 403)
+
+        def load() -> bool:
+            try:
+                return bool(self.session.load_session_from_file(self.session_file)) and self.session.check_login()
+            except requests.HTTPError as e:
+                if rejected(e):
+                    return False          # the access token was turned down
+                raise
+
         def work():
             if not self.session_file.exists():
                 return False
-            ok = self.session.load_session_from_file(self.session_file)
-            if ok and self.session.check_login():
+            ok = load()
+            if not ok and self.session.refresh_token:
+                # tidalapi refreshes by itself only on "The token has expired";
+                # an access token rejected any other way still has a good
+                # refresh token behind it more often than not.
+                try:
+                    refreshed = self.session.token_refresh(self.session.refresh_token)
+                except requests.HTTPError as e:
+                    if not rejected(e):
+                        raise
+                    refreshed = False
+                if refreshed:
+                    s = self.session
+                    ok = bool(s.load_oauth_session(s.token_type, s.access_token, s.refresh_token,
+                                                   s.expiry_time, s.is_pkce)) and s.check_login()
+                if not ok:
+                    self.expired = True
+            if ok:
                 if self.session.is_pkce:
                     self.session.client_enable_hires()
                 self.session.save_session_to_file(self.session_file)  # keep refreshed tokens
                 return True
             return False
 
+        self.expired = False
         try:
             ok = await asyncio.to_thread(work)
+            self.restore_pending = False
+            if self.expired:
+                log.warning("the saved TIDAL sign-in was refused, and refreshing it failed")
+                self.login_state = {"state": "signed-out", "error": "Your TIDAL sign-in has expired: sign in again"}
         except Exception as e:
+            # Most often no network yet (started at sign-in, before Wi-Fi): the
+            # saved session is fine, so say so and let the daemon try again.
             log.warning("could not restore TIDAL session: %s", e)
             ok = False
+            self.restore_pending = True
+            self.login_state = {"state": "signed-out", "error": "Can't reach TIDAL yet; retrying"}
         if ok:
             self._set_signed_in()
         return ok
