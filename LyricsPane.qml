@@ -137,8 +137,8 @@ Rectangle {
     // and a page that quietly means something different by a key is worse than
     // no shortcut at all
     else if (t === "m") { style = (style + 1) % 3; e.accepted = true }
-    else if (k === Qt.Key_Down || t === "j") { list.flick(0, -600); e.accepted = true }
-    else if (k === Qt.Key_Up || t === "k") { list.flick(0, 600); e.accepted = true }
+    else if (k === Qt.Key_Down || t === "j") { (list.visible ? list : plainFlick).flick(0, -600); e.accepted = true }
+    else if (k === Qt.Key_Up || t === "k") { (list.visible ? list : plainFlick).flick(0, 600); e.accepted = true }
     else e.accepted = host.handleKey(e)
   }
 
@@ -176,9 +176,10 @@ Rectangle {
     }
     Text {
       text: {
+        if (!pane.track) return "nothing playing"
         if (pane.loading) return "looking…"
         if (pane.instrumental) return "instrumental"
-        if (!pane.lines.length && !pane.plain) return "nothing found for this track"
+        if (!pane.lines.length && !pane.plain) return "no lyrics"
         var via = pane.source === "lrclib" ? "lrclib" : pane.source
         var wordLevel = pane.lines.length && pane.lines[0].words !== undefined
         return (pane.synced ? (wordLevel ? "synced · word level · " : "synced · ") : "unsynced · ") + via
@@ -206,7 +207,7 @@ Rectangle {
     // positionViewAtIndex sets contentY outright; the Behavior turns that jump
     // into a glide. Using preferredHighlightBegin/End as well would be a second
     // mechanism aiming at the same thing, and the two fight.
-    Behavior on contentY { NumberAnimation { duration: 340; easing.type: Easing.OutCubic } }
+    Behavior on contentY { NumberAnimation { duration: 420; easing.type: Easing.InOutCubic } }
 
     delegate: Item {
       id: row
@@ -271,13 +272,13 @@ Rectangle {
             // The fill front moves every 50 ms; smoothing it as well would just
             // make the words light up late. Only the line's own change of state
             // is worth easing.
-            Behavior on color { enabled: !row.isNow; ColorAnimation { duration: 200 } }
-            Behavior on font.letterSpacing { NumberAnimation { duration: 160 } }
+            Behavior on color { enabled: !row.isNow; ColorAnimation { duration: 180; easing.type: Easing.InOutCubic } }
+            Behavior on font.letterSpacing { NumberAnimation { duration: 180; easing.type: Easing.InOutCubic } }
 
             transform: [
               Translate { y: word.rise },
               Translate { y: word.onIt ? -2 : 0
-                Behavior on y { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } } }
+                Behavior on y { NumberAnimation { duration: 180; easing.type: Easing.InOutCubic } } }
             ]
 
             SequentialAnimation {
@@ -326,6 +327,7 @@ Rectangle {
 
   // unsynced: just the words
   Flickable {
+    id: plainFlick
     visible: !pane.lines.length && pane.plain !== ""
     anchors.fill: parent
     anchors.topMargin: header.height + (host ? host.ch * 2 : 20)
@@ -345,17 +347,48 @@ Rectangle {
     }
   }
 
-  Text {
+  // Nothing to show: say why, in the middle where the words would be, and how out.
+  readonly property string emptyTitle: !track ? "nothing playing"
+                                     : loading ? "looking for lyrics…"
+                                     : instrumental ? "♪ instrumental"
+                                     : (!lines.length && !plain) ? "no lyrics for this track" : ""
+  readonly property string emptyNote: !track ? "lyrics follow whatever plays next"
+                                    : loading ? "asking the lyrics sources"
+                                    : instrumental ? "nothing to sing along to"
+                                    : "nobody has shared any yet · they'll show if they turn up"
+  Column {
+    anchors.centerIn: parent
+    spacing: host ? host.ch * 0.4 : 6
+    opacity: pane.emptyTitle !== "" ? 1 : 0
+    visible: opacity > 0
+    Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.InOutCubic } }
+    Text {
+      anchors.horizontalCenter: parent.horizontalCenter
+      text: pane.emptyTitle
+      font.family: host.family; font.pixelSize: Style.font.body
+      color: Tui.mix(host.fg, host.bg, 0.25)
+    }
+    Text {
+      anchors.horizontalCenter: parent.horizontalCenter
+      text: pane.emptyNote
+      font.family: host.family; font.pixelSize: Style.font.caption
+      color: host.dim
+    }
+  }
+
+  // the keys, each one a button too
+  HintBar {
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.bottom: parent.bottom
     anchors.bottomMargin: host ? host.ch : 10
-    textFormat: Text.StyledText
-    text: pane.synced
-          ? Tui.hints([["[ ]", "nudge sync"], ["\\", "reset"],
-                       ["m", pane.styleNames[pane.style]], ["esc", "back"]],
-                      host.accent, host.dim)
-          : Tui.hints([["esc", "back"]], host.accent, host.dim)
-    font.family: host.family; font.pixelSize: Style.font.caption
-    color: host.dim
+    keyColor: host.accentText; labelColor: host.dim; hoverColor: host.accentText
+    items: pane.synced
+           ? [{ k: "]/[", l: "sync later/earlier", run: function() { pane.offset += 0.25 }, tip: "the words come 0.25 s later", tipKey: "]" },
+              { k: "\\", l: "reset", run: function() { pane.offset = 0 }, tip: "back to the file's own timing" },
+              { k: "m", l: pane.styleNames[pane.style], run: function() { pane.style = (pane.style + 1) % 3 }, tip: "how a line arrives: wave, rain or plain" },
+              { k: "j/k", l: "scroll" },
+              { k: "esc", l: "back", run: function() { host.back() } }]
+           : pane.plain !== "" ? [{ k: "j/k", l: "scroll" }, { k: "esc", l: "back", run: function() { host.back() } }]
+           : [{ k: "esc", l: "back", run: function() { host.back() } }]
   }
 }
