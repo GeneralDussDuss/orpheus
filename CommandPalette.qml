@@ -20,7 +20,7 @@ Item {
   z: 50
 
   function open() {
-    all = host.commands().concat(bloomCommands()).concat(gamingCommands())
+    all = host.commands().concat(bloomCommands()).concat(directorCommands()).concat(gamingCommands())
     input.text = ""
     filter()
     shown = true
@@ -44,6 +44,16 @@ Item {
     if (e.setStageFlag && typeof e.albumArt === "boolean")
       out.push({ group: "visualizer", label: "album art in the visuals · " + (e.albumArt ? "on" : "off"), key: "",
                  run: function() { e.setStageFlag("albumArt", "toggle") } })
+    return out
+  }
+  // The director: song structure (builds, drops) and the beat-locked pulse.
+  function directorCommands() {
+    var e = host.engine, out = []
+    if (!e || !e.setStageFlag || typeof e.director !== "boolean") return out
+    out.push({ group: "visualizer", label: "follow the song's structure · " + (e.director ? "off" : "on") + "  (now " + (e.director ? "on" : "off") + ")", key: "",
+               run: function() { e.setStageFlag("director", "toggle") } })
+    out.push({ group: "visualizer", label: "lock flashes to the beat · " + (e.beatLock ? "off" : "on") + "  (now " + (e.beatLock ? "on" : "off") + ")", key: "",
+               run: function() { e.setStageFlag("beatLock", "toggle") } })
     return out
   }
   // Game mode, the in-game HUD (desktop app only).

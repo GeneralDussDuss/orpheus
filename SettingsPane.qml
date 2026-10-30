@@ -84,6 +84,8 @@ Rectangle {
       var scr = Quickshell.screens || []
       for (var s = 0; s < scr.length; s++) if (scr[s] && scr[s].name) mons.push(scr[s].name)
       r.push({ kind: "choice", id: "showMonitor", label: "show on screen", options: mons })
+      r.push({ kind: "toggle", id: "director", label: "follow the song's structure", hint: "builds, drops" })
+      r.push({ kind: "toggle", id: "beatLock", label: "lock flashes to the beat", hint: "predicted" })
       r.push({ kind: "toggle", id: "autoStyle", label: "switch styles on drops" })
       r.push({ kind: "toggle", id: "trackTitle", label: "track title fades in" })
       r.push({ kind: "toggle", id: "lyricsOverViz", label: "lyrics over the visualizer" })

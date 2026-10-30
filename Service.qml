@@ -775,7 +775,7 @@ Item {
   }
   // The stage's on/off switches: autoStyle, trackTitle, lyricsOverViz, autoQuality, showFps.
   function setStageFlag(key, on) {
-    var keys = ["autoStyle", "trackTitle", "lyricsOverViz", "autoQuality", "showFps", "albumArt"]
+    var keys = ["autoStyle", "trackTitle", "lyricsOverViz", "autoQuality", "showFps", "albumArt", "director", "beatLock"]
     if (keys.indexOf(key) < 0) return "unknown setting: " + key + " (" + keys.join("|") + ")"
     var v = on === "toggle" ? !root[key] : (on === true || on === "on" || on === "true" || on === "1")
     updateConfig(function(c) { c[key] = v })
@@ -888,6 +888,8 @@ Item {
     function bloom(level: string): string { return root.setBloom(level) }
     function feedback(level: string): string { return root.setFeedback(level) }
     function albumArt(on: string): string { return root.setStageFlag("albumArt", on) }
+    function director(on: string): string { return root.setStageFlag("director", on) }
+    function beatLock(on: string): string { return root.setStageFlag("beatLock", on) }
     function widget(key: string, value: string): string { return root.setWidget(key, value) }
   }
 
