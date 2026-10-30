@@ -33,6 +33,7 @@ QtObject {
     } else {
       xhr.send()
     }
+    return xhr
   }
 
   function get(path, done) { request("GET", path, null, done) }
@@ -129,23 +130,61 @@ QtObject {
   // ---- long poll ----
   property int version: -1
   property bool polling: false
+  property int failures: 0             // unanswered polls in a row
+  property bool everOnline: false
+  // The daemon went away after having answered: restarting, crashed (the
+  // desktop app starts it again) or the machine slept. Say so; don't freeze.
+  readonly property bool reconnecting: active && !online && everOnline
+  // Not reached yet: it is still starting (a first launch takes a few seconds).
+  readonly property bool connecting: active && !online && !everOnline && failures < 12
+  property var pollXhr: null
+  property int pollId: 0
 
   function poll() {
     if (!active || polling) return
     polling = true
+    var id = ++pollId
     var path = "/status" + (version >= 0 && online ? "?since=" + version : "")
-    request("GET", path, null, function(ok, data) {
-      polling = false
+    pollXhr = request("GET", path, null, function(ok, data) {
+      if (id !== api.pollId) return          // the watchdog gave up on this one
+      api.polling = false
+      api.pollXhr = null
+      watchdog.stop()
       if (ok && data) {
+        api.failures = 0
         api.online = true
+        api.everOnline = true
         api.status = data
         api.version = data.version
         Qt.callLater(api.poll)
       } else {
-        api.online = false
-        retry.restart()
+        api.pollFailed()
       }
     })
+    watchdog.restart()
+  }
+
+  function pollFailed() {
+    online = false
+    failures++
+    // Quick at first (a daemon restart takes ~2 s), then every 5 s.
+    retry.interval = Math.min(5000, 500 * Math.pow(2, failures - 1))
+    retry.restart()
+  }
+
+  // The daemon holds a long poll for 25 s at most. Past 35 s it is hung, or
+  // the connection died without a word (sleep, a network stack reset): drop
+  // it and ask again rather than wait forever on stale data.
+  property Timer watchdog: Timer {
+    interval: 35000
+    onTriggered: {
+      var x = api.pollXhr
+      api.pollId++
+      api.polling = false
+      api.pollXhr = null
+      if (x) x.abort()
+      api.pollFailed()
+    }
   }
 
   // ---- position ----------------------------------------------------------
@@ -177,10 +216,12 @@ QtObject {
     }
   }
 
-  property Timer retry: Timer { interval: 2000; onTriggered: api.poll() }
-  // The interpolated position moves between status pushes; refresh it gently.
+  property Timer retry: Timer { interval: 500; onTriggered: api.poll() }
+  // The long poll brings every change and the position is interpolated, so
+  // this only corrects slow drift. It was every second: a second /status for
+  // each open window, on top of the long poll.
   property Timer tick: Timer {
-    interval: 1000
+    interval: 10000
     repeat: true
     running: api.active && api.online && api.player.playing === true
     onTriggered: api.get("/status", function(ok, data) { if (ok && data) api.status = data })
