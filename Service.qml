@@ -35,7 +35,7 @@ Item {
   // railViz: the visualizer plane inside the player window. "off" shows album
   // art there instead. Prism is the default because it measured as the cheapest
   // style by a wide margin (+0.7% shell CPU, against +13 to +20 for the others).
-  readonly property var defaults: ({ style: "prism", railViz: "prism", miniPlayer: true, placement: "overlay", fps: 60,
+  readonly property var defaults: ({ style: "prism", railViz: "prism", miniPlayer: true, placement: "overlay", fps: 60, syncViz: true,
                                      widget: { enabled: true, style: "full", corner: "bottom-right", monitor: "", viz: "prism", layer: "top" } })
 
   // ---- Config ------------------------------------------------------------
@@ -51,7 +51,10 @@ Item {
     for (var j in c) w[j] = c[j]
     return w
   }
-  readonly property string widgetViz: styles.indexOf(widget.viz) >= 0 ? widget.viz : "prism"
+  // With syncViz on (the default) the widget shows whatever the visualizer shows,
+  // and choosing a style from either one changes both.
+  readonly property bool syncViz: config.syncViz !== false
+  readonly property string widgetViz: syncViz ? style : (styles.indexOf(widget.viz) >= 0 ? widget.viz : "prism")
   readonly property string railViz: config.railViz === "off" ? "off"
                                     : (styles.indexOf(config.railViz) >= 0 ? config.railViz : "prism")
 
@@ -636,6 +639,7 @@ Item {
     return statusText()
   }
   function setWidget(key, value) {
+    if (key === "viz" && syncViz && styles.indexOf(value) >= 0) return setStyle(value)
     var allowed = { enabled: ["on", "off", "toggle"], style: ["compact", "full"], corner: ["top-left", "top-right", "bottom-left", "bottom-right"],
                     layer: ["top", "reserve", "desktop", "tile", "float"] }
     if (key === "viz" && styles.indexOf(value) < 0) return "unknown viz: " + value + " (" + styles.join("|") + ")"
