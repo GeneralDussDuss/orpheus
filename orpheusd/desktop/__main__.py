@@ -476,26 +476,6 @@ def listen_for_launches(app):
     return server
 
 
-# ---- logging ------------------------------------------------------------------------
-
-def route_qt_messages():
-    """qWarning and the QML's console.* go to C stderr, which pythonw does not
-    have: they were lost. Send them to desktop.log, repeats folded."""
-    from PySide6.QtCore import QtMsgType, qInstallMessageHandler
-    from .applog import Repeats
-    fold = Repeats()
-    names = {QtMsgType.QtDebugMsg: "debug", QtMsgType.QtInfoMsg: "info", QtMsgType.QtWarningMsg: "warning",
-             QtMsgType.QtCriticalMsg: "critical", QtMsgType.QtFatalMsg: "fatal"}
-
-    def handler(kind, ctx, msg):
-        if kind == QtMsgType.QtDebugMsg and not os.environ.get("ORPHEUS_DEBUG"):
-            return            # console.log is for development
-        for line in fold.feed(f"qt {names.get(kind, kind)}: {msg}"):
-            print(line, file=sys.stderr)
-    qInstallMessageHandler(handler)
-    return handler
-
-
 # ---- main ---------------------------------------------------------------------------
 
 QUIT: list = []      # the tray's Quit, for tests
@@ -514,6 +494,10 @@ def main():
     if args.shot and "ORPHEUS_HOME" not in os.environ:
         import tempfile
         os.environ["ORPHEUS_HOME"] = tempfile.mkdtemp(prefix="orpheus-shot-")
+    pythonw = sys.stderr is None or "pythonw" in Path(sys.executable).name.lower()
+    if pythonw:
+        from .applog import prepare_qt_env
+        prepare_qt_env()      # Qt's warnings to stderr, which becomes desktop.log below
     from PySide6.QtCore import QTimer, QUrl
     from PySide6.QtWidgets import QApplication
 
@@ -526,15 +510,15 @@ def main():
         sys.exit(0 if make_icon(size).save(args.write_icon) else 1)
     if not args.shot and hand_over(args.open):
         return
-    if sys.stderr is None or "pythonw" in Path(sys.executable).name.lower():
-        # pythonw has no console: keep this app's own errors too. Only the
-        # instance that stays opens it: a launch that just handed over to the
-        # running one would otherwise wipe that one's log.
+    if pythonw:
+        # pythonw has no console: keep this app's own errors, and Qt's, in
+        # desktop.log, which becomes file descriptor 2 so Qt writes there from
+        # C on any thread. Only the instance that stays opens it: a launch that
+        # just handed over to the running one would otherwise wipe that one's log.
         from orpheusd.system import STATE_DIR
         from .applog import CappedLog
         STATE_DIR.mkdir(parents=True, exist_ok=True)
-        sys.stdout = sys.stderr = CappedLog(STATE_DIR / "desktop.log")
-    route_qt_messages()
+        sys.stdout = sys.stderr = CappedLog(STATE_DIR / "desktop.log", fd=2)
     # Listen straight away: a second launch during the second or so the QML
     # takes to load must still find this one.
     launches = None if args.shot else listen_for_launches(app)
@@ -579,11 +563,11 @@ def main():
         shims.PLAYER_LISTENERS.append(tray_.sync)
 
     engine = QQmlApplicationEngine()
-    engine.setOutputWarningsToStandardError(False)    # the signal below has them; no doubles
+    # QML warnings go out through Qt's own handler, onto stderr (desktop.log
+    # under pythonw): no Python on that path, so no GIL for a thread to wait on.
     shims.refresh_screens(engine)
     for sig in (app.screenAdded, app.screenRemoved):
         sig.connect(lambda *_: shims.refresh_screens(engine))
-    engine.warnings.connect(lambda ws: [print("qml:", w.toString(), file=sys.stderr) for w in ws])
     engine.load(QUrl.fromLocalFile(str(ROOT / "Service.qml")))
     if not engine.rootObjects():
         say("Service.qml failed to load")
@@ -595,7 +579,7 @@ def main():
     hotkeys = None
     if args.shot:
         QTimer.singleShot(1500, lambda: (args.style and call("orpheus", "style", args.style),
-                                         call("orpheus", args.open)))
+                                         args.open != "none" and call("orpheus", args.open)))
         QTimer.singleShot(6000, lambda: (shoot(app, Path(args.shot), engine), app.quit()))
     else:
         from . import gamemode, winsys
@@ -669,8 +653,6 @@ def main():
         stop_daemon(keeper.proc, adopted_too=False)   # quit some other way than the tray
     shims.stop_processes()     # cava/audiocap; the job would end them anyway
     say(f"quit ({code})")
-    from PySide6.QtCore import qInstallMessageHandler
-    qInstallMessageHandler(None)    # Qt's threads say goodbye on the way out; not news
     sys.stdout.flush()
     sys.stderr.flush()
     # Everything that matters is done. Tearing down the QML engine, its render
