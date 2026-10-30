@@ -71,6 +71,51 @@ there is no console, so everything goes there.
   `%APPDATA%\Curd\curd.exe`, not on PATH); `c` in section 8 opens it in a new console,
   where it plays through the mpv it bundles. ani-cli is a bash script and does not run.
 
+## Gaming: game mode, the HUD, Discord
+
+- **Game mode** (`orpheusd/desktop/gamemode.py`): every 2 s it asks
+  `SHQueryUserNotificationState` (D3D fullscreen, busy, presentation) and looks at the
+  foreground window: one that covers its whole monitor, has no caption, and is neither
+  the desktop/taskbar nor an Orpheus window counts as a game. Borderless games often
+  read as "accepts notifications", which is why the window check is there. It turns on
+  at once and off after two quiet polls, so an alt-tab does not bring everything back.
+  While it is on: the widget's loaders are off, every stage placement hides (the overlay
+  and the fullscreen show are topmost windows), toasts are skipped, and the `--open`
+  window is not shown over a game Orpheus was started during. Nothing is written to
+  config.json, and it all comes back when the game goes. QML reads it as
+  `OrpheusGame.gameMode` (Service.qml's `gameMode`). Config: `"gameMode": "auto" | "off"`.
+- **In-game HUD** (`hud.py`, `qml/Hud.qml`): a small card (cover, title, artist, a mini
+  spectrum in the theme's colours) that slides in for 4 s on a track change while game
+  mode is on, and whenever the `hud:show` hotkey fires (Win+Alt+N, falling back to
+  Win+Alt+I, then Win+Alt+U). The window is `WindowTransparentForInput |
+  WindowDoesNotAcceptFocus | Tool | WindowStaysOnTopHint` plus `WS_EX_NOACTIVATE |
+  WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW`, shown with `SW_SHOWNOACTIVATE`,
+  so clicks go straight through it to the game and it never takes focus. Unlike the
+  stage, it is meant to be click-through. It is hidden between appearances, because an
+  idle topmost window over a game can still cost the game DWM's direct-flip path.
+  Config: `"hud": "on" | "off"` (track-change pop-ups; the hotkey works either way),
+  `"hudCorner": "top-left" | "top-right" | "bottom-left" | "bottom-right"`.
+  **Exclusive fullscreen:** a game that owns the display through an exclusive D3D
+  swapchain bypasses the desktop compositor, and nothing (the HUD, the Game Bar,
+  Discord's own overlay) can draw over it. Most modern games, Deadlock included, run
+  borderless/flip-model, which DWM composes, and topmost overlays show there. If the
+  HUD never appears in a game, switch the game to borderless or windowed fullscreen.
+- **Discord Rich Presence** (`discord.py`): Discord's local IPC, the named pipe
+  `\\.\pipe\discord-ipc-0` to `-9`. Each frame is an 8-byte little-endian header
+  (opcode, length) followed by JSON: a HANDSHAKE (op 0, `{"v": 1, "client_id": ...}`),
+  then SET_ACTIVITY frames (op 1). It shows "Listening to" with the title, artist, cover
+  (the track's own https URL) and a progress bar. It clears on pause or stop and
+  reconnects within about 15 s of Discord restarting. It needs your own Discord
+  application:
+  1. <https://discord.com/developers/applications>, then **New Application**, and name
+     it **Orpheus**, since Discord shows that name.
+  2. Copy the **Application ID** into `config.json`: `"discordClientId": "1234..."`.
+     Empty or missing means off.
+  3. Optional: under **Rich Presence -> Art Assets**, upload Orpheus's icon with the key
+     `orpheus` (`python -m orpheusd.desktop --write-icon orpheus.png` writes it at 1024
+     px). It becomes the small badge on the cover.
+  The settings page's *gaming* section shows what game mode sees and Discord's state.
+
 ## Gotchas already paid for
 
 - Windows refuses to replace a file Qt is watching: `FileView.setText` stops watching,
