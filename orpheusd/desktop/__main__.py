@@ -174,7 +174,7 @@ def tray(app, quit_all, hotkeys):
     keys = {m: label for label, _, _, m in winsys.HOTKEYS if label in hotkeys.active}
     menu = QMenu()
     for label, method in (("Player", "library"), ("Visualizer", "toggle"), ("Mini player", "miniPlayer"),
-                          ("Show/hide widget", "widget:toggle")):
+                          ("Show/hide widget", "widget:toggle"), ("Settings", "settings")):
         a = QAction(label + (f"\t{keys[method]}" if method in keys else ""), menu)
         a.triggered.connect(lambda _=False, m=method: fire(m))
         menu.addAction(a)
@@ -314,6 +314,7 @@ def main():
         from . import winsys
         hotkeys = winsys.Hotkeys(fire)
         app.installNativeEventFilter(hotkeys)
+        shims.attach_hotkeys(hotkeys)   # the settings page shows them and rebinds them
         if hotkeys.failed:
             print("orpheus-desktop: hotkeys taken by another app:", ", ".join(hotkeys.failed), file=sys.stderr)
         keep = (tray(app, quit_all, hotkeys), launches)
