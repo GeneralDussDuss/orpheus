@@ -321,7 +321,7 @@ That is what makes it safe for a `.desktop` entry, which a launcher may fire twi
 | `style` | `compact` · `full` |
 | `corner` | `top-left` · `top-right` · `bottom-left` · `bottom-right` |
 | `layer` | `top` · `reserve` · `desktop` · `tile` · `float` |
-| `viz` | `prism` · `skyline` · `horizon` · `tunnel` · `orb` |
+| `viz` | `prism` · `skyline` · `horizon` · `tunnel` · `orb` · `halo` · `scope` · `nova` |
 | `monitor` | a monitor name, or empty for wherever it lands |
 
 `layer` is the one that decides how it behaves: `desktop` pins it behind your windows like

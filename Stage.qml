@@ -65,7 +65,7 @@ PanelWindow {
       else if (e.key === Qt.Key_Right || e.text === "l") win.engine.nextStyle(1)
       else if (e.key === Qt.Key_Left || e.text === "h") win.engine.nextStyle(-1)
       else if (e.text === "p") win.engine.setMiniPlayer(!win.engine.miniPlayer)
-      else if (e.text >= "1" && e.text <= "5") win.engine.setStyle(win.engine.styles[Number(e.text) - 1])
+      else if (e.text >= "1" && e.text <= "9" && Number(e.text) <= win.engine.styles.length) win.engine.setStyle(win.engine.styles[Number(e.text) - 1])
       else if (e.key === Qt.Key_Space && win.engine.player) win.engine.player.togglePlaying()
       else return
       e.accepted = true

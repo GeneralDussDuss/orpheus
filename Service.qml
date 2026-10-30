@@ -29,8 +29,9 @@ Item {
   readonly property string cavaConfigPath: stateDir + "/cava.conf"
   readonly property string themeRoot: home + "/.local/state/omarchy/current"
 
-  readonly property var styles: ["prism", "skyline", "horizon", "orb", "tunnel"]
-  readonly property var styleLabels: ({ prism: "Prism", skyline: "Skyline", horizon: "Horizon", orb: "Orb", tunnel: "Tunnel" })
+  readonly property var styles: ["prism", "skyline", "horizon", "orb", "tunnel", "halo", "scope", "nova"]
+  readonly property var styleLabels: ({ prism: "Prism", skyline: "Skyline", horizon: "Horizon", orb: "Orb", tunnel: "Tunnel",
+                                       halo: "Halo", scope: "Scope", nova: "Nova" })
   // railViz: the visualizer plane inside the player window. "off" shows album
   // art there instead. Prism is the default because it measured as the cheapest
   // style by a wide margin (+0.7% shell CPU, against +13 to +20 for the others).
