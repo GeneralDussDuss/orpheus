@@ -6,7 +6,7 @@ import "Tui.js" as Tui
 
 // What the stage shows inside its frame (or full-bleed): the visualizer, at a
 // resolution auto quality picks from the measured frame rate, with the title
-// card, the karaoke line and the fps readout over it.
+// card, the kinetic lyrics and the fps readout over it.
 Item {
   id: view
 
@@ -117,119 +117,207 @@ Item {
   readonly property bool lyricsOn: !!engine && engine.lyricsOverViz && lyr.lines.length > 0
   readonly property real pos: api ? (api.position || 0) : 0
   readonly property int lineIdx: lyricsOn ? lyr.lineAt(pos + 0.45 - lyr.offset) : -1
-  readonly property real fillHead: pos + 0.12 - lyr.offset
   readonly property string lineText: lineIdx >= 0 ? (lyr.lines[lineIdx].text || "") : ""
   readonly property string nextText: lyricsOn && lineIdx + 1 < lyr.lines.length ? (lyr.lines[lineIdx + 1].text || "") : ""
-  property var spans: []
+
+  // ---- kinetic lyrics ----------------------------------------------------------
+  //
+  // Each word flies in out of depth (tilted back, small, faint) and lands on
+  // the plane exactly when it is sung -- on its own tag when the lyrics carry
+  // word timing, else spread over the line by word length (LyricsSource) --
+  // then lights in the accent with the bloom budget's glow, punched by the
+  // kick while it is being sung. When the next line arrives the old one
+  // breaks apart: its words drift off on their own headings toward the
+  // camera and fade. Two line slots take turns, so the outgoing one can
+  // scatter while the incoming one lands. On light themes the bloom budget is
+  // zero: no glow, the same motion, contrast-checked colors.
+  //
+  // The song clock runs per frame from the API's own anchor (its `position`
+  // only steps 12 times a second, which reads as stutter in motion).
+  property real songNow: 0
+  FrameAnimation {
+    running: view.lyricsOn && view.visible
+    onTriggered: view.songNow = view.songClock()
+  }
+  function songClock() {
+    if (!api) return 0
+    var playing = api.player && api.player.playing === true
+    var p = playing && api.posAt > 0 ? api.posBase + (Date.now() - api.posAt) / 1000 : (api.position || 0)
+    return p - lyr.offset
+  }
+
+  property int front: 0               // which slot holds the current line
+  property var models: [null, null]
   onLineIdxChanged: {
-    spans = lineIdx >= 0 ? lyr.wordSpans(lineIdx) : []
-    lineIn.restart()
+    var m = models.slice(), next = 1 - front
+    m[next] = lineIdx >= 0 ? layoutLine(lineIdx) : null
+    models = m
+    var out = front === 0 ? slotA : slotB, inn = next === 0 ? slotA : slotB
+    out.scatter()
+    inn.arrive()
+    front = next
+  }
+
+  // Word layout for line `idx`: one row if it fits big enough, else two.
+  // Widths come from FontMetrics at 100 px and scale linearly.
+  function layoutLine(idx) {
+    var line = lyr.lines[idx], text = line.text || ""
+    var toks = lyr.tokenize(text), sp = lyr.wordSpans(idx)
+    if (!toks.length) return null
+    var W = kinetic.width, cap = unit * 1.7, space = kfm.advanceWidth(" ")
+    var ws = [], i
+    for (i = 0; i < toks.length; i++) ws.push(kfm.advanceWidth(toks[i].text))
+    function rowWidth(a, b) { var s = 0; for (var j = a; j < b; j++) s += ws[j] + (j > a ? space : 0); return s }
+    var split = toks.length, size = Math.min(cap, 100 * W / Math.max(1, rowWidth(0, toks.length)))
+    if (size < unit * 1.0 && toks.length > 1) {
+      // two rows, split where the widths balance best
+      var best = 1, bestMax = 1e9
+      for (i = 1; i < toks.length; i++) {
+        var mx = Math.max(rowWidth(0, i), rowWidth(i, toks.length))
+        if (mx < bestMax) { bestMax = mx; best = i }
+      }
+      split = best
+      size = Math.min(cap, 100 * W / Math.max(1, bestMax))
+    }
+    size = Math.max(12, size)
+    var k = size / 100, out = [], rows = split < toks.length ? 2 : 1
+    for (var r = 0; r < rows; r++) {
+      var a = r === 0 ? 0 : split, b = r === 0 ? split : toks.length
+      var x = (W - rowWidth(a, b) * k) / 2
+      for (i = a; i < b; i++) {
+        var s = sp[i] || { t: line.t, end: line.t + 1 }
+        out.push({ text: toks[i].text, t: s.t, end: s.end, x: x, w: ws[i] * k, row: r, i: i })
+        x += (ws[i] + space) * k
+      }
+    }
+    var last = out.length ? out[out.length - 1].end : line.t
+    return { size: size, rows: rows, words: out, last: last, seed: idx * 7919 }
   }
 
   // A scrim so text reads over any style, only where the text is.
   Rectangle {
     visible: view.lyricsOn
     anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-    height: parent.height * 0.36
+    height: parent.height * 0.38
     gradient: Gradient {
       GradientStop { position: 0; color: "transparent" }
       GradientStop { position: 1; color: Qt.rgba(view.bg.r, view.bg.g, view.bg.b, 0.72) }
     }
   }
 
+  FontMetrics { id: kfm; font.family: view.family; font.pixelSize: 100; font.bold: true }
+
   Item {
-    id: karaoke
+    id: kinetic
     visible: view.lyricsOn
     anchors.horizontalCenter: parent.horizontalCenter
-    y: parent.height * 0.70
+    y: parent.height * 0.64
     width: parent.width * 0.88
-    height: lineNow.height + lineNext.height
+    height: parent.height * 0.30
+    readonly property real kick: view.engine ? view.engine.kick : 0
 
-    FontMetrics { id: kfm; font.family: view.family; font.pixelSize: 100; font.bold: true }
-    // As big as fits on one line, capped.
-    readonly property real size: {
-      var w = kfm.advanceWidth(view.lineText || " ")
-      return Math.max(12, Math.min(view.unit * 1.5, 100 * width / Math.max(1, w)))
-    }
-    FontMetrics { id: lfm; font.family: view.family; font.pixelSize: karaoke.size; font.bold: true }
+    KLine { id: slotA; model: view.models[0] }
+    KLine { id: slotB; model: view.models[1] }
 
-    // How far the singing has got, in pixels along the line.
-    readonly property real filled: {
-      var t = view.lineText, sp = view.spans
-      if (!t || !sp.length) return 0
-      var h = view.fillHead, toks = lyr.tokenize(t), done = 0
-      for (var i = 0; i < sp.length && i < toks.length; i++) {
-        if (h >= sp[i].end) { done = lfm.advanceWidth(t.substring(0, toks[i].b)); continue }
-        if (h > sp[i].t) {
-          var f = (h - sp[i].t) / Math.max(0.12, sp[i].end - sp[i].t)
-          var a = lfm.advanceWidth(t.substring(0, toks[i].a)), b = lfm.advanceWidth(t.substring(0, toks[i].b))
-          done = a + (b - a) * f
-        }
-        break
-      }
-      return done
-    }
-
-    Item {
-      id: lineNow
-      width: parent.width
-      height: lfm.height * 1.15
-      opacity: 0
-      Text {
-        id: unsung
-        anchors.horizontalCenter: parent.horizontalCenter
-        text: view.lineText
-        font.family: view.family; font.pixelSize: karaoke.size; font.bold: true
-        color: Tui.mix(view.fg, view.bg, 0.45)
-      }
-      // The sung part glows as it fills (the next line stays flat). The
-      // layer is the whole line's size, fixed per line, so the fill moving
-      // redraws it but never reallocates it.
-      Item {
-        x: unsung.x
-        width: unsung.width
-        height: parent.height
-        layer.enabled: view.lyricsOn && view.bloom > 0 && karaoke.filled > 0
-        layer.effect: MultiEffect {
-          autoPaddingEnabled: true
-          shadowEnabled: true
-          shadowColor: view.accentText
-          shadowOpacity: Math.min(1, view.bloom * (0.65 + 0.35 * (view.engine ? view.engine.swell : 0)))
-          shadowBlur: 1
-          blurMax: Math.min(32, Math.round(karaoke.size * 0.3))
-          shadowHorizontalOffset: 0
-          shadowVerticalOffset: 0
-        }
-        Item {
-          width: Math.min(unsung.width, karaoke.filled)
-          height: parent.height
-          clip: true
-          Text {
-            text: view.lineText
-            font.family: view.family; font.pixelSize: karaoke.size; font.bold: true
-            color: view.accentText
-          }
-        }
-      }
-      transform: Translate { id: lift; y: 0 }
-    }
+    // What comes next, small and flat under the current line.
     Text {
-      id: lineNext
-      anchors.top: lineNow.bottom
-      anchors.horizontalCenter: parent.horizontalCenter
+      readonly property var cur: view.models[view.front]
+      y: cur ? cur.size * 1.22 * cur.rows + cur.size * 0.15 : 0
       width: parent.width
       horizontalAlignment: Text.AlignHCenter
       elide: Text.ElideRight
       text: view.nextText
-      font.family: view.family; font.pixelSize: karaoke.size * 0.62
+      font.family: view.family; font.pixelSize: Math.max(11, (cur ? cur.size : view.unit) * 0.5)
       color: view.dim
-      opacity: 0.7
+      opacity: 0.75
+    }
+  }
+
+  component KLine: Item {
+    id: kl
+    property var model: null
+    property real gone: 1               // 0 = on stage, 1 = scattered away
+    property bool done: false           // ended on its own (a long gap after it)
+    width: kinetic.width
+    height: kinetic.height
+    visible: !!model && gone < 1
+
+    function arrive() { leave.stop(); gone = 0; done = false }
+    function scatter() { if (gone < 1 && !leave.running) leave.restart() }
+    NumberAnimation { id: leave; target: kl; property: "gone"; to: 1; duration: 850; easing.type: Easing.OutCubic }
+    // Nothing follows for a while (an instrumental): let the line go anyway.
+    Connections {
+      target: view
+      function onSongNowChanged() {
+        if (kl.model && kl.gone === 0 && !kl.done && view.songNow > kl.model.last + 2.5) { kl.done = true; kl.scatter() }
+      }
     }
 
-    ParallelAnimation {
-      id: lineIn
-      NumberAnimation { target: lineNow; property: "opacity"; from: 0.15; to: 1; duration: 260; easing.type: Easing.OutCubic }
-      NumberAnimation { target: lift; property: "y"; from: karaoke.size * 0.35; to: 0; duration: 320; easing.type: Easing.OutCubic }
+    Repeater {
+      model: kl.model ? kl.model.words : []
+      delegate: Item {
+        id: wd
+        required property var modelData
+        readonly property var m: kl.model
+        readonly property real lead: 0.38
+        // 0 -> 1 as the word flies in, landing exactly at its start
+        readonly property real pin: Math.max(0, Math.min(1, (view.songNow - modelData.t + lead) / lead))
+        // 1 while sung, fading over 0.6 s after
+        readonly property real hot: view.songNow < modelData.t ? 0
+                                    : view.songNow < modelData.end ? 1
+                                    : Math.max(0, 1 - (view.songNow - modelData.end) / 0.6)
+        readonly property real punch: hot * kinetic.kick
+        readonly property real g: kl.gone
+        // a heading per word, stable for the line
+        readonly property real rnd: { var h = Math.sin((modelData.i + 1) * 12.9898 + (m ? m.seed : 0) * 78.233) * 43758.5453; return h - Math.floor(h) }
+        readonly property real rnd2: { var h = Math.sin((modelData.i + 1) * 39.3467 + (m ? m.seed : 0) * 11.135) * 24634.6345; return h - Math.floor(h) }
+        function outBack(x) { var c = 1.70158; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2) }
+
+        x: modelData.x
+        y: m ? modelData.row * m.size * 1.22 : 0
+        width: modelData.w
+        height: m ? m.size * 1.22 : 0
+        opacity: Math.min(1, pin * 1.6) * (1 - g) * (1 - g)
+        visible: opacity > 0.003
+
+        GlowText {
+          id: word
+          anchors.centerIn: parent
+          text: wd.modelData.text
+          font.family: view.family
+          font.pixelSize: wd.m ? wd.m.size : 12
+          font.bold: true
+          color: Tui.mix(view.fg, view.accentText, Math.max(wd.hot, 0.35 * wd.punch))
+          glowColor: view.accentText
+          glowRadius: wd.m ? Math.min(32, Math.round(wd.m.size * 0.35)) : 8
+          glow: Math.min(1, view.bloom * (0.2 * wd.pin + 0.7 * wd.hot + 0.6 * wd.punch) * (1 - wd.g))
+          // one layer for the word's whole life on stage, not one per flash
+          glowLive: view.bloom > 0 && wd.pin > 0 && wd.g < 1
+          transform: [
+            // tilted back into the screen while far away, flat once landed
+            Rotation {
+              origin.x: word.width / 2; origin.y: word.height
+              axis { x: 1; y: 0; z: 0 }
+              angle: -65 * (1 - wd.pin) * (1 - wd.pin) + 25 * wd.g * (wd.rnd - 0.5)
+            },
+            Scale {
+              origin.x: word.width / 2; origin.y: word.height / 2
+              readonly property real s: (0.3 + 0.7 * wd.outBack(wd.pin)) * (1 + 0.14 * wd.punch) * (1 + 0.7 * wd.g)
+              xScale: s; yScale: s
+            },
+            Rotation {
+              origin.x: word.width / 2; origin.y: word.height / 2
+              angle: (wd.rnd2 - 0.5) * 50 * wd.g
+            },
+            Translate {
+              // rise in from a little below; scatter outward from the line's centre and up,
+              // clear of the incoming line
+              x: wd.g * ((wd.modelData.x + wd.modelData.w / 2 - kinetic.width / 2) * 0.5 + (wd.rnd - 0.5) * view.unit * 4)
+              y: (1 - wd.pin) * (wd.m ? wd.m.size : 0) * 0.5 - wd.g * view.unit * (2.5 + 2.5 * wd.rnd2)
+            }
+          ]
+        }
+      }
     }
   }
 
