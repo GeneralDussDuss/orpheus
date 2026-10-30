@@ -95,6 +95,23 @@ PanelWindow {
     pick(s[(i + d + s.length) % s.length])
   }
 
+  // With the director on (the default), a style change rides its `drop`: a
+  // build resolving into full band, landed on the downbeat it re-anchors.
+  // Without it, the heuristic below. Either way, never more often than every 20 s.
+  Connections {
+    target: win.engine
+    ignoreUnknownSignals: true
+    function onDropsChanged() { if (win.engine.autoStyle && win.engine.director) win.switchOnDrop() }
+  }
+  function switchOnDrop() {
+    var now = Date.now()
+    if (now - lastSwitch < cooldownMs) return
+    lastSwitch = now
+    var s = engine.styles, options = []
+    for (var i = 0; i < s.length; i++) if (s[i] !== current) options.push(s[i])
+    liveStyle = options[Math.floor(Math.random() * options.length)]
+  }
+
   // Drop detection, on the shared onset signals. A drop is a breakdown (the
   // loudness envelope well under its own 10 s average for 2 s or more) that
   // ends in a slam (swell back above the average with a hard kick), or, with
@@ -108,7 +125,7 @@ PanelWindow {
   Timer {
     interval: 100
     repeat: true
-    running: !!win.engine && win.engine.autoStyle && win.playing
+    running: !!win.engine && win.engine.autoStyle && !win.engine.director && win.playing
     onTriggered: win.watchDrops(0.1)
     onRunningChanged: if (running) win.seedDrops()
   }
@@ -128,12 +145,7 @@ PanelWindow {
     var surge = sw - swellAgo > 0.28 && e.energy > slowSwell * 1.3
     if (!(slam && (afterBreak || surge))) return
     quietFor = 0
-    var now = Date.now()
-    if (now - lastSwitch < cooldownMs) return
-    lastSwitch = now
-    var s = e.styles, options = []
-    for (var i = 0; i < s.length; i++) if (s[i] !== current) options.push(s[i])
-    liveStyle = options[Math.floor(Math.random() * options.length)]
+    switchOnDrop()
   }
 
   // ---- keys ------------------------------------------------------------------

@@ -263,7 +263,9 @@ ShaderEffect {
     }
     if (styleName === shownStyle) { downbeatWait.stop(); pendingStyle = ""; return }
     pendingStyle = styleName
-    if (beatConfidence > 0.35) downbeatWait.restart()
+    // Just past a downbeat already (a drop switches style the instant it is
+    // heard, ~0.1 bar after the downbeat it re-anchored): go now, not a bar later.
+    if (beatConfidence > 0.35 && barPhase > 0.12) downbeatWait.restart()
     else beginTransition()
   }
   // The director's barPhase wraps back to 0 on the downbeat.
