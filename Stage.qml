@@ -153,16 +153,51 @@ PanelWindow {
   // ---- keys ------------------------------------------------------------------
 
   function handleKey(e) {
-    if (e.key === Qt.Key_Escape) engine.open = false
+    if (e.key === Qt.Key_Escape) leave(close)
     else if (e.key === Qt.Key_Right || e.text === "l") stepStyle(1)
     else if (e.key === Qt.Key_Left || e.text === "h") stepStyle(-1)
     else if (e.text === "p" && !bleed) engine.setMiniPlayer(!engine.miniPlayer)
-    else if (e.text === "f") engine.setPlacement(show ? "overlay" : "fullscreen")
+    else if (e.text === "f") leave(toggleShow)
     else if (e.text >= "1" && e.text <= "9" && Number(e.text) <= engine.styles.length) pick(engine.styles[Number(e.text) - 1])
     else if (e.key === Qt.Key_Space && engine.player) engine.player.togglePlaying()
     else return false
     return true
   }
+
+  function close() { engine.open = false }
+  function toggleShow() { engine.setPlacement(show ? "overlay" : "fullscreen") }
+
+  // ---- coming and going ------------------------------------------------------
+  //
+  // The window opens on its theme's background (opaque, so nothing black or
+  // stale shows first) and its contents fade up over it: the show at page
+  // pace, the card at state pace. Leaving from here (esc, f, double-click)
+  // fades them back down before the window goes; a close from elsewhere (a
+  // hotkey, the tray) still cuts, since the window is gone by then.
+  property real presence: 0
+  NumberAnimation on presence { id: arrive; from: 0; to: 1; duration: win.bleed ? Tui.PAGE : Tui.STATE; easing.type: Easing.InOutCubic }
+  property var leaving: null
+  function leave(then) {
+    if (leaving) return
+    leaving = then
+    arrive.stop()
+    depart.from = presence
+    depart.restart()
+  }
+  NumberAnimation { id: depart; target: win; property: "presence"; to: 0; duration: Tui.STATE; easing.type: Easing.InOutCubic
+                    onFinished: { var f = win.leaving; win.leaving = null; if (f) f() } }
+
+  // ---- the show's mouse ------------------------------------------------------
+  //
+  // The pointer and the key strip are there while the mouse moves and leave
+  // after 2 s of stillness, so the show is only the show. Any movement
+  // brings both back.
+  property bool awake: true
+  function wake() { awake = true; sleepTimer.restart() }
+  // (Not while the pointer rests on the key strip itself: it would vanish under the click.)
+  Timer { id: sleepTimer; interval: 2000; running: win.show; onTriggered: if (hintHover.hovered) restart(); else win.awake = false }
+  // Show-unit type: the same scale StageView uses, so a 3440 px wall reads.
+  readonly property real unit: Math.max(10, Math.min(width / 46, height / 18))
 
   // ---- full-bleed: the show and the wallpaper ---------------------------------
 
@@ -176,49 +211,104 @@ PanelWindow {
     Loader {
       anchors.fill: parent
       active: win.bleed
+      opacity: win.presence
       sourceComponent: StageView {
         engine: win.engine
         styleName: win.current
-        showHints: win.show
-        hints: Tui.hints([["←→", "style"], ["f", "window"], ["space", "⏯"], ["esc", ""]], win.accentText, win.dim)
       }
     }
 
     // The show takes the mouse for style changes; the wallpaper takes nothing.
+    // A left click waits out the double-click time, so the double-click that
+    // leaves the show does not change the style on its way out.
     MouseArea {
       id: showMouse
       anchors.fill: parent
       enabled: win.show
       visible: win.show
+      hoverEnabled: true
       acceptedButtons: Qt.LeftButton | Qt.RightButton
+      cursorShape: win.awake ? Qt.ArrowCursor : Qt.BlankCursor
       property real wheelAcc: 0
-      onClicked: function(m) { win.stepStyle(m.button === Qt.RightButton ? -1 : 1) }
-      onDoubleClicked: win.engine.setPlacement("overlay")
+      onPositionChanged: win.wake()
+      onPressed: win.wake()
+      onClicked: function(m) {
+        if (m.button === Qt.RightButton) win.stepStyle(-1)
+        else clickWait.restart()
+      }
+      onDoubleClicked: { clickWait.stop(); win.leave(function() { win.engine.setPlacement("overlay") }) }
       // one style per notch: a touchpad's stream of small deltas used to race through them
-      onWheel: function(w) { var n = Tui.notches(showMouse, w.angleDelta.y); if (n) win.stepStyle(-n) }
+      onWheel: function(w) { win.wake(); var n = Tui.notches(showMouse, w.angleDelta.y); if (n) win.stepStyle(-n) }
+      Timer { id: clickWait; interval: Qt.styleHints.mouseDoubleClickInterval; onTriggered: win.stepStyle(1) }
     }
     VizLabel {
       id: showLabel
       anchors.fill: parent
       visible: win.show
-      pixelSize: Style.font.body * 2
+      opacity: win.presence
+      pixelSize: Math.round(Math.max(Style.font.body * 2, win.unit * 0.7))
     }
     Connections { target: win; function onPicked(name) { if (win.show) showLabel.flash(name) } }
+
+    // The way around and the way out, at the bottom while the mouse is about.
+    HintBar {
+      id: showHints
+      visible: win.show && opacity > 0.01
+      anchors.horizontalCenter: parent.horizontalCenter
+      anchors.bottom: parent.bottom
+      anchors.bottomMargin: Math.round(win.unit * 0.6)
+      pixelSize: Math.round(Math.max(Style.font.caption, win.unit * 0.36))
+      keyColor: win.accentText
+      labelColor: win.dim
+      opacity: win.presence * (win.awake ? 1 : 0)
+      HoverHandler { id: hintHover }
+      Behavior on opacity { NumberAnimation { duration: win.awake ? Tui.STATE : Tui.PAGE; easing.type: Easing.InOutCubic } }
+      items: [
+        { k: "←→", l: "style", run: function() { win.stepStyle(1) }, tip: "next style · click, right-click and scroll work too", tipKey: "← →" },
+        { k: "space", l: "play", run: function() { if (win.engine.player) win.engine.player.togglePlaying() }, tip: "play / pause" },
+        { k: "f", l: "window", run: function() { win.leave(win.toggleShow) }, tip: "back to the window · or double-click" },
+        { k: "esc", l: "close", run: function() { win.leave(win.close) }, tip: "close the visualizer" }]
+    }
   }
 
   // ┌─ orpheus · skyline ──────── ←→ style  p player  esc ┐
   TuiBox {
     id: card
     visible: !win.bleed
-    width: parent.width
+    width: parent ? parent.width : 0
     height: column.implicitHeight + ch * 2
+    opacity: win.presence
     title: "orpheus · " + (win.engine ? win.engine.styleLabels[win.current].toLowerCase() : "")
-    hintItems: win.desktop ? [] : [
-      { k: "←→", l: "style" },
-      { k: "p", l: "player", run: function() { win.engine.setMiniPlayer(!win.engine.miniPlayer) }, tip: (win.engine && win.engine.miniPlayer ? "hide" : "show") + " the mini player" },
-      { k: "f", l: "full", run: function() { win.engine.setPlacement("fullscreen") }, tip: "fullscreen show" },
-      { k: "space", l: "⏯", run: function() { if (win.engine.player) win.engine.player.togglePlaying() }, tip: "play / pause" },
-      { k: "esc", l: "", run: function() { win.engine.open = false }, tip: "close the visualizer" }]
+    // The hints give way before the title does: labels first, then the
+    // lesser keys. Every key still works, and each hint keeps its tooltip.
+    readonly property var allHints: [
+      { k: "←→", l: "style", run: function() { win.stepStyle(1) }, tip: "next style · click, right-click and scroll the picture too", tipKey: "← →", keep: 1 },
+      { k: "p", l: "player", run: function() { win.engine.setMiniPlayer(!win.engine.miniPlayer) }, tip: (win.engine && win.engine.miniPlayer ? "hide" : "show") + " the mini player", keep: 2 },
+      { k: "f", l: "full", run: function() { win.leave(win.toggleShow) }, tip: "fullscreen show", keep: 0 },
+      { k: "space", l: "play", run: function() { if (win.engine.player) win.engine.player.togglePlaying() }, tip: "play / pause", keep: 1 },
+      { k: "esc", l: "close", run: function() { win.leave(win.close) }, tip: "close the visualizer", keep: 0 }]
+    TextMetrics { id: titleM; font.family: Style.font.family; font.pixelSize: Style.font.body; text: "  " + card.title + "  " }
+    TextMetrics { id: hintM; font.family: Style.font.family; font.pixelSize: Style.font.caption; text: "x" }
+    // room on the top edge for the hints, in caption cells
+    readonly property real room: (width - card.cw * 4 - titleM.advanceWidth) / Math.max(1, hintM.advanceWidth)
+    function hintCells(list) {
+      var n = 0
+      for (var i = 0; i < list.length; i++) n += list[i].k.length + (list[i].l ? list[i].l.length + 1 : 0) + (i ? 3 : 0)
+      return n + 2
+    }
+    function hintsFor(room) {
+      var full = allHints, i
+      if (hintCells(full) <= room) return full
+      var keys = []
+      for (i = 0; i < full.length; i++) keys.push(Object.assign({}, full[i], { l: "" }))
+      if (hintCells(keys) <= room) return keys
+      for (var keep = 1; keep <= 2; keep++) {
+        var few = keys.filter(function(h) { return h.keep < keep })
+        if (hintCells(few) <= room) return few
+      }
+      return []
+    }
+    hintItems: win.desktop ? [] : hintsFor(room)
     footer: win.engine && !win.engine.hasCava ? "install cava to hear the music" : ""
     focused: !win.desktop
     clock: win.engine ? win.engine.time : -1
@@ -235,29 +325,39 @@ PanelWindow {
       // Style tabs as text: [1 skyline]  2 horizon ...  The chosen one is lit; the
       // right edge carries the pulse (eq + pace), muted so the visuals stay the subject.
       Item {
+        id: tabs
         width: parent.width
         height: card.ch
+        // Too narrow for every name: the others keep only their numbers.
+        FontMetrics { id: tabM; font.family: Style.font.family; font.pixelSize: Style.font.caption }
+        readonly property real fullWidth: {
+          var s = win.engine ? win.engine.styles : [], w = 0
+          for (var i = 0; i < s.length; i++) w += tabM.advanceWidth(" " + (i + 1) + " " + win.engine.styleLabels[s[i]] + " ") + card.cw * 2
+          return w
+        }
+        readonly property bool compact: fullWidth > width - (pulse.visible ? pulse.implicitWidth : 0) - card.cw * 2
         Row {
-          spacing: card.cw * 2
+          spacing: tabs.compact ? card.cw : card.cw * 2
           Repeater {
             model: win.engine ? win.engine.styles : []
             Text {
               required property string modelData
               required property int index
               readonly property bool current: win.current === modelData
-              text: (current ? "[" : " ") + (index + 1) + " " + win.engine.styleLabels[modelData].toLowerCase() + (current ? "]" : " ")
+              text: (current ? "[" : " ") + (index + 1) + (current || !tabs.compact ? " " + win.engine.styleLabels[modelData].toLowerCase() : "") + (current ? "]" : " ")
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
               font.bold: current
               color: current || tabMouse.containsMouse ? win.accentText : win.dim
               font.underline: tabMouse.containsMouse && !current
-              Behavior on color { ColorAnimation { duration: 180 } }
+              Behavior on color { ColorAnimation { duration: Tui.STATE; easing.type: Easing.InOutCubic } }
               MouseArea { id: tabMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: win.pick(parent.modelData)
                           TuiTip { text: win.engine.styleLabels[modelData].toLowerCase(); key: String(index + 1) } }
             }
           }
         }
         Text {
+          id: pulse
           anchors.right: parent.right
           anchors.verticalCenter: parent.verticalCenter
           visible: win.engine && win.engine.hasCava

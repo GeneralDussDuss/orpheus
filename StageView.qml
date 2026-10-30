@@ -12,8 +12,6 @@ Item {
 
   property var engine: null
   property string styleName: "skyline"
-  property bool showHints: false          // the key strip, for the full-screen show
-  property string hints: ""
 
   readonly property color bg: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 1)
   readonly property color fg: Tui.ensure(Color.foreground, bg, 7)
@@ -27,12 +25,41 @@ Item {
   readonly property var api: engine ? engine.api : null
   readonly property var track: api ? api.track : null
 
+  // ---- what there is to show ---------------------------------------------------
+  //
+  // Paused, nothing loaded, signed out or deaf: the visuals settle back and a
+  // line says why, so a still picture reads as resting, not broken. Debounced:
+  // a skip passes through "no track" for a poll or two, and the Api starts out
+  // "offline" until its first answer.
+  readonly property bool playing: !!(engine && engine.playing)
+  readonly property bool hasTrack: !!(engine && engine.player)
+  readonly property string loginState: api && api.login ? (api.login.state || "") : ""
+  readonly property string idleWant: !engine ? ""
+                                     : loginState === "signed-out" ? "signed out"
+                                     : !hasTrack ? "nothing playing"
+                                     : !engine.hasCava && playing ? "deaf"
+                                     : !playing ? "paused" : ""
+  property string idle: ""
+  onIdleWantChanged: idleWait.restart()
+  Timer { id: idleWait; interval: view.idle === "" ? 900 : 250; onTriggered: view.idle = view.idleWant }
+  Component.onCompleted: { idleWait.restart(); if (trackKey !== "" && engine && engine.trackTitle) titleCard.play() }
+  // The player window's global key (on Windows as the hotkeys actually bound it).
+  readonly property string libraryKey: {
+    if (typeof OrpheusKeys === "undefined") return "super+shift+m"
+    var b = OrpheusKeys.bindings || []
+    for (var i = 0; i < b.length; i++) if (b[i].action === "library" && b[i].combo) return String(b[i].combo).toLowerCase()
+    return ""
+  }
+
   Viz {
     id: viz
     anchors.fill: parent
     engine: view.engine
     styleName: view.styleName
     renderScale: view.scale_
+    // At rest the picture steps back; the music brings it forward again.
+    opacity: view.idle === "" || view.idle === "deaf" ? 1 : 0.55
+    Behavior on opacity { NumberAnimation { duration: Tui.PAGE; easing.type: Easing.InOutCubic } }
   }
 
   // ---- auto quality --------------------------------------------------------
@@ -326,8 +353,27 @@ Item {
   // When the track changes: an accent rule draws out, the title resolves from
   // wide tracking, the artist follows, it holds, and it all fades away.
   readonly property string trackKey: track ? String(track.id || track.title || "") : ""
-  onTrackKeyChanged: if (trackKey !== "" && engine && engine.trackTitle) titleCard.play()
-  Component.onCompleted: if (trackKey !== "" && engine && engine.trackTitle) titleCard.play()
+  onTrackKeyChanged: {
+    if (trackKey !== "" && engine && engine.trackTitle) titleCard.play()
+    else titleCard.clear()                 // nothing loaded: no stale title over an empty stage
+  }
+
+  // The card's own scrim: the same falloff as the lyrics', from the edge it
+  // sits nearest, so the title reads over the brightest style.
+  Rectangle {
+    id: cardScrim
+    readonly property bool atTop: view.lyricsOn
+    visible: titleCard.visible
+    opacity: titleCard.opacity
+    anchors.left: parent.left
+    anchors.right: parent.right
+    y: atTop ? 0 : parent.height - height
+    height: parent.height * (atTop ? 0.42 : 0.6)
+    gradient: Gradient {
+      GradientStop { position: 0; color: Qt.rgba(view.bg.r, view.bg.g, view.bg.b, cardScrim.atTop ? 0.6 : 0) }
+      GradientStop { position: 1; color: Qt.rgba(view.bg.r, view.bg.g, view.bg.b, cardScrim.atTop ? 0 : 0.6) }
+    }
+  }
 
   Item {
     id: titleCard
@@ -343,13 +389,23 @@ Item {
     property string title: ""
     property string artist: ""
 
+    property string nextTitle: ""
+    property string nextArtist: ""
     function play() {
       var t = view.track
-      title = t ? (t.title || "") : ""
-      artist = t ? (Array.isArray(t.artists) ? t.artists.join(", ") : (t.artist || "")) : ""
-      if (!title) return
+      nextTitle = t ? (t.title || "") : ""
+      nextArtist = t ? (Array.isArray(t.artists) ? t.artists.join(", ") : (t.artist || "")) : ""
+      if (!nextTitle) { clear(); return }
+      // A skip while a card is up: the old one steps out first, never cut.
+      gone.stop()
+      handover.duration = opacity > 0.01 ? Tui.STATE : 0
       card.restart()
     }
+    function clear() {
+      card.stop()
+      if (opacity > 0.01) gone.restart()
+    }
+    NumberAnimation { id: gone; target: titleCard; property: "opacity"; to: 0; duration: Tui.STATE; easing.type: Easing.InOutCubic }
 
     Column {
       id: col
@@ -391,7 +447,9 @@ Item {
 
     SequentialAnimation {
       id: card
-      ScriptAction { script: { titleCard.opacity = 0; artistText.opacity = 0; titleCard.rule = 0 } }
+      NumberAnimation { id: handover; target: titleCard; property: "opacity"; to: 0; easing.type: Easing.InOutCubic }
+      ScriptAction { script: { titleCard.title = titleCard.nextTitle; titleCard.artist = titleCard.nextArtist
+                               titleCard.opacity = 0; artistText.opacity = 0; titleCard.rule = 0 } }
       ParallelAnimation {
         NumberAnimation { target: titleCard; property: "opacity"; from: 0; to: 1; duration: 1200; easing.type: Easing.OutCubic }
         NumberAnimation { target: titleCard; property: "spread"; from: view.unit * 0.9; to: view.unit * 0.04; duration: 1800; easing.type: Easing.OutQuart }
@@ -419,27 +477,66 @@ Item {
     styleColor: Qt.rgba(view.bg.r, view.bg.g, view.bg.b, 0.7)
   }
 
-  Text {
-    id: hintText
-    visible: view.showHints && opacity > 0
-    anchors { bottom: parent.bottom; horizontalCenter: parent.horizontalCenter; bottomMargin: view.unit * 0.6 }
-    textFormat: Text.StyledText
-    text: view.hints
-    font.family: view.family
-    font.pixelSize: Style.font.caption
-    color: view.dim
-    opacity: 0
-    SequentialAnimation on opacity {
-      running: view.showHints
-      NumberAnimation { to: 1; duration: 400 }
-      PauseAnimation { duration: 3500 }
-      NumberAnimation { to: 0; duration: 900 }
+  // ---- at rest ------------------------------------------------------------------
+  //
+  // Nothing to play, signed out, or no way to hear it: one calm line in the
+  // middle, breathing on the shared clock. Paused: a small mark in the corner;
+  // the title and the lyrics stay where they were.
+  readonly property real breath: engine && engine.time >= 0 ? 0.5 + 0.5 * Math.sin(engine.time * 1.2) : 1
+  Column {
+    id: rest
+    anchors.centerIn: parent
+    width: parent.width * 0.8
+    spacing: view.unit * 0.3
+    readonly property bool on: view.idle !== "" && view.idle !== "paused"
+    opacity: on ? 1 : 0
+    visible: opacity > 0.01
+    Behavior on opacity { NumberAnimation { duration: Tui.PAGE; easing.type: Easing.InOutCubic } }
+    Text {
+      width: parent.width
+      horizontalAlignment: Text.AlignHCenter
+      textFormat: Text.StyledText
+      text: '<font color="' + Tui.hex(view.accentText) + '">╱╱</font> '
+            + (view.idle === "deaf" ? "can’t hear the music" : Tui.esc(view.idle))
+      font.family: view.family
+      font.pixelSize: Math.max(Style.font.body, view.unit * 0.8)
+      font.bold: true
+      font.letterSpacing: view.unit * 0.05
+      color: view.fg
+      opacity: 0.7 + 0.3 * view.breath
+      style: Text.Outline
+      styleColor: Qt.rgba(view.bg.r, view.bg.g, view.bg.b, 0.6)
+    }
+    Text {
+      width: parent.width
+      horizontalAlignment: Text.AlignHCenter
+      wrapMode: Text.WordWrap
+      text: view.idle === "signed out" ? "sign in from the player" + (view.libraryKey ? " · " + view.libraryKey : "")
+          : view.idle === "nothing playing" ? "pick something in the player" + (view.libraryKey ? " · " + view.libraryKey : "")
+          : view.idle === "deaf" ? (Qt.platform.os === "windows" ? "the audio capture is not running" : "install cava to see the music")
+          : ""
+      font.family: view.family
+      font.pixelSize: Math.max(Style.font.caption, view.unit * 0.42)
+      color: view.dim
+      style: Text.Outline
+      styleColor: Qt.rgba(view.bg.r, view.bg.g, view.bg.b, 0.6)
     }
   }
-  function flashHints() { if (showHints) { hintText.opacity = 1; hintFade.restart() } }
-  SequentialAnimation {
-    id: hintFade
-    PauseAnimation { duration: 2500 }
-    NumberAnimation { target: hintText; property: "opacity"; to: 0; duration: 900 }
+
+  Text {
+    id: pausedMark
+    anchors { left: parent.left; bottom: parent.bottom; margins: Math.max(8, view.unit * 0.6) }
+    textFormat: Text.StyledText
+    text: '<font color="' + Tui.hex(view.accentText) + '">‖</font> paused'
+    font.family: view.family
+    font.pixelSize: Math.max(Style.font.caption, view.unit * 0.42)
+    color: view.dim
+    readonly property bool on: view.idle === "paused"
+    property real shown: on ? 1 : 0
+    Behavior on shown { NumberAnimation { duration: Tui.STATE; easing.type: Easing.InOutCubic } }
+    opacity: shown * (0.6 + 0.4 * view.breath)
+    visible: shown > 0.01
+    style: Text.Outline
+    styleColor: Qt.rgba(view.bg.r, view.bg.g, view.bg.b, 0.7)
   }
 }
