@@ -43,6 +43,12 @@ ShaderEffect {
   property real light: engine && engine.lightTheme ? 1 : 0
   property real beat: engine ? engine.beat : 0
   property real flow: engine ? engine.travel : 0
+  // Added later; shaders that don't declare these simply ignore them.
+  property real tempo: engine ? engine.paceBpm / 120 : 1
+  property real kick: engine ? engine.kick : 0
+  property real snap: engine ? engine.snap : 0
+  property real swell: engine ? engine.swell : 0
+  property real kicks: engine ? engine.kicks : 0
 
   // Spectrum history for Prism, Horizon and Scope, kept on the GPU: histFx renders a 32x40 target
   // from its own previous frame (rows shift back one step, row 0 = now).

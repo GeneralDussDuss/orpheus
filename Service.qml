@@ -305,9 +305,31 @@ Item {
   // ---- Flux (the pace signal; see the Pace section) ----
   property var prevLv: []
   property real fluxRate: 0      // positive spectral change per second
-  // Beat: bass jumping above its own slow average; snaps up, decays fast.
+  // Beat: a kick transient (bass jumping above its own slow average, or the
+  // low end climbing faster than it usually does); snaps up, decays fast.
   property real beat: 0
   property real slowBass: 0
+  // ---- Onsets (shader uniforms kick, snap, swell, kicks) ----
+  // Transients come from positive flux, normalised against the track's own
+  // recent flux so compressed masters (where the bass level barely moves under
+  // autosens) still fire. Attack is instant; release is exponential in wall
+  // time, so 30 Hz and 60 Hz cava decay alike.
+  property real kick: 0          // 0..1 low end (bands 0-5) onset, ~0.22 s release
+  property real snap: 0          // 0..1 mid/high (bands 12-31) onset, ~0.12 s release
+  property real swell: 0         // 0..1 loudness envelope: ~0.2 s attack, ~1.4 s release
+  property real kicks: 0         // kick counter (whole steps, wraps at 1024) for per-kick variety
+  property real lowFluxAvg: 0
+  property real lowFluxPk: 0
+  property real hiFluxAvg: 0
+  property real hiFluxPk: 0
+  property real lastPublishMs: 0
+  property real lastKickMs: 0
+
+  // Onset strength 0..1 of `f` against its running average and peak.
+  function onsetOf(f, avg, pk) {
+    var thr = avg * 1.6 + 0.003
+    return Math.max(0, Math.min(1, (f - thr) / Math.max(pk - thr, 0.015)))
+  }
 
   function pack(a, i) { return Qt.vector4d(a[i] || 0, a[i + 1] || 0, a[i + 2] || 0, a[i + 3] || 0) }
 
@@ -331,14 +353,39 @@ Item {
     // is the onset signal, in place of a bass-transient test -- relative bass
     // transients vanish on heavily compressed music (dense drum'n'bass reads
     // as having no onsets at all), while flux survives it.
-    var fx = 0
-    for (var k = 0; k < 32; k++) fx += Math.max(0, (lv[k] || 0) - (prevLv[k] || 0))
+    var fx = 0, lowF = 0, hiF = 0
+    for (var k = 0; k < 32; k++) {
+      var d = Math.max(0, (lv[k] || 0) - (prevLv[k] || 0))
+      fx += d
+      if (k < 6) lowF += d
+      else if (k >= 12) hiF += d
+    }
+    lowF /= 6; hiF /= 20
     prevLv = lv
+    var nowMs = Date.now()
     fluxRate = fx * (listening ? fps : 60)
-    feedEnvelope(fluxRate, Date.now())
-    slowBass = slowBass * 0.94 + bass * 0.06
-    var kick = Math.max(0, Math.min(1, (bass - slowBass * 1.15) * 4))
-    beat = Math.max(kick, beat * 0.82)
+    feedEnvelope(fluxRate, nowMs)
+    var dt = Math.max(0.004, Math.min(0.1, (nowMs - (lastPublishMs || nowMs - 16)) / 1000))
+    lastPublishMs = nowMs
+    function ease(tau) { return 1 - Math.exp(-dt / tau) }
+    function hold(tau) { return Math.exp(-dt / tau) }
+    if (lv.length === 0) { beat = 0; kick = 0; snap = 0; swell = 0; return }
+    // Strength is measured before the averages take this frame in.
+    var lowOn = onsetOf(lowF, lowFluxAvg, lowFluxPk)
+    var hiOn = onsetOf(hiF, hiFluxAvg, hiFluxPk)
+    lowFluxAvg += (lowF - lowFluxAvg) * ease(1.2)
+    hiFluxAvg += (hiF - hiFluxAvg) * ease(1.2)
+    lowFluxPk = Math.max(lowF, lowFluxPk * hold(2.5))
+    hiFluxPk = Math.max(hiF, hiFluxPk * hold(2.5))
+    slowBass += (bass - slowBass) * ease(0.27)
+    var lift = Math.max(0, Math.min(1, (bass - slowBass * 1.15) * 4))
+    if (lowOn > 0.25 && nowMs - lastKickMs > 110) { kicks = (kicks + 1) % 1024; lastKickMs = nowMs }
+    // A shaped hit: weak onsets stay small, real kicks slam to near full.
+    var hit = Math.max(lift, lowOn > 0.12 ? 0.35 + 0.65 * lowOn : lowOn)
+    beat = Math.max(hit, beat * hold(0.085))
+    kick = Math.max(hit, kick * hold(0.22))
+    snap = Math.max(hiOn > 0.12 ? 0.3 + 0.7 * hiOn : hiOn, snap * hold(0.12))
+    swell += (energy - swell) * ease(energy > swell ? 0.2 : 1.4)
   }
 
   // ---- Pace --------------------------------------------------------------
@@ -641,7 +688,8 @@ Item {
     return JSON.stringify({ open: open, library: libraryOpen, widget: widget, style: style, railViz: railViz, miniPlayer: miniPlayer, placement: placement,
                             cava: hasCava, listening: listening,
                             energy: Math.round(energy * 1000) / 1000, bass: Math.round(bass * 1000) / 1000,
-                            beat: Math.round(beat * 1000) / 1000,
+                            beat: Math.round(beat * 1000) / 1000, kick: Math.round(kick * 1000) / 1000,
+                            snap: Math.round(snap * 1000) / 1000, swell: Math.round(swell * 1000) / 1000, kicks: kicks,
                             tempo: Math.round(tempo), tempoConfidence: Math.round(tempoConfidence * 100) / 100,
                             peakLag: peakLag, peakCorr: Math.round(peakCorr * 100) / 100,
                             onsetRate: Math.round(onsetRate * 100) / 100, densityBpm: Math.round(densityBpm * 100) / 100,

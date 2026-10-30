@@ -22,6 +22,10 @@ layout(std140, binding = 0) uniform buf {
                      // use this (never time * speed) for anything that comes at you:
                      // changing pace then bends the motion instead of teleporting it.
     float tempo;     // beat pace, 1.0 = 120 BPM, confidence-weighted toward rest
+    float kick;      // 0..1 low-end onset: instant attack, ~0.22 s release (slower than beat)
+    float snap;      // 0..1 mid/high onset (snares, hats): instant attack, ~0.12 s release
+    float swell;     // 0..1 loudness envelope: ~0.2 s attack, ~1.4 s release (for camera push-in)
+    float kicks;     // kick counter, whole steps wrapping at 1024: hash(vec2(kicks)) varies per kick
 };
 
 // 32 cava bands packed as 8 vec4s; band(x) samples them smoothly over 0..1.
