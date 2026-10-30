@@ -24,10 +24,12 @@ Window {
   maximumWidth: maximumSize.width
   maximumHeight: maximumSize.height
 
-  // Above the window's own content. The drag handler only takes the pointer
-  // once a press turns into a drag, so clicks still reach what lies under it.
+  // Beneath the window's own content: a press on anything that takes clicks
+  // (the status line's hints) goes to it, and a press on plain text or empty
+  // space falls through to here and moves the window. Above the content, as
+  // this was, it swallowed every click in the strip, even with no drag.
   Item {
-    z: 10000
+    z: -1
     anchors { left: parent.left; right: parent.right; top: parent.top }
     height: 28
     DragHandler {
