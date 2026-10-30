@@ -5,7 +5,8 @@ import "Tui.js" as Tui
 
 // The equalizer, drawn as a column of blocks per band.
 //
-// Keyboard first, like the rest of the window: h/l pick a band, j/k move it.
+// Keyboard first, like the rest of the window: h/l pick a band, k/j raise and
+// lower it (up is up, as in every list in the player).
 // The daemon is the authority on the curve, but typing must feel immediate, so
 // edits land in `gains` straight away and are posted on a short debounce. Two
 // reasons for the debounce rather than a post per keystroke: changing a gain
@@ -185,6 +186,9 @@ Rectangle {
   }
 
   Component.onCompleted: load()
+  // Not loaded after a few seconds: keep trying, and say so plainly.
+  property bool waited: false
+  Timer { interval: 3000; repeat: true; running: !pane.loaded; onTriggered: { pane.waited = true; pane.load() } }
 
   // ---- geometry ----------------------------------------------------------
 
@@ -219,10 +223,10 @@ Rectangle {
     var t = e.text, k = e.key
     if (k === Qt.Key_Left || t === "h") { sel = (sel + bands.length - 1) % bands.length; e.accepted = true }
     else if (k === Qt.Key_Right || t === "l") { sel = (sel + 1) % bands.length; e.accepted = true }
-    else if (k === Qt.Key_Up || t === "j") { nudge(step); e.accepted = true }
-    else if (k === Qt.Key_Down || t === "k") { nudge(-step); e.accepted = true }
-    else if (t === "J") { nudge(step * 6); e.accepted = true }
-    else if (t === "K") { nudge(-step * 6); e.accepted = true }
+    else if (k === Qt.Key_Up || t === "k") { nudge(step); e.accepted = true }
+    else if (k === Qt.Key_Down || t === "j") { nudge(-step); e.accepted = true }
+    else if (t === "K") { nudge(step * 6); e.accepted = true }
+    else if (t === "J") { nudge(-step * 6); e.accepted = true }
     else if (t === "0") { resetBand(); e.accepted = true }
     else if (t === "z") { resetAll(); e.accepted = true }
     else if (t === "p") { cyclePreset(1); e.accepted = true }
@@ -231,7 +235,6 @@ Rectangle {
     else if (t === "[") { setPreamp(preampShown - 0.5); e.accepted = true }
     else if (t === "]") { setPreamp(preampShown + 0.5); e.accepted = true }
     else if (t === "\\") { autoHeadroom(); e.accepted = true }
-    else if (k === Qt.Key_Escape || t === "q") { e.accepted = host.handleKey(e) }
     else e.accepted = host.handleKey(e)
   }
 
@@ -259,7 +262,7 @@ Rectangle {
         var on = pane.eqOn && !pane.flat()
         var dot = on ? '<font color="' + Tui.hex(host.accentText) + '">●</font>'
                      : '<font color="' + Tui.hex(host.dim) + '">○</font>'
-        return dot + '  ' + (on ? "active" : "bypassed")
+        return dot + '  ' + (on ? "on" : pane.eqOn ? "on · flat, nothing to do" : "bypassed")
              + '   <font color="' + Tui.hex(host.dim) + '">preset</font> ' + Tui.esc(pane.presetName)
              + '   <font color="' + Tui.hex(host.dim) + '">preamp</font> '
              + '<font color="' + Tui.hex(pane.clipping ? host.accentText : host.fg) + '">'
@@ -318,6 +321,7 @@ Rectangle {
             color: !pane.eqOn || pane.flat() ? host.dim
                  : isSel ? host.accentText
                  : Tui.mix(host.fg, host.bg, 0.25)
+            Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.InOutCubic } }
           }
           // The volume meter below is clickable and scrollable; an equalizer that
           // only answered the keyboard would teach two different lessons in one
@@ -390,17 +394,41 @@ Rectangle {
       color: host.dim
     }
 
+    // Bypassed: say so where the eye is, with the way back on.
     Text {
-      text: "[h/l] band   [j/k] ±" + pane.step.toFixed(1) + "   [J/K] coarse   "
-            + "[0] zero band   [z] zero all   [p] preset   [b] bypass   [esc] back"
-            + "\n[ and ] preamp   [\\] auto headroom      drag or scroll a band · right click to bypass"
+      visible: pane.loaded && !pane.eqOn
+      textFormat: Text.StyledText
+      text: '<font color="' + Tui.hex(host.dim) + '">bypassed, the music plays untouched · </font>'
+            + '<font color="' + Tui.hex(host.accentText) + '">b</font><font color="' + Tui.hex(host.dim) + '"> turns it on</font>'
       font.family: host.family; font.pixelSize: Style.font.caption
-      color: host.dim
+    }
+
+    // every key, each one a button too; three short lines so they fit the bars' width
+    HintBar {
+      keyColor: host.accentText; labelColor: host.dim; hoverColor: host.accentText
+      items: [{ k: "h/l", l: "band", run: function() { pane.sel = (pane.sel + 1) % pane.bands.length }, tip: "next band", tipKey: "l" },
+              { k: "k/j", l: "±" + pane.step.toFixed(1), run: function() { pane.nudge(pane.step) }, tip: "raise the band", tipKey: "k" },
+              { k: "K/J", l: "coarse" },
+              { k: "0", l: "zero", run: function() { pane.resetBand() }, tip: "zero this band" },
+              { k: "z", l: "all", run: function() { pane.resetAll() }, tip: "zero every band" }]
+    }
+    HintBar {
+      keyColor: host.accentText; labelColor: host.dim; hoverColor: host.accentText
+      items: [{ k: "p", l: "preset", run: function() { pane.cyclePreset(1) }, tip: "next preset" },
+              { k: "b", l: pane.eqOn ? "bypass" : "turn on", run: function() { pane.toggleBypass() } },
+              { k: "]/[", l: "preamp", run: function() { pane.setPreamp(pane.preampShown + 0.5) }, tip: "preamp up", tipKey: "]" },
+              { k: "\\", l: "auto", run: function() { pane.autoHeadroom() }, tip: "automatic headroom" },
+              { k: "esc", l: "back", run: function() { host.back() } }]
+    }
+    Text {
+      text: "drag or scroll a band · middle-click zeroes it · right-click bypasses"
+      font.family: host.family; font.pixelSize: Style.font.caption
+      color: Tui.mix(host.dim, host.bg, 0.2)
     }
 
     Text {
       visible: !pane.loaded
-      text: "waiting for the player service…"
+      text: pane.waited ? "the player service isn't answering · esc goes back" : "waiting for the player service…"
       font.family: host.family; font.pixelSize: Style.font.caption
       color: host.dim
     }
