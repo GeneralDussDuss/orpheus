@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import QtQuick.Window
 import qs.Commons
 import "Tui.js" as Tui
@@ -19,6 +20,7 @@ Item {
   readonly property color dim: Tui.muted(Color.foreground, bg, 4.5)
   readonly property color accentText: Tui.ensure(Color.accent, bg, 4.5)
   readonly property string family: Style.font.family
+  readonly property real bloom: Tui.bloom(engine)
   // Type scales with the stage: a card on a desk and a 3440 px wall both read.
   readonly property real unit: Math.max(10, Math.min(width / 46, height / 18))
 
@@ -180,15 +182,33 @@ Item {
         font.family: view.family; font.pixelSize: karaoke.size; font.bold: true
         color: Tui.mix(view.fg, view.bg, 0.45)
       }
+      // The sung part glows as it fills (the next line stays flat). The
+      // layer is the whole line's size, fixed per line, so the fill moving
+      // redraws it but never reallocates it.
       Item {
         x: unsung.x
-        width: Math.min(unsung.width, karaoke.filled)
+        width: unsung.width
         height: parent.height
-        clip: true
-        Text {
-          text: view.lineText
-          font.family: view.family; font.pixelSize: karaoke.size; font.bold: true
-          color: view.accentText
+        layer.enabled: view.lyricsOn && view.bloom > 0 && karaoke.filled > 0
+        layer.effect: MultiEffect {
+          autoPaddingEnabled: true
+          shadowEnabled: true
+          shadowColor: view.accentText
+          shadowOpacity: Math.min(1, view.bloom * (0.65 + 0.35 * (view.engine ? view.engine.swell : 0)))
+          shadowBlur: 1
+          blurMax: Math.min(32, Math.round(karaoke.size * 0.3))
+          shadowHorizontalOffset: 0
+          shadowVerticalOffset: 0
+        }
+        Item {
+          width: Math.min(unsung.width, karaoke.filled)
+          height: parent.height
+          clip: true
+          Text {
+            text: view.lineText
+            font.family: view.family; font.pixelSize: karaoke.size; font.bold: true
+            color: view.accentText
+          }
         }
       }
       transform: Translate { id: lift; y: 0 }
@@ -251,9 +271,14 @@ Item {
         height: Math.max(2, view.unit * 0.1)
         color: view.accentText
       }
-      Text {
+      // The title's halo flares while the letters resolve and settles with them.
+      GlowText {
         width: titleCard.width
         text: titleCard.title
+        glow: view.bloom * (0.3 + 0.7 * Math.min(1, titleCard.spread / Math.max(1, view.unit * 0.9)))
+        glowLive: titleCard.visible && view.bloom > 0
+        glowColor: view.accentText
+        glowRadius: Math.min(32, Math.round(view.unit * 0.45))
         elide: Text.ElideRight
         font.family: view.family
         font.pixelSize: view.unit * 2.1
