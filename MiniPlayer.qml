@@ -44,6 +44,14 @@ Item {
   NumberAnimation on decodeProgress { id: decodeAnim; from: 0; to: 1; duration: 350; running: false }
   onTitleChanged: decodeAnim.restart()
 
+  // The player window's global key (on Windows as the hotkeys actually bound it).
+  readonly property string libraryKey: {
+    if (typeof OrpheusKeys === "undefined") return "super+shift+m"
+    var b = OrpheusKeys.bindings || []
+    for (var i = 0; i < b.length; i++) if (b[i].action === "library" && b[i].combo) return String(b[i].combo).toLowerCase()
+    return ""
+  }
+
   implicitHeight: ch * 3.4
   height: implicitHeight
 
@@ -62,7 +70,7 @@ Item {
     color: Tui.alpha(Color.accent, 0.12)
     border.width: 1
     border.color: root.playing ? Tui.mix(root.line, root.accent, 0.35 + 0.4 * root.breath) : root.line
-    Behavior on border.color { ColorAnimation { duration: 240 } }
+    Behavior on border.color { ColorAnimation { duration: Tui.STATE; easing.type: Easing.InOutCubic } }
     Text {
       anchors.centerIn: parent
       visible: artImage.status !== Image.Ready
@@ -104,7 +112,7 @@ Item {
       width: parent.width
       elide: Text.ElideRight
       text: root.player ? [root.player.trackArtist, root.player.trackAlbum].filter(function(s) { return !!s }).join(" · ")
-                        : "start something in Orpheus · super+shift+m"
+                        : "start something in Orpheus" + (root.libraryKey ? " · " + root.libraryKey : "")
       font.family: Style.font.family
       font.pixelSize: Style.font.body
       color: root.dim

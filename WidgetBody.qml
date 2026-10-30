@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import qs.Commons
 import "Tui.js" as Tui
 
@@ -40,6 +41,25 @@ TuiBox {
   readonly property real bloom: Tui.bloom(engine)
   readonly property bool playing: !!(player && player.isPlaying)
   readonly property real beat: engine && playing ? Math.max(0, Math.min(1, engine.beat || 0)) : 0
+
+  // The player window's global key (on Windows as the hotkeys actually bound it).
+  readonly property string libraryKey: {
+    if (typeof OrpheusKeys === "undefined") return "super+shift+m"
+    var b = OrpheusKeys.bindings || []
+    for (var i = 0; i < b.length; i++) if (b[i].action === "library" && b[i].combo) return String(b[i].combo).toLowerCase()
+    return ""
+  }
+
+  // Fades up whenever its window shows (first open, back from game mode, a
+  // track after silence) instead of popping in. Widget.qml multiplies its
+  // hover dimming onto this.
+  property real appear: 0
+  opacity: appear
+  NumberAnimation on appear { id: appearAnim; from: 0; to: 1; duration: Tui.STATE; easing.type: Easing.InOutCubic }
+  Connections {
+    target: box.Window.window
+    function onVisibleChanged() { if (box.Window.window.visible) appearAnim.restart() }
+  }
 
   function clock(s) {
     s = Math.max(0, Math.floor(s || 0))
@@ -130,7 +150,7 @@ TuiBox {
         }
         Text {
           width: parent.width; elide: Text.ElideRight
-          text: box.player ? (box.player.trackArtist || "") : "super+shift+m to pick something"
+          text: box.player ? (box.player.trackArtist || "") : "pick something in the player" + (box.libraryKey ? " \u00b7 " + box.libraryKey : "")
           font.family: Style.font.family; font.pixelSize: Style.font.body; color: box.dim
         }
         GlowText {

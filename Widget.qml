@@ -75,7 +75,8 @@ PanelWindow {
     height: implicitHeight
     x: !win.reserve ? 0 : (win.atLeft ? win.gap : parent.width - width - win.gap)
     // Floating over windows: sit back until the pointer comes near.
-    opacity: win.layer === "top" && !hover.hovered ? 0.72 : 1
-    Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+    property real rest: win.layer === "top" && !hover.hovered ? 0.72 : 1
+    Behavior on rest { NumberAnimation { duration: Tui.STATE; easing.type: Easing.InOutCubic } }
+    opacity: rest * appear
   }
 }
