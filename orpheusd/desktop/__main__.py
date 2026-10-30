@@ -286,6 +286,7 @@ def main():
     app.setWindowIcon(QIcon(make_icon()))
 
     from . import shims  # noqa: F401  registers the stand-in modules
+    from . import wallpaper  # noqa: F401  registers OrpheusDesktop.Wallpaper
     qmlRegisterType(QUrl.fromLocalFile(str(HERE / "qml" / "PanelEdges.qml")), "OrpheusDesktop", 1, 0, "PanelEdges")
     for name in ("PanelWindow", "FloatingWindow"):
         qmlRegisterType(QUrl.fromLocalFile(str(HERE / "qml" / f"{name}.qml")), "Quickshell", 1, 0, name)
