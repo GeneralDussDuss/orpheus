@@ -74,7 +74,7 @@ Rectangle {
       r.push({ kind: "choice", id: "widget.viz", label: "widget visualizer", options: styles })
       r.push({ kind: "toggle", id: "miniPlayer", label: "mini player on the stage" })
     } else if (id === "show") {
-      r.push({ kind: "choice", id: "placement", label: "visualizer as", options: ["overlay", "desktop"] })
+      r.push({ kind: "choice", id: "placement", label: "visualizer as", options: engine && engine.placements ? engine.placements : ["overlay", "desktop"] })
       var mons = [""]
       var scr = Quickshell.screens || []
       for (var s = 0; s < scr.length; s++) if (scr[s] && scr[s].name) mons.push(scr[s].name)
@@ -83,6 +83,7 @@ Rectangle {
       r.push({ kind: "toggle", id: "trackTitle", label: "track title fades in" })
       r.push({ kind: "toggle", id: "lyricsOverViz", label: "lyrics over the visualizer" })
       r.push({ kind: "toggle", id: "autoQuality", label: "lower resolution when fps drops" })
+      r.push({ kind: "toggle", id: "showFps", label: "show the frame rate" })
     } else if (id === "hotkeys") {
       if (!hasKeys) return [{ kind: "note", label: "global keys are Hyprland binds here · see hypr/" }]
       var b = keys.bindings || []
@@ -128,6 +129,8 @@ Rectangle {
     case "quality": return api && api.status ? api.status.quality : ""
     case "startWithWindows": return keys ? keys.startWithWindows : false
     }
+    // the engine's own reading of a flag when it has one, so defaults agree
+    if (r.kind === "toggle" && typeof engine[r.id] === "boolean") return engine[r.id]
     if (r.kind === "toggle") return defaultsOn[r.id] ? c[r.id] !== false : c[r.id] === true
     return c[r.id]
   }
@@ -136,7 +139,7 @@ Rectangle {
     if (r.kind === "toggle") return v ? "[x] on" : "[ ] off"
     if (r.id === "style" || r.id === "railViz" || r.id === "widget.viz") return styleName(v)
     if (r.id === "fps") return v + " fps"
-    if (r.id === "placement") return v === "desktop" ? "wallpaper" : "window on top"
+    if (r.id === "placement") return ({ desktop: "wallpaper", fullscreen: "fullscreen show", overlay: "window on top" })[v] || v
     if (r.id === "showMonitor") return v || "the current one"
     if (r.id === "quality") return ({ high: "320k", lossless: "lossless", hires: "hi-res" })[v] || "unknown"
     return String(v === undefined ? "" : v)
@@ -154,6 +157,7 @@ Rectangle {
     case "widget.corner": engine.setWidget("corner", v); return
     case "widget.viz": engine.setWidget("viz", v); return
     case "placement": engine.setPlacement(v); return
+    case "showMonitor": if (engine.setShowMonitor) { engine.setShowMonitor(v); return } break
     case "miniPlayer": engine.setMiniPlayer(v ? "on" : "off"); return
     case "startWithWindows": if (keys) keys.setStartWithWindows(!!v); return
     case "quality":

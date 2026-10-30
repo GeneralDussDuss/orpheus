@@ -1486,12 +1486,15 @@ FloatingWindow {
       for (var k = 0; k < corners.length; k++)
         (function(cn) { add("widget", "widget corner · " + cn + (w.corner === cn ? "  (now)" : ""), "", function() { e.setWidget("corner", cn) }) })(corners[k])
       add("widget", "mini player · " + onOff(e.miniPlayer), "", function() { e.setMiniPlayer(e.miniPlayer ? "off" : "on") })
-      add("show", "wallpaper mode · " + onOff(e.placement === "desktop"), "", function() { e.setPlacement(e.placement === "desktop" ? "overlay" : "desktop") })
+      var places = e.placements || ["overlay", "desktop"], placeNames = { overlay: "window on top", desktop: "wallpaper", fullscreen: "fullscreen show" }
+      for (var pl = 0; pl < places.length; pl++)
+        (function(p) { add("show", "visualizer as · " + (placeNames[p] || p) + (e.placement === p ? "  (now)" : ""), "", function() { e.setPlacement(p) }) })(places[pl])
       var flags = [["autoStyle", "switch styles on drops"], ["trackTitle", "track title fades in"],
-                   ["lyricsOverViz", "lyrics over the visualizer"], ["autoQuality", "lower resolution when fps drops"]]
+                   ["lyricsOverViz", "lyrics over the visualizer"], ["autoQuality", "lower resolution when fps drops"],
+                   ["showFps", "show the frame rate"]]
       for (var g = 0; g < flags.length; g++)
         (function(fl) {
-          var on = e.config[fl[0]] === true
+          var on = typeof e[fl[0]] === "boolean" ? e[fl[0]] : e.config[fl[0]] === true
           add("show", fl[1] + " · " + onOff(on), "", function() { e.updateConfig(function(cf) { cf[fl[0]] = !on }) })
         })(flags[g])
     }
