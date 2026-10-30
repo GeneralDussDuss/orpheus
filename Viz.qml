@@ -49,10 +49,12 @@ ShaderEffect {
   property real snap: engine ? engine.snap : 0
   property real swell: engine ? engine.swell : 0
   property real kicks: engine ? engine.kicks : 0
+  property vector4d kickAge: engine ? engine.kickAge : Qt.vector4d(8, 8, 8, 0)
 
-  // Spectrum history for Prism, Horizon and Scope, kept on the GPU: histFx renders a 32x40 target
+  // Spectrum history for Prism, Horizon, Scope and Skyline, kept on the GPU: histFx renders a 32x40 target
   // from its own previous frame (rows shift back one step, row 0 = now).
   readonly property bool wantsHistory: styleName === "prism" || styleName === "horizon" || styleName === "scope"
+                                      || styleName === "skyline"
   property var hist: histSource
 
   ShaderEffect {

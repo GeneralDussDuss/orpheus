@@ -327,6 +327,14 @@ Item {
   property real hiFluxPk: 0
   property real lastPublishMs: 0
   property real lastKickMs: 0
+  // When the last three kicks landed (clock seconds, newest first) and how hard
+  // the newest one hit. Viz turns these into kickAge, so a shader can keep
+  // several kicks' effects alive at once instead of restarting on each one.
+  property var kickTimes: [-1e4, -1e4, -1e4]
+  property real kickStrength: 0
+  // Seconds since each of the last three kicks (newest first, capped at 8),
+  // w = the newest kick's strength. Refreshed every clock tick.
+  property vector4d kickAge: Qt.vector4d(8, 8, 8, 0)
 
   // Onset strength 0..1 of `f` against its running average and peak.
   function onsetOf(f, avg, pk) {
@@ -382,7 +390,11 @@ Item {
     hiFluxPk = Math.max(hiF, hiFluxPk * hold(2.5))
     slowBass += (bass - slowBass) * ease(0.27)
     var lift = Math.max(0, Math.min(1, (bass - slowBass * 1.15) * 4))
-    if (lowOn > 0.25 && nowMs - lastKickMs > 110) { kicks = (kicks + 1) % 1024; lastKickMs = nowMs }
+    if (lowOn > 0.25 && nowMs - lastKickMs > 110) {
+      kicks = (kicks + 1) % 1024; lastKickMs = nowMs
+      kickTimes = [(nowMs - startedAt) / 1000, kickTimes[0], kickTimes[1]]
+      kickStrength = 0.35 + 0.65 * lowOn
+    }
     // A shaped hit: weak onsets stay small, real kicks slam to near full.
     var hit = Math.max(lift, lowOn > 0.12 ? 0.35 + 0.65 * lowOn : lowOn)
     beat = Math.max(hit, beat * hold(0.085))
@@ -569,6 +581,9 @@ Item {
       // Ease the pace the tempo implies, then integrate.
       root.flow += (root.flowTarget - root.flow) * Math.min(1, dt * 1.8)
       root.travel = (root.travel + dt * root.flow) % 4096
+      var t = (now - root.startedAt) / 1000, kt = root.kickTimes
+      function ageOf(x) { return Math.max(0, Math.min(8, t - x)) }
+      root.kickAge = Qt.vector4d(ageOf(kt[0]), ageOf(kt[1]), ageOf(kt[2]), root.kickStrength)
     }
   }
 

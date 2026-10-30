@@ -64,24 +64,24 @@ void main() {
     float Lb = m * 0.17 * (1.0 + hit * 0.30);                 // bars overshoot on kicks
 
     // ---- gravity waves: each kick sends a lensing front out of the rim ------------
-    // kick decays as exp(-age / 0.22 s) from its peak, so its log gives the age of the
-    // latest kick; the front and two trailing echoes bend space as they pass: a
-    // radial push (derivative of a gaussian: out ahead of the front, in behind it)
-    // plus a twist, with a thin colour-split caustic riding the front.
-    float age = -0.22 * log(max(kick, 1e-3));
-    float kv2 = hash(vec2(kicks, 4.4));
-    float twistDir = kv2 < 0.5 ? -1.0 : 1.0;
-    float waveOn = smoothstep(0.004, 0.04, kick);
+    // One front per recent kick (kickAge holds the last three), so quick kicks
+    // layer their waves instead of restarting one. Each bends space as it passes:
+    // a radial push (derivative of a gaussian: out ahead of the front, in behind
+    // it) plus a twist, with a thin colour-split caustic riding the front.
     float r0 = length(p) + 1e-4;
     float dr = 0.0, dth = 0.0;
     vec3 caus = vec3(0.0);
     float causA = 0.0;
     for (int i = 0; i < 3; i++) {
-        float ai = age - float(i) * 0.12;
-        if (ai < 0.0) continue;
+        float ai = kickAge[i];
+        if (ai >= 2.5) continue;                              // long faded (and 8.0 = no kick)
+        float kid = kicks - float(i);                         // this wave's kick, for its own variety
+        float kv2 = hash(vec2(kid, 4.4));
+        float twistDir = kv2 < 0.5 ? -1.0 : 1.0;
         float Rw = R0 + ai * m * (0.80 + 0.35 * kv2);
         float w = m * (0.014 + ai * 0.045);
-        float A = (1.0 - 0.3 * float(i)) * exp(-ai * 2.2) * (0.65 + 0.35 * hash(vec2(kicks, float(i)))) * waveOn;
+        float A = exp(-ai * 2.2) * (0.65 + 0.35 * hash(vec2(kid, 2.0))) * (i == 0 ? 0.55 + 0.45 * kickAge.w : 0.9)
+                  * smoothstep(0.0, 0.03, ai + 0.01);
         float x = (r0 - Rw) / w;
         float g = exp(-x * x);
         dr += A * x * g * m * 0.07;

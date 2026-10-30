@@ -26,6 +26,8 @@ layout(std140, binding = 0) uniform buf {
     float snap;      // 0..1 mid/high onset (snares, hats): instant attack, ~0.12 s release
     float swell;     // 0..1 loudness envelope: ~0.2 s attack, ~1.4 s release (for camera push-in)
     float kicks;     // kick counter, whole steps wrapping at 1024: hash(vec2(kicks)) varies per kick
+    vec4 kickAge;    // seconds since each of the last three kicks, newest first (x, y, z), capped
+                     // at 8.0; w = strength (0..1) of the newest. Lets kick effects layer.
 };
 
 // 32 cava bands packed as 8 vec4s; band(x) samples them smoothly over 0..1.
