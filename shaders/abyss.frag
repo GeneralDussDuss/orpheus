@@ -1,172 +1,237 @@
 #version 440
-// Orpheus "Prism": the spectrum as a 2.5D city driving toward you, seen from a
-// three-quarter angle. New sound rises at the horizon and rolls closer every
-// frame along a road that winds left and right. A low sun burns behind the
-// skyline and throws shafts through the haze; distance dissolves into that
-// glow. Lit windows, emissive rooftops, a synthwave grid underfoot. Kicks punch
-// the camera in and jolt it sideways, flash the sun and flare the grid; the
-// overall loudness slowly pushes the camera closer.
+// Orpheus "Abyss": a dive through a living cathedral. The stone is a
+// kaleidoscopic sponge: every level carves a cross of square-arched halls
+// through the one above it at a third of its size, and between levels the
+// space is mirror-folded and turned, so the halls nest into vaults, piers,
+// ribs and tracery. The camera rides the great nave (the first level's hall,
+// which no finer level can fill), bent along a slow winding path, with the
+// music's travel. Distance fog swallows the far end into a lantern glow.
+// The beat grid sways the camera (bar and beat); the build narrows the halls
+// and twists the folds and widens the lens; a drop flips the folds into a new
+// architecture under a flash and lets it settle back as the drop fades. Kicks
+// light the creases between levels and send rings of light running down the
+// nave. Bass, mids and highs breathe the halls, so the stone listens.
+// Section shifts how the palette is laid over the levels. Light themes: pale
+// fog, dark stone, no neon.
+// Cost: <= 80 march steps of a 4-level DE (no sqrt in the loop), 4 taps for the normal.
 
 //#common
 
-layout(binding = 1) uniform sampler2D hist;
+const float PI = 3.14159265;
+const int STEPS = 80;
+const int LEVELS = 4;
+const float TMAX = 18.0;
+const float WS = 0.5;        // sponge units per world unit: the nave is 2/3 sponge units wide
+const float SPEED = 1.8;     // world units per unit of flow
 
-const int R = 40;            // rows of history (matches the 32x40 history target)
-const float N = 32.0;
-const float K = 0.045;       // perspective: row r is scaled 1 / (1 + r*K)
+// Fold parameters, set once per frame in main().
+mat2 gTw, gTw2;
+float gHole, gFold;
+vec3 gRo;          // camera, for level of detail
+float gPix;        // one pixel's width per unit distance
 
-// Soft saturation so stacked light flashes instead of clipping flat.
-vec3 sat3(vec3 x) { return x / (1.0 + max(max(x.r, x.g), x.b) * 0.6); }
+mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }
+
+vec2 path(float z) {
+    return vec2(sin(z * 0.13) * 1.1 + sin(z * 0.051 + 1.3) * 0.8,
+                sin(z * 0.087 + 0.4) * 0.55 + cos(z * 0.039) * 0.45);
+}
+
+vec3 toSponge(vec3 p) {
+    vec3 q = p;
+    q.xy -= path(p.z);
+    return q * WS;
+}
+
+// One level of the sponge: how far this level's halls carve (positive = air)
+// at q, already turned and folded for this level.
+float level(vec3 q, float s, float lod) {
+    if (s < 1.5) q.xy = vec2(q.x + q.y, q.y - q.x) * 0.70710678;   // the great halls stand on a corner: pointed vaults
+    vec3 a = mod(q * s, 2.0) - 1.0;
+    vec3 r = abs(1.0 - 3.0 * abs(a));
+    float m = min(max(r.x, r.y), min(max(r.y, r.z), max(r.z, r.x)));
+    return (m - gHole - lod) / (s * 3.0);
+}
+
+// Level of detail: a level whose halls would be under ~3 px here closes up
+// smoothly instead of shimmering (and costs the march fewer steps).
+float lodAt(vec3 p, float s) {
+    float px = 2.0 / (3.0 * s * WS) / max(length(p - gRo) * gPix, 1e-5);
+    return 1.2 * (1.0 - smoothstep(2.0, 5.0, px));
+}
+
+// Next level's space: mirror-fold and turn (about the nave's axis, so the nave stays clear).
+vec3 twist(vec3 q, int i) {
+    q.xy = gTw * mix(q.xy, abs(q.xy), gFold);
+    if (i == 1) q.xz = gTw2 * q.xz;
+    return q;
+}
+
+float map(vec3 p) {
+    vec3 q = toSponge(p);
+    float d = -1e3, s = 1.0;
+    for (int i = 0; i < LEVELS; i++) {
+        d = max(d, level(q, s, i < 2 ? 0.0 : lodAt(p, s)));
+        s *= 3.0;
+        q = twist(q, i);
+    }
+    return d / WS;
+}
+
+// The same, for shading: which level shaped this surface, and how sharp the
+// crease between the two levels meeting here is (0 = right on the edge).
+float mapInfo(vec3 p, out float lvl, out float crease) {
+    vec3 q = toSponge(p);
+    float d = -1e3, d2 = -1e3, s = 1.0;
+    lvl = 0.0;
+    for (int i = 0; i < LEVELS; i++) {
+        float c = level(q, s, i < 2 ? 0.0 : lodAt(p, s));
+        if (c > d) { d2 = d; d = c; lvl = float(i); }
+        else d2 = max(d2, c);
+        s *= 3.0;
+        q = twist(q, i);
+    }
+    crease = (d - d2) / WS;
+    return d / WS;
+}
+
+vec3 sat3(vec3 x) { return x / (1.0 + max(max(x.r, x.g), x.b) * 0.5); }
 
 void main() {
-    vec2 p = vec2(qt_TexCoord0.x, 1.0 - qt_TexCoord0.y) * res;
-
-    // ---- camera: push in with the loudness, punch and jolt on kicks -----------
-    vec2 focus = vec2(res.x * 0.5, res.y * 0.42);
-    float zoom = 1.0 + swell * 0.07 + kick * kick * 0.06;
-    float jolt = (hash(vec2(kicks, 3.7)) - 0.5) * 2.0;      // a new direction every kick
-    p = focus + (p - focus) / zoom;
-    p = rotateAround(p, focus, camRoll() + jolt * kick * kick * 0.035);
-    p += vec2(jolt * kick * kick * res.x * 0.012, kick * res.y * 0.015);
-
-    float W = res.x * 0.94;
-    float cx = res.x * 0.5;
-    float base = res.y * (0.04 + beat * 0.012) + camBob(res.y);
-    float maxH = res.y * 0.50 * (1.0 + kick * 0.12);
-    float rise = res.y * 1.15;
-    float horizon = base + rise * (1.0 - 1.0 / (1.0 + float(R) * K));
-    float vanish = cx - res.x * 0.06 + float(R) * res.x * 0.0045 + roadBend(float(R)) * res.x;
+    vec2 px = vec2(qt_TexCoord0.x, 1.0 - qt_TexCoord0.y) * res;
+    float m = min(res.x, res.y);
+    vec2 uv = (px - res * 0.5) / m;
     float dark = 1.0 - light;
+    float hit = max(kick, beat * 0.8);
+    float loud = smoothstep(0.03, 0.8, max(swell, energy));
+    float conf = clamp(beatConfidence, 0.0, 1.0);
 
-    // Atmosphere colour: the sun's glow, which distant buildings fade into.
-    vec3 sunCol = mix(c2.rgb, c1.rgb, 0.35 + 0.3 * sin(time * 0.07));
-    vec3 fogCol = mix(bg.rgb, mix(bg.rgb, sunCol, 0.22), dark);
+    // ---- the folds: slow morph, build tightens, drop flips, bands breathe -----
+    float bLo = band(0.06), bMid = band(0.42), bHi = band(0.8);
+    float dropF = smoothstep(0.0, 0.85, drop);              // 1 at the drop, settles back as it fades
+    float tw = 0.10 * sin(time * 0.037) + 0.06 * sin(time * 0.013 + 2.0) + bMid * 0.04 + build * 0.22;
+    tw = mix(tw, 0.62 - tw, dropF);                         // a new architecture on the drop
+    gTw = rot(tw);
+    gTw2 = rot(dropF * 0.45 + 0.05 * sin(time * 0.029));
+    gFold = clamp(0.5 + 0.5 * sin(time * 0.019) + dropF, 0.0, 1.0);
+    gHole = 1.0 + build * 0.14 - bLo * 0.06 + dropF * 0.10;   // narrower halls as the tension rises
 
-    vec4 col = vec4(0.0);
-    vec3 bloom = vec3(0.0);
+    // ---- camera: ride the nave, sway on the beat grid --------------------------
+    float zc = flow * SPEED + build * 0.6;
+    vec3 ro = vec3(path(zc), zc);
+    vec2 sway = vec2(sin(barPhase * 2.0 * PI) * 0.07, cos(beatPhase * 2.0 * PI) * 0.02) * conf * (0.5 + 0.5 * loud);
+    sway += vec2(sin(time * 0.21) * 0.06, sin(time * 0.17 + 1.1) * 0.04);
+    ro.xy += sway;
+    vec3 ta = vec3(path(zc + 2.5), zc + 2.5);
+    vec3 fw = normalize(ta - ro);
+    vec2 bend = path(zc + 5.0) - 2.0 * path(zc + 2.5) + path(zc);
+    float roll = camRoll() + clamp(bend.x * 1.4, -0.22, 0.22) + sin(barPhase * 2.0 * PI) * 0.015 * conf;
+    vec3 up = vec3(sin(roll), cos(roll), 0.0);
+    vec3 rt = normalize(cross(up, fw));
+    vec3 upv = cross(fw, rt);
+    float fov = 0.80 + build * 0.22 + loud * 0.04 + hit * 0.03;   // the lens widens as it builds
+    vec3 rd = normalize(fw + (uv.x * rt + uv.y * upv) * fov);
 
-    for (int r = 0; r < R; r++) {                            // r = 0 is the row nearest you
-        float fr = float(r);
-        float s = 1.0 / (1.0 + fr * K);
-        float by = base + (1.0 - s) * rise;
-        if (p.y < by - 2.0) break;                           // everything further back sits higher
-        float rowW = W * s;
-        float xl = cx - rowW * 0.5 - res.x * 0.06 + fr * res.x * 0.0045 + roadBend(fr) * res.x;
-        float pitch = rowW / N;
-        float w = pitch * 0.62;
-        float dx = pitch * 0.30, dy = pitch * 0.30;
+    // ---- march -------------------------------------------------------------------
+    float t = 0.02, d = 1.0, glowA = 0.0;
+    float pixA = fov / m;                                   // ray cone: one pixel per unit t
+    gRo = ro; gPix = pixA;
+    int i;
+    for (i = 0; i < STEPS; i++) {
+        d = map(ro + rd * t);
+        glowA += exp(-d * 18.0);                            // near misses: haze hanging off the stone
+        if (d < pixA * t * 0.7 || t > TMAX) break;
+        t += d * 0.9;
+    }
+    bool solid = t < TMAX && d < pixA * t * 3.0;
+    float steps = float(i) / float(STEPS);
+    glowA /= float(STEPS);
 
-        float c = floor((p.x - xl) / pitch);
-        if (c < 0.0 || c >= N) continue;
-        float x0 = xl + c * pitch;
+    // ---- shade -------------------------------------------------------------------
+    float sec = floor(section + 0.5);
+    float palOff = sec * 0.21 + (sec == 2.0 ? 0.30 : 0.0);  // each section lays the palette differently
+    float fogK = 0.13 - loud * 0.025 - light * 0.01;
+    vec3 fogDark = mix(bg.rgb * 0.35, mix(c1.rgb, c2.rgb, 0.5) * 0.22, 0.3 + 0.3 * loud);
+    vec3 fogLight = mix(bg.rgb, vec3(1.0), 0.3);
+    vec3 fogCol = mix(fogDark, fogLight, light);
+    // The lantern at the far end: the fog glows toward the vanishing point.
+    vec3 vdir = normalize(vec3(path(zc + 10.0), zc + 10.0) - ro);
+    float toward = max(dot(rd, vdir), 0.0);
+    vec3 lantern = mix(pal(fract(0.5 + palOff)), fg.rgb, 0.3);
+    fogCol += lantern * (pow(toward, 24.0) * 0.6 + pow(toward, 5.0) * 0.18) * lit(0.6 + bass * 0.5 + hit * 0.3);
+    fogCol = mix(fogCol, mix(bg.rgb, c1.rgb, 0.12) * 0.92, light * pow(toward, 8.0) * 0.5);
 
-        // Newest sound at the horizon (history row 0), oldest nearest you.
-        float hi = float(R - 1 - r);
-        float v = r == R - 1 ? band(c / 31.0)
-                             : texture(hist, vec2((c + 0.5) / N, (hi + 0.5) / float(R))).r;
-        v = pow(v, 1.25);                                     // quiet stays low, loud towers
-        float h = max(1.0, v * maxH * s);
-        float fog = smoothstep(float(R) * 0.22, float(R - 1), fr);
-        vec3 tint = pal(c / 31.0);
-        float heat = smoothstep(0.30, 0.95, v);
-        vec3 hot = mix(tint * (1.1 + kick * 0.2 * dark), vec3(1.0), (0.05 + 0.30 * heat + kick * 0.06) * dark);
+    vec3 col = fogCol;
+    if (solid) {
+        vec3 p = ro + rd * t;
+        float lvl, crease;
+        mapInfo(p, lvl, crease);
+        float e = max(pixA * t, 0.001);
+        vec2 k2 = vec2(1.0, -1.0);
+        vec3 n = normalize(k2.xyy * map(p + k2.xyy * e) + k2.yyx * map(p + k2.yyx * e)
+                         + k2.yxy * map(p + k2.yxy * e) + k2.xxx * map(p + k2.xxx * e));
+        float ao = clamp(1.0 - steps * 1.6, 0.0, 1.0);
+        ao *= ao;
+        // A lantern hanging ahead on the path, and a dim light riding with the camera.
+        vec3 lp = vec3(path(zc + 3.0) + sway, zc + 3.0);
+        vec3 ld = lp - p;
+        float ll = length(ld);
+        ld /= ll;
+        float dif = max(dot(n, ld), 0.0) * (1.6 + hit * 0.3) / (1.0 + ll * ll * 0.12);
+        float head = max(dot(n, -rd), 0.0);
+        float rim = pow(1.0 - head, 4.0);
 
-        // Rooftop bloom, strongest near you and on kicks.
-        float topY = by + h + dy * 0.5;
-        // (Only hot rows: heat is 0 below a third of full, so most rows skip the two exps.)
-        if (dark > 0.0 && heat > 0.0 && p.x > x0 - pitch * 0.6 && p.x < x0 + w + dx + pitch * 0.6) {
-            bloom += tint * glow(p.y - topY, pitch * (1.4 + kick)) * glow(p.x - (x0 + w * 0.5 + dx * 0.5), pitch * 1.1)
-                     * heat * (1.0 - fog) * (faux(0.22, 0.4) + faux(kick * 0.7, 0.6));
+        // Stone: the big levels dark, the fine tracery taking the palette.
+        float lv = lvl / float(LEVELS - 1);
+        vec3 stone = pal(fract(lv * 0.55 + p.z * 0.02 + palOff));
+        float alb = 0.10 + 0.18 * lv;
+        vec3 base = stone * alb * (0.15 + dif + head * 0.25) * (0.3 + 0.7 * ao);
+        base += mix(stone, fg.rgb, 0.3) * rim * 0.10 * ao;
+
+        // Emissive creases: where two levels meet, a thin line of light, hard on kicks.
+        float cw = e * (1.5 + hit * 2.5);
+        float edge = 1.0 - smoothstep(0.0, cw, crease);
+        edge *= smoothstep(TMAX * 0.8, 1.0, t) * (0.4 + 0.6 * ao);
+        vec3 ec = pal(fract(0.3 + lv * 0.7 + palOff + p.z * 0.015));
+        float eAmt = 0.3 + hit * 0.8 + snap * 0.2 + bHi * 0.35 + build * 0.3;
+        // Rings of light running down the nave, one per recent kick.
+        float dz = p.z - zc;
+        float rings = 0.0;
+        for (int j = 0; j < 3; j++) {
+            float age = j == 0 ? kickAge.x : (j == 1 ? kickAge.y : kickAge.z);
+            float zr = 2.2 + age * 9.0;                     // born a little ahead, then racing away
+            rings += exp(-pow((dz - zr) * 2.4, 2.0)) * exp(-age * 1.1) * smoothstep(0.0, 0.06, age + 0.01);
         }
+        rings *= kickAge.w;
+        vec3 emis = ec * edge * eAmt + mix(c3.rgb, fg.rgb, 0.3) * rings * (0.08 + edge * 0.9 + min(dif, 1.0) * 0.15);
 
-        // Front face: dark at the foot, emissive toward the top, crisp rim.
-        float aF = boxAA(p, vec2(x0, by), vec2(x0 + w, by + h));
-        float t = clamp((p.y - by) / h, 0.0, 1.0);
-        vec3 front = mix(tint * 0.22, hot, pow(t, 1.5));
-        front += lit(smoothstep(h - 2.0, h, p.y - by)) * 0.35;
-        // Lit windows: a grid of panes, some on, brighter with the level.
-        if (w > 7.0) {
-            vec2 wc = vec2((p.x - x0) / w * 3.0, (p.y - by) / (pitch * 0.42));
-            vec2 cell = floor(wc), f = fract(wc);
-            float on = step(0.55 - v * 0.35 - kick * 0.15, hash(cell + vec2(c * 7.0, hi * 13.0)));
-            float pane = step(0.22, f.x) * step(f.x, 0.78) * step(0.25, f.y) * step(f.y, 0.75) * step(cell.x, 2.0);
-            front = mix(front, mix(fg.rgb, hot, 0.5) * (0.9 + kick * 0.6), pane * on * (0.25 + 0.55 * v) * smoothstep(1.0, 0.85, t) * dark);
-        }
-
-        // Side face (sheared up-right), in shadow but catching the sun.
-        float sx = (p.x - (x0 + w)) / dx;
-        float yb = by + sx * dy;
-        float aS = clamp(min(min(p.x - (x0 + w), x0 + w + dx - p.x), min(p.y - yb, yb + h - p.y)) + 0.5, 0.0, 1.0);
-        vec3 side = tint * (0.18 + 0.14 * t) + sunCol * lit(0.10 + kick * 0.15) * t;
-
-        // Top face: the hottest surface.
-        float aT = shearAA(p, x0, by + h, w, dx, dy);
-        vec3 top = mix(hot, fg.rgb, 0.25 + 0.45 * heat) + lit(kick * 0.15 * heat);
-
-        float fade = mix(1.0, 0.12, fog * fog);
-        vec3 face = aF > 0.0 ? front : (aT > 0.0 ? top : side);
-        float a = max(aF, max(aT, aS)) * fade;
-        if (a > 0.0) {
-            face = mix(face, fogCol, fog * 0.8);
-            col.rgb += (1.0 - col.a) * a * face;
-            col.a += (1.0 - col.a) * a;
-            if (col.a > 0.985) break;
-        }
+        vec3 litStone = base + emis * faux(1.0, 0.3);
+        // Light themes: dark ink stone with a palette stain, edges as darker lines.
+        vec3 ink = mix(stone * 0.22, bg.rgb * 0.30, 0.4) * (0.55 + 0.35 * min(dif, 1.0) + 0.2 * head) * (0.6 + 0.4 * ao);
+        ink = mix(ink, stone * 0.18, edge * (0.5 + hit * 0.3));
+        ink = mix(ink, c3.rgb * 0.5, rings * 0.25);
+        vec3 sc = mix(litStone, ink, light);
+        float fog = 1.0 - exp(-t * fogK);
+        fog = fog * fog * (3.0 - 2.0 * fog);
+        col = mix(sc, fogCol, fog);
     }
 
-    // ---- road grid under the city -------------------------------------------
-    if (p.y < horizon && p.y > base * 0.5) {
-        float s = 1.0 - (p.y - base) / rise;
-        float z = (1.0 / max(s, 0.02) - 1.0) / K;
-        float travel = flow * 3.4;
-        float cross = abs(fract(z * 0.25 + travel) - 0.5);
-        float u = (p.x - (cx - res.x * 0.06 + z * res.x * 0.0045 + roadBend(z) * res.x)) / (W * max(s, 0.02));
-        float side = abs(fract(u * 8.0 + 0.5) - 0.5);
-        float px = fwidth(z * 0.25) + 1e-4, pu = fwidth(u * 8.0) + 1e-4;
-        float lines = max(1.0 - smoothstep(0.0, px * 1.5, cross), 1.0 - smoothstep(0.0, pu * 1.5, side));
-        float gfade = smoothstep(horizon, horizon - res.y * 0.10, p.y);
-        lines *= gfade * (0.18 + 0.25 * energy + 0.55 * kick) * step(abs(u), 0.5);
-        // The sun's reflection runs down the road.
-        float sheen = lit(glow(u, 0.16) * gfade * smoothstep(base, horizon, p.y) * (0.10 + 0.25 * swell + 0.3 * kick));
-        vec3 gc = mix(c2.rgb, c1.rgb, 0.3 + kick * 0.5);
-        col.rgb += (1.0 - col.a) * (lines * gc + sheen * sunCol);
-        col.a += (1.0 - col.a) * clamp(lines + sheen, 0.0, 1.0);
-    }
+    // Haze off the near misses.
+    col += mix(c1.rgb, c2.rgb, 0.5 + 0.5 * sin(time * 0.05)) * lit(glowA) * faux(0.5 + hit * 0.4 + build * 0.4, 0.45);
 
-    // ---- sky: a sun behind the skyline, shafts through the haze ---------------
-    {
-        vec2 sc = vec2(vanish, horizon + res.y * 0.02);
-        float sd = length(p - sc);
-        float sr = res.y * (0.10 + bass * 0.02 + kick * 0.03);
-        float above = smoothstep(horizon - res.y * 0.02, horizon + res.y * 0.01, p.y);
-        float ang = atan(p.y - sc.y, p.x - sc.x);
-        float rays = 0.5 + 0.5 * sin(ang * 9.0 + time * 0.15) * sin(ang * 5.0 - time * 0.11 + 1.3);
-        rays = pow(rays, 3.0) * smoothstep(sr, sr * 4.0, sd) * glow(sd, res.y * 0.9);
-        float core = glow(sd, sr * 0.55) * above;
-        float corona = glow(max(sd - sr * 0.3, 0.0), res.y * (0.13 + swell * 0.05 + kick * 0.05));
-        float wide = glow(p.y - horizon, res.y * (0.16 + swell * 0.08));
-        // Anamorphic streak through the sun: a thin horizontal flare that stretches on kicks.
-        float streak = glow(p.y - sc.y, res.y * (0.006 + kick * 0.006)) * glow(p.x - sc.x, res.x * (0.25 + kick * 0.35));
-        float skyL = dark * (faux(corona * (0.35 + energy * 0.3 + kick * 0.35), 0.35) + wide * (0.12 + bass * 0.18 + faux(kick * 0.25, 0.5))
-                             + rays * above * (0.10 + 0.25 * swell + kick * 0.4));
-        vec3 hotCore = mix(sunCol, vec3(1.0), 0.55);
-        vec3 skyRgb = sunCol * skyL + hotCore * (core * (0.9 + faux(kick * 0.5, 0.4)) + streak * faux(0.35 + kick * 0.6, 0.4)) * dark;
-        float skyA = clamp(skyL + (core + streak * 0.5) * dark, 0.0, 1.0);
-        // Light themes: a soft tinted band at the horizon instead of light.
-        float tint = light * glow(p.y - horizon, res.y * 0.20) * (0.10 + kick * 0.08);
-        skyRgb += c1.rgb * tint; skyA += tint;
-        col.rgb += (1.0 - col.a) * skyRgb;
-        col.a += (1.0 - col.a) * clamp(skyA, 0.0, 1.0);
-    }
+    // ---- drop flash: a white-hot burst that the new architecture appears out of ---
+    float flash = pow(drop, 6.0);                          // a burst, gone in about half a second
+    col += mix(lantern, vec3(1.0), 0.5) * flash * faux(0.8, 0.4) * dark;
+    col = mix(col, mix(bg.rgb, vec3(1.0), 0.4), flash * 0.4 * light);
+    // Build: the air thickens with light as the tension climbs.
+    col += mix(c1.rgb, c3.rgb, 0.5) * build * 0.04 * dark;
 
-    col.rgb += sat3(bloom) * (1.0 - col.a * 0.5);
-    col.a = clamp(col.a + length(bloom) * 0.4, 0.0, 1.0);
-    col.rgb *= 1.0 + faux(kick * 0.08, 0.5) * dark;
+    col = mix(col, sat3(col), dark);
 
-    // Vignette: corners sink toward shadow so the eye lands on the road.
-    vec2 q = qt_TexCoord0 - 0.5;
-    float vig = smoothstep(0.35, 0.85, length(q * vec2(1.0, 1.25))) * mix(0.55, 0.15, light);
-    col = vec4(col.rgb * (1.0 - vig) + bg.rgb * 0.25 * vig, col.a + (1.0 - col.a) * vig);
+    // ---- vignette ------------------------------------------------------------------
+    vec2 vq = (px - res * 0.5) / res;
+    float vig = smoothstep(0.25, 0.85, length(vq * vec2(1.0, 0.9)));
+    col = mix(col, mix(vec3(0.0), bg.rgb * 0.85, light), vig * mix(0.6, 0.2, light));
 
-    fragColor = vec4(col.rgb + dither(p) * col.a, col.a) * qt_Opacity;
+    fragColor = vec4(col + dither(px), 1.0) * qt_Opacity;
 }
