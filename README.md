@@ -462,7 +462,7 @@ supplies stand-ins for the Quickshell and Omarchy pieces. The pressing:
 
 | # | track | what it adds |
 |:-:|---|---|
-| 01 | **Themes** | 10 originals (acid-rave, aurora, cassette, chrome-heart, eurydice, lyre, styx, sub-bass, underworld, vinyl) and 23 [Omarchy](https://omarchy.org) palettes, in the tray's Theme menu. A **theme builder** turns three colours (background, text, accent) into a whole palette, with a dice roll, and saves it to `~/.config/orpheus/themes`. **From Album Art** pulls a palette from the cover of whatever is playing. |
+| 01 | **Themes** | 8 originals (acid-rave, aurora, chrome-heart, lyre, styx, sub-bass, underworld, vinyl) and 19 [Omarchy](https://omarchy.org) palettes, in the tray's Theme menu. A **theme builder** turns three colours (background, text, accent) into a whole palette, with a dice roll, and saves it to `~/.config/orpheus/themes`. **From Album Art** pulls a palette from the cover of whatever is playing. |
 | 02 | **Eight shader visualizers** | Prism, Skyline, Horizon, Orb, Tunnel, Halo, Scope, Nova. Feedback **trails** (off / subtle / full) and **bloom** (off / subtle / full) are settings. A **director** reads the song's structure (intro, build, drop, breakdown, steady): style changes land on the **downbeat** with a transition, and it can switch style when a drop lands. |
 | 03 | **The show** | A fullscreen **show**, a **wallpaper mode** that sits behind your desktop icons, and **kinetic lyrics** over the stage (entrance: wave, rain or plain). |
 | 04 | **Only Orpheus** | The visualizers capture the app's own audio through **WASAPI process loopback** (Windows 10 2004 and later), so a game or a call in the background does not drive them. Where that is missing, they fall back to `cava` on the whole output. |
