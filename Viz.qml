@@ -25,7 +25,10 @@ ShaderEffect {
   // qt_TexCoord0 and `res`, so nothing in them changes.
   property real renderScale: 1
   readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
-  readonly property bool postOn: bloomOn || feedbackOn || transitioning
+  // Drop effects ride in VizPost too, so with them on the chain stays built even
+  // with bloom and trails off (no layer toggle, and so no hitch, on the drop).
+  readonly property bool dropFxOn: !!engine && engine.dropFx === true && styleName !== "mini" && Math.min(width, height) >= 48
+  readonly property bool postOn: bloomOn || feedbackOn || transitioning || dropFxOn
   layer.enabled: renderScale < 0.999 || postOn
   layer.smooth: true
   layer.textureSize: Qt.size(Math.max(1, Math.round(width * dpr * renderScale)),
@@ -169,13 +172,24 @@ ShaderEffect {
     property real rows: 40
   }
 
+  // Ridge draws each history row as its own line, so it wants seconds of song,
+  // not frames: its history steps at a fixed rate (40 rows at 30 Hz = 1.3 s,
+  // the same at any fps). The others shift every frame, as they were tuned.
+  readonly property int histHz: (shownStyle || styleName) === "ridge" ? 30 : 0
+  Timer {
+    interval: fx.histHz > 0 ? Math.round(1000 / fx.histHz) : 1000
+    repeat: true
+    running: fx.histHz > 0 && fx.wantsHistory && fx.visible && !!fx.engine && fx.engine.energy > 0.001
+    onTriggered: histSource.scheduleUpdate()
+  }
+
   ShaderEffectSource {
     id: histSource
     sourceItem: histFx
     hideSource: true
     recursive: true
     // Only advance while there's sound to remember; otherwise hold still.
-    live: fx.wantsHistory && !!fx.engine && fx.engine.energy > 0.001
+    live: fx.wantsHistory && fx.histHz === 0 && !!fx.engine && fx.engine.energy > 0.001
     smooth: true   // linear filtering: ridges and rows interpolate instead of stair-stepping
     format: ShaderEffectSource.RGBA8
     textureSize: Qt.size(32, 40)
