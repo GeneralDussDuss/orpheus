@@ -34,6 +34,8 @@ var styles = {
   halo:    { zoom: 1.006, zoomK: 0.016, rot: -0.002, ripple: 0.004, rippleK: 0.014, decay: 0.915, shift: 0.08, gain: 0.95, cx: 0.5, cy: 0.5 },
   // Smoke trails: the beam leaves a curling wisp rising off it.
   scope:   { zoom: 1.0, dy: 0.0018, turb: 0.0022, decay: 0.95, shift: 0.06, gain: 0.95, cx: 0.5, cy: 0.5 },
+  // The dive: the lit creases and lantern stream back past the camera, a little harder on kicks.
+  abyss:   { zoom: 1.008, zoomK: 0.02, zoomS: 0.004, decay: 0.90, shift: 0.05, gain: 0.7, cx: 0.5, cy: 0.5 },
   // Hyperspace: stars smear into long streaks, hardest on kicks.
   nova:    { zoom: 1.012, zoomK: 0.04, zoomS: 0.008, smear: 0.006, smearK: 0.03, decay: 0.915, shift: 0.07, gain: 0.9, cx: 0.5, cy: 0.5 },
   // Rising light: the curtains' brightest rays leave a slow upward wisp, like the aurora's own drift.
