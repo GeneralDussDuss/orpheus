@@ -45,6 +45,14 @@ Item {
   property color c3: "white"
   property real light: 0
 
+  // ---- drop effects (the director's structure, see _common.glsl) ----------------
+  property bool dropFx: false
+  property real drop: 0
+  property real build: 0
+  property real downbeat: 0
+  property real beatPhase: 0
+  property real snap: 0
+
   readonly property bool needShow: feedbackOn || transitioning
 
   // ---- 1. transition: old and new style blended ------------------------------

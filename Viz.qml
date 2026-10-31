@@ -88,6 +88,12 @@ ShaderEffect {
       c2: fx.c2
       c3: fx.c3
       light: fx.light
+      dropFx: !!fx.engine && fx.engine.dropFx === true && fx.styleName !== "mini"
+      drop: fx.drop
+      build: fx.build
+      downbeat: fx.downbeat
+      beatPhase: fx.beatPhase
+      snap: fx.snap
     }
   }
 
@@ -142,7 +148,7 @@ ShaderEffect {
 
   // Spectrum history for Prism, Horizon, Scope and Skyline, kept on the GPU: histFx renders a 32x40 target
   // from its own previous frame (rows shift back one step, row 0 = now).
-  function usesHistory(s) { return s === "prism" || s === "horizon" || s === "scope" || s === "skyline" }
+  function usesHistory(s) { return s === "prism" || s === "horizon" || s === "scope" || s === "skyline" || s === "ridge" }
   readonly property bool wantsHistory: usesHistory(shownStyle || styleName) || (transitioning && usesHistory(oldStyle))
   property var hist: histSource
 
@@ -189,7 +195,7 @@ ShaderEffect {
   property int tkind: 0
   property real tseed: 0
   property real lastBar: 0
-  readonly property var kinds: ({ prism: 0, skyline: 0, horizon: 3, orb: 2, tunnel: 1, halo: 2, scope: 3, nova: 1 })
+  readonly property var kinds: ({ prism: 0, skyline: 0, horizon: 3, orb: 2, tunnel: 1, halo: 2, scope: 3, nova: 1, ridge: 0, ink: 4, abyss: 1 })
 
   Component.onCompleted: shownStyle = styleName
   onStyleNameChanged: requestStyle()

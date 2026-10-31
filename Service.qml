@@ -29,9 +29,10 @@ Item {
   readonly property string cavaConfigPath: stateDir + "/cava.conf"
   readonly property string themeRoot: home + "/.local/state/omarchy/current"
 
-  readonly property var styles: ["prism", "skyline", "horizon", "orb", "tunnel", "halo", "scope", "nova"]
+  readonly property var styles: ["prism", "skyline", "horizon", "orb", "tunnel", "halo", "scope", "nova", "ridge", "ink", "abyss"]
   readonly property var styleLabels: ({ prism: "Prism", skyline: "Skyline", horizon: "Horizon", orb: "Orb", tunnel: "Tunnel",
-                                       halo: "Halo", scope: "Scope", nova: "Nova" })
+                                       halo: "Halo", scope: "Scope", nova: "Nova",
+                                       ridge: "Ridge", ink: "Ink", abyss: "Abyss" })
   // railViz: the visualizer plane inside the player window. "off" shows album
   // art there instead. Prism is the default because it measured as the cheapest
   // style by a wide margin (+0.7% shell CPU, against +13 to +20 for the others).
@@ -40,6 +41,7 @@ Item {
                                      autoQuality: true, showFps: false, bloom: "subtle",
                                      endless: true, crossfade: 0, remote: "off",
                                      director: true, beatLock: true, lookaheadMs: 85, feedback: "subtle",
+                                     ambient: "subtle", dropFx: true, titleFx: true, pulseUi: true,
                                      widget: { enabled: true, style: "full", corner: "bottom-right", monitor: "", viz: "prism", layer: "top" } })
 
   // ---- Config ------------------------------------------------------------
@@ -63,6 +65,12 @@ Item {
   // MilkDrop-style trails under every visualizer (VizPost.qml).
   readonly property var feedbacks: ["off", "subtle", "full"]
   readonly property string feedback: feedbacks.indexOf(config.feedback) >= 0 ? config.feedback : "subtle"
+  // A dim, blurred visualizer behind the player window's text.
+  readonly property var ambients: ["off", "subtle", "vivid"]
+  readonly property string ambient: ambients.indexOf(config.ambient) >= 0 ? config.ambient : "subtle"
+  readonly property bool dropFx: config.dropFx !== false    // chroma burst, grain and vignette on drops (VizPost.qml)
+  readonly property bool titleFx: config.titleFx !== false  // titles decode in on a track change
+  readonly property bool pulseUi: config.pulseUi !== false  // UI accents breathe with the kick
   readonly property var widget: {
     var w = {}
     for (var k in defaults.widget) w[k] = defaults.widget[k]
