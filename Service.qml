@@ -41,7 +41,7 @@ Item {
                                      autoQuality: true, showFps: false, bloom: "subtle",
                                      endless: true, crossfade: 0, remote: "off",
                                      director: true, beatLock: true, lookaheadMs: 85, feedback: "subtle",
-                                     ambient: "subtle", dropFx: true, titleFx: true, pulseUi: true,
+                                     ambient: "subtle", dropFx: true, titleFx: true, pulseUi: true, bootScreen: true,
                                      widget: { enabled: true, style: "full", corner: "bottom-right", monitor: "", viz: "prism", layer: "top" } })
 
   // ---- Config ------------------------------------------------------------
@@ -71,6 +71,7 @@ Item {
   readonly property bool dropFx: config.dropFx !== false    // chroma burst, grain and vignette on drops (VizPost.qml)
   readonly property bool titleFx: config.titleFx !== false  // titles decode in on a track change
   readonly property bool pulseUi: config.pulseUi !== false  // UI accents breathe with the kick
+  readonly property bool bootScreen: config.bootScreen !== false  // Boot.qml over the player window, once per run
   readonly property var widget: {
     var w = {}
     for (var k in defaults.widget) w[k] = defaults.widget[k]
@@ -213,6 +214,7 @@ Item {
   // ---- Visibility --------------------------------------------------------
   property bool open: false
   property bool libraryOpen: false
+  property bool bootShown: false     // the boot screen has played this run (Library.qml mounts it)
   property int loginRequests: 0      // bumps to send the open library to the sign-in page
   property int eqRequests: 0         // ... and the same for the equalizer
   property int eqHandled: 0
