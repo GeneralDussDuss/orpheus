@@ -40,6 +40,9 @@ FloatingWindow {
     return out
   }
   readonly property var track: api ? api.track : null
+  // Titles decode in on a real track change only (ScrambleText keys on the id).
+  readonly property string trackKey: track ? String(track.id || track.title || "") : ""
+  readonly property bool titleFx: !!engine && engine.titleFx && !engine.gameMode
   readonly property real clock: engine ? engine.time : -1
 
   title: "Orpheus"
@@ -56,7 +59,7 @@ FloatingWindow {
   // first, after which the components are real numbers.
   readonly property color baseBg: Color.background
   color: Qt.rgba(baseBg.r, baseBg.g, baseBg.b, 1)
-  onVisibleChanged: if (!visible && engine) engine.libraryOpen = false
+  onVisibleChanged: { if (!visible && engine) engine.libraryOpen = false; if (visible) maybeBoot() }
 
   // ---- fit the monitor we're on ---------------------------------------------
   // Monitors differ a lot here (3440x1440 @1 vs a rotated GPD panel @1.33), so the
@@ -149,10 +152,27 @@ FloatingWindow {
   function colsIn(px) { return Math.max(1, Math.floor(px / colW)) }
   readonly property string family: Style.font.family
   readonly property color bg: Color.background
-  readonly property color fg: Tui.ensure(Color.foreground, bg, 7)
-  readonly property color dim: Tui.muted(Color.foreground, bg, 4.5)
+  // Ambient light (Ambient.qml) sits behind the panes, which let half of it
+  // through. Text is held to its contrast against the brightest that light
+  // gets inside a pane (the palette's colour at that strength), not against
+  // the bare background, so readability never depends on what the music does.
+  readonly property real ambientSee: 0.5
+  readonly property color boxFill: ambientLayer.on ? Tui.alpha(bg, 1 - ambientSee) : bg
+  readonly property color textBg: ambientLayer.on
+                                  ? Tui.mix(bg, Tui.mix(Color.accent, Color.foreground, 0.3), ambientLayer.strength * ambientSee)
+                                  : bg
+  readonly property color fg: Tui.ensure(Color.foreground, textBg, 7)
+  readonly property color dim: Tui.muted(Color.foreground, textBg, 4.5)
   readonly property color accent: Tui.ensure(Color.accent, bg, 3)
-  readonly property color accentText: Tui.ensure(Color.accent, bg, 4.5)
+  readonly property color accentText: Tui.ensure(Color.accent, textBg, 4.5)
+  // UI pulse: the few accents that mean "now" (the playing row, the playhead,
+  // the focused pane's halo) lift with the kick. Light only, never layout, and
+  // only through the glow, so light themes (no glow) and a hidden window or a
+  // game in front cost nothing.
+  readonly property bool pulseOn: !!engine && engine.pulseUi && bloom > 0 && !engine.gameMode
+                                  && win.visible && st.playing === true
+  property real pulse: pulseOn ? Math.min(1, engine.kick || 0) : 0
+  Behavior on pulse { NumberAnimation { duration: 90; easing.type: Easing.OutQuad } }
   readonly property color cursorFill: Tui.alpha(Color.accent, 0.16)
   readonly property color pressFill: Tui.alpha(Color.accent, 0.3)     // under a held button: the click landed
   // Glow, only where light means something: the play key on the beat, the
@@ -726,6 +746,18 @@ FloatingWindow {
     return false
   }
 
+  // Ambient: the visualizer, dim and blurred, behind every pane. The same
+  // style as the rail's plane when that shows one, so the plane reads as the
+  // source of the light rather than a second, different picture; the stage's
+  // style when the rail is art.
+  Ambient {
+    id: ambientLayer
+    anchors.fill: parent
+    engine: win.engine
+    level: win.engine ? win.engine.ambient : "off"
+    styleName: !win.engine ? "prism" : win.engine.railViz !== "off" ? win.engine.railViz : win.engine.style
+  }
+
   Item {
     anchors.fill: parent
     anchors.margins: win.cw
@@ -817,6 +849,7 @@ FloatingWindow {
       title: "library"
       keyHint: Tui.hints([["1-9", ""]], win.accentText, win.dim)
       clock: win.clock
+      background: win.boxFill
       Column {
         width: parent.width
         Repeater {
@@ -932,7 +965,8 @@ FloatingWindow {
       focused: list.activeFocus || searchInput.activeFocus || (settingsLoader.item && settingsLoader.item.activeFocus)
                || (statsLoader.item && statsLoader.item.activeFocus) || false
       clock: win.clock
-      glow: win.bloom
+      background: win.boxFill
+      glow: Math.min(1, win.bloom * (1 + 0.7 * win.pulse))
 
       // Detail header: art + title + actions.
       Item {
@@ -1218,7 +1252,7 @@ FloatingWindow {
 
           GlowText {
             visible: !!rowItem.it
-            glow: rowItem.isPlaying ? win.bloom * 0.3 : 0
+            glow: rowItem.isPlaying ? win.bloom * (0.3 + 0.5 * win.pulse) : 0
             glowRadius: 6
             anchors.verticalCenter: parent.verticalCenter
             x: win.cw
@@ -1440,6 +1474,7 @@ FloatingWindow {
           return h
         }
         clock: win.clock
+        background: win.boxFill
         // Ambient light: the cover, blurred and a little larger, behind itself,
         // so it spills its own colour into the panel. Two layers, so a new cover
         // crossfades in over the old one once it has loaded. A tiny decode
@@ -1526,7 +1561,9 @@ FloatingWindow {
                     ? Math.max(win.ch * 8, nowBox.height - infoRow.height - qualityChip.height
                                            - spectrumText.height - win.ch * 2.2)
                     : width
-            color: Tui.alpha(Color.accent, 0.1)
+            // opaque: the ambient light behind the panes must not show through
+            // the visualizer's own clear parts and print the picture twice
+            color: Tui.mix(win.bg, Color.accent, 0.1)
             Behavior on height { NumberAnimation { duration: 180; easing.type: Easing.InOutCubic } }
             clip: true
             Image {
@@ -1604,10 +1641,13 @@ FloatingWindow {
               Row {
                 width: parent.width
                 spacing: win.cw
-                Text {
+                ScrambleText {
                   width: parent.width - win.cw * 3
                   elide: Text.ElideRight
-                  text: win.track ? win.track.title : "nothing playing"
+                  textFormat: Text.PlainText
+                  animate: win.titleFx
+                  key: win.trackKey
+                  target: win.track ? win.track.title : "nothing playing"
                   font.family: win.family; font.pixelSize: Style.font.body + 2; font.bold: true; color: win.fg
                   MouseArea { id: titleMouse; anchors.fill: parent; enabled: !!win.track; acceptedButtons: Qt.RightButton
                               onClicked: function(m) { win.trackMenu(win.track, titleMouse, m.x, m.y) } }
@@ -1617,9 +1657,13 @@ FloatingWindow {
               Row {
                width: parent.width
                spacing: win.cw
-               Text {
+               ScrambleText {
                 width: parent.width - win.cw * 3; elide: Text.ElideRight
-                text: win.track ? win.artists(win.track.artists) : "⏎ plays the row under the cursor"
+                textFormat: Text.PlainText
+                animate: win.titleFx
+                key: win.trackKey
+                duration: 600
+                target: win.track ? win.artists(win.track.artists) : "⏎ plays the row under the cursor"
                 font.family: win.family; font.pixelSize: Style.font.body
                 color: artistMouse.containsMouse && !!(win.track && win.track.artistId) ? win.accentText : win.dim
                 MouseArea {
@@ -1693,6 +1737,7 @@ FloatingWindow {
         title: "up next"
         keyHint: win.st.context && win.st.context.title ? win.st.context.title : ""
         clock: win.clock
+        background: win.boxFill
         // Nothing queued and nothing to continue: say so, rather than a blank box.
         Text {
           anchors.centerIn: parent
@@ -1814,6 +1859,7 @@ FloatingWindow {
                 { k: "r", l: "repeat", run: function() { a.control("repeat") } }]
       }
       clock: win.clock
+      background: win.boxFill
 
       Row {
         id: tline
@@ -1872,12 +1918,15 @@ FloatingWindow {
         // Below 96 columns the side rail is gone and nothing else says what is
         // playing, so the transport picks it up. Wide windows leave it to the
         // rail rather than printing it twice.
-        Text {
+        ScrambleText {
           id: nowText
           visible: !side.visible && !!win.track
           width: visible ? Math.min(win.cw * 34, transport.width * (tline.narrow ? 0.2 : 0.3)) : 0
           elide: Text.ElideRight
-          text: win.track ? win.track.title + "  · " + win.artists(win.track.artists) : ""
+          textFormat: Text.PlainText
+          animate: win.titleFx
+          key: win.trackKey
+          target: win.track ? win.track.title + "  · " + win.artists(win.track.artists) : ""
           font.family: win.family; font.pixelSize: Style.font.caption; color: win.dim
           anchors.verticalCenter: parent.verticalCenter
         }
@@ -1909,7 +1958,7 @@ FloatingWindow {
             text: "╸"
             font: seekMeter.font
             color: win.accent
-            glow: win.bloom * (win.st.playing ? 0.9 : 0.45)
+            glow: Math.min(1, win.bloom * (win.st.playing ? 0.85 + 0.6 * win.pulse : 0.45))
             glowRadius: 8
           }
           MouseArea {
@@ -2070,6 +2119,34 @@ FloatingWindow {
   }
 
   CommandPalette { id: cmdPalette; host: win }
+
+  // The boot screen (Boot.qml), over everything, the first time the player
+  // window shows in this run, unless config says bootScreen: false. Missing
+  // or broken, the Loader just fails to load and the player works as ever.
+  Loader {
+    id: bootLoader
+    anchors.fill: parent
+    z: 10000
+    active: false
+    source: "Boot.qml"
+    onLoaded: { item.host = win; item.engine = win.engine }
+    onStatusChanged: if (status === Loader.Error) win.endBoot()
+    Connections {
+      target: bootLoader.item
+      ignoreUnknownSignals: true
+      function onFinished() { win.endBoot() }
+    }
+  }
+  function maybeBoot() {
+    if (!visible || !engine || !engine.bootScreen || engine.bootShown) return
+    engine.bootShown = true
+    bootLoader.active = true
+  }
+  function endBoot() {
+    if (!bootLoader.active) return
+    bootLoader.active = false
+    Qt.callLater(refocus)
+  }
   TuiMenu { id: ctxMenu; onClosed: win.refocus() }
   KeysSheet { id: keysSheet; host: win }
 
@@ -2080,5 +2157,6 @@ FloatingWindow {
     else if (engine && engine.lyricsRequests > 0 && engine.lyricsRequests !== engine.lyricsHandled) { engine.lyricsHandled = engine.lyricsRequests; load(); showLyrics() }
     else if (engine && engine.settingsRequests > 0 && engine.settingsRequests !== engine.settingsHandled) { engine.settingsHandled = engine.settingsRequests; load(); showSettings() }
     else load()
+    maybeBoot()
   }
 }

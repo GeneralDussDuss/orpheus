@@ -148,6 +148,20 @@ Item {
           if (e.setFeedback)
             add("viz.trails." + lv, "visuals", "set trails · " + lv, "", e.feedback === lv ? "● now" : "", function() { e.setFeedback(lv) })
         })(levels[b])
+      var ambients = ["off", "subtle", "vivid"]
+      for (var am = 0; am < ambients.length; am++)
+        (function(lv) {
+          add("viz.ambient." + lv, "visuals", "set ambient light · " + lv, "", e.ambient === lv ? "● now" : "",
+              function() { e.updateConfig(function(c) { c.ambient = lv }) })
+        })(ambients[am])
+      // the newer on/off looks, written straight to config (Service reads them)
+      var looks = [["dropFx", "toggle drop effects"], ["titleFx", "toggle title decode"], ["pulseUi", "toggle ui pulse"],
+                   ["bootScreen", "toggle boot screen"]]
+      for (var lk = 0; lk < looks.length; lk++)
+        (function(fl) {
+          if (typeof e[fl[0]] !== "boolean") return
+          add("viz." + fl[0], "visuals", fl[1], "", onOff(e[fl[0]]), function() { var v = !e[fl[0]]; e.updateConfig(function(c) { c[fl[0]] = v }) })
+        })(looks[lk])
       var flags = [["trackTitle", "toggle title card"], ["lyricsOverViz", "toggle lyrics over visualizer"],
                    ["director", "toggle song structure"], ["beatLock", "toggle beat lock"], ["autoStyle", "toggle style switch on drops"]]
       for (var g = 0; g < flags.length; g++)
@@ -222,6 +236,8 @@ Item {
     if (typeof Color.themeList !== "undefined" && Color.themeList) {
       add("theme.builder", "theme", "open theme builder", "", "", function() { Color.openBuilder() })
       add("theme.next", "theme", "cycle theme", "", "", function() { Color.cycle(1) })
+      if (Color.glass !== undefined && Color.setGlass)
+        add("theme.glass", "theme", "toggle glass", "", onOff(Color.glass === true), function() { Color.setGlass(Color.glass !== true) })
       var tl = Color.themeList
       for (var t = 0; t < tl.length; t++)
         (function(th) { add("theme." + th.name, "theme", "set theme · " + th.label.toLowerCase(), "", Color.name === th.name ? "● now" : "", function() { Color.setTheme(th.name); h.say("theme ╱╱ " + th.label) }) })(tl[t])

@@ -41,6 +41,8 @@ TuiBox {
   readonly property real bloom: Tui.bloom(engine)
   readonly property bool playing: !!(player && player.isPlaying)
   readonly property real beat: engine && playing ? Math.max(0, Math.min(1, engine.beat || 0)) : 0
+  readonly property bool titleFx: !!engine && engine.titleFx && !engine.gameMode
+  readonly property string trackKey: player ? (player.trackTitle || "") + " | " + (player.trackArtist || "") : ""
 
   // The player window's global key (on Windows as the hotkeys actually bound it).
   readonly property string libraryKey: {
@@ -160,14 +162,23 @@ TuiBox {
       Column {
         width: parent.width - art.width - box.cw * 2
         anchors.verticalCenter: parent.verticalCenter
-        Text {
+        // Title and artist decode in on a track change (titleFx); keyed on the
+        // pair, so the player re-sending the same track never scrambles it.
+        ScrambleText {
           width: parent.width; elide: Text.ElideRight
-          text: box.player ? (box.player.trackTitle || "unknown track") : "nothing playing"
+          textFormat: Text.PlainText
+          animate: box.titleFx
+          key: box.trackKey
+          target: box.player ? (box.player.trackTitle || "unknown track") : "nothing playing"
           font.family: Style.font.family; font.pixelSize: Style.font.body; font.bold: true; color: box.fg
         }
-        Text {
+        ScrambleText {
           width: parent.width; elide: Text.ElideRight
-          text: box.player ? (box.player.trackArtist || "") : "pick something in the player" + (box.libraryKey ? " \u00b7 " + box.libraryKey : "")
+          textFormat: Text.PlainText
+          animate: box.titleFx
+          key: box.trackKey
+          duration: 600
+          target: box.player ? (box.player.trackArtist || "") : "pick something in the player" + (box.libraryKey ? " \u00b7 " + box.libraryKey : "")
           font.family: Style.font.family; font.pixelSize: Style.font.body; color: box.dim
         }
         GlowText {

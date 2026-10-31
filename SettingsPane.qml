@@ -82,6 +82,10 @@ Rectangle {
       if (!hasThemes) return [{ kind: "note", label: "themes follow Omarchy here · omarchy-theme-set" }]
       r.push({ kind: "action", id: "builder", label: "theme builder…", hint: "make your own",
                desc: "pick a background, text and accent; the rest of the palette is worked out, and saved under yours" })
+      // glass: a blurred see-through window (desktop only; absent until Color has it)
+      if (onWindows && Color.glass !== undefined)
+        r.push({ kind: "toggle", id: "glass", label: "glass",
+                 desc: "the player window turns frosted glass over whatever is behind it" })
       var list = Color.themeList || [], group = ""
       for (var i = 0; i < list.length; i++) {
         if (list[i].group !== group) { group = list[i].group; r.push({ kind: "header", label: group.toLowerCase() }) }
@@ -105,6 +109,17 @@ Rectangle {
                desc: "glow around the bright parts of the visualizer · dark themes only" })
       r.push({ kind: "choice", id: "feedback", label: "trails", options: ["off", "subtle", "full"], def: d.feedback,
                desc: "each frame leaves a fading echo of the last, like milkdrop" })
+      r.push({ kind: "toggle", id: "dropFx", label: "drop effects", def: d.dropFx,
+               desc: "a chroma burst, grain and a vignette when a drop lands" })
+      r.push({ kind: "choice", id: "ambient", label: "ambient light", options: ["off", "subtle", "vivid"], def: d.ambient,
+               desc: "the visualizer, dim and blurred, behind the player's panes · dark themes only" })
+      r.push({ kind: "header", label: "motion" })
+      r.push({ kind: "toggle", id: "titleFx", label: "title decode", def: d.titleFx,
+               desc: "a new track's title scrambles and resolves in, like a terminal" })
+      r.push({ kind: "toggle", id: "pulseUi", label: "ui pulse", def: d.pulseUi,
+               desc: "the playing row, playhead and focused pane glow with the kick · dark themes only" })
+      r.push({ kind: "toggle", id: "bootScreen", label: "boot screen", def: d.bootScreen !== false,
+               desc: "a short start-up screen the first time the player opens · any key skips it" })
       r.push({ kind: "toggle", id: "trackTitle", label: "title card on track change", def: d.trackTitle,
                desc: "the new track's name fades in over the visualizer" })
       r.push({ kind: "toggle", id: "lyricsOverViz", label: "lyrics over the visualizer", def: d.lyricsOverViz,
@@ -327,6 +342,8 @@ Rectangle {
     case "fps": return engine.fps
     case "bloom": return engine.bloom
     case "feedback": return engine.feedback
+    case "ambient": return engine.ambient || "subtle"
+    case "glass": return Color.glass === true
     case "stage": return engine.open
     case "widget.enabled": return engine.widget.enabled !== false
     case "widget.style": return engine.widget.style
@@ -392,6 +409,7 @@ Rectangle {
     switch (r.id) {
     case "style": engine.setStyle(v); return
     case "railViz": engine.setRailViz(v); return
+    case "glass": if (Color.setGlass) Color.setGlass(!!v); return
     case "bloom": engine.setBloom(v); return
     case "feedback": if (engine.setFeedback) { engine.setFeedback(v); return } break
     case "stage": engine.open = !!v; return

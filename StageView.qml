@@ -19,6 +19,7 @@ Item {
   readonly property color accentText: Tui.ensure(Color.accent, bg, 4.5)
   readonly property string family: Style.font.family
   readonly property real bloom: Tui.bloom(engine)
+  readonly property bool titleFx: !!engine && engine.titleFx && !engine.gameMode
   // Type scales with the stage: a card on a desk and a 3440 px wall both read.
   readonly property real unit: Math.max(10, Math.min(width / 46, height / 18))
 
@@ -418,9 +419,13 @@ Item {
         color: view.accentText
       }
       // The title's halo flares while the letters resolve and settles with them.
-      GlowText {
+      // and the letters decode in left to right as the card lands (titleFx)
+      ScrambleText {
         width: titleCard.width
-        text: titleCard.title
+        textFormat: Text.PlainText
+        animate: view.titleFx
+        duration: 600
+        target: titleCard.title
         glow: view.bloom * (0.3 + 0.7 * Math.min(1, titleCard.spread / Math.max(1, view.unit * 0.9)))
         glowLive: titleCard.visible && view.bloom > 0
         glowColor: view.accentText
@@ -434,10 +439,13 @@ Item {
         style: Text.Raised
         styleColor: Qt.rgba(view.bg.r, view.bg.g, view.bg.b, 0.6)
       }
-      Text {
+      ScrambleText {
         id: artistText
         width: titleCard.width
-        text: titleCard.artist
+        textFormat: Text.PlainText
+        animate: view.titleFx
+        duration: 700
+        target: titleCard.artist
         elide: Text.ElideRight
         font.family: view.family
         font.pixelSize: view.unit * 1.0
