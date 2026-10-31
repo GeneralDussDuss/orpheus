@@ -204,7 +204,7 @@ ShaderEffect {
   // ink is on screen (or leaving it in a transition). Each time it goes live
   // the water is cleared for a few frames, then the emitters let out a cloud.
   readonly property bool wantsInk: (shownStyle || styleName) === "ink" || (transitioning && oldStyle === "ink")
-  property var inkState: inkSource
+  property var inkState: inkLoader.item ? inkLoader.item.src : null
   readonly property real inkScale: Math.min(0.4, 1280 / Math.max(1, width * dpr))
   property real inkFresh: 1
   property real inkIntro: 0
@@ -219,41 +219,66 @@ ShaderEffect {
   Timer { id: inkWarm; interval: 60; onTriggered: { fx.inkFresh = 0; inkIntroAnim.restart() } }
   NumberAnimation { id: inkIntroAnim; target: fx; property: "inkIntro"; from: 1; to: 0; duration: 1400; easing.type: Easing.OutQuad }
 
-  ShaderEffect {
-    id: inkFx
-    width: inkSource.textureSize.width
-    height: inkSource.textureSize.height
-    fragmentShader: Qt.resolvedUrl("shaders/inkstate.frag.qsb")
-    property var prev: inkSource
-    property real time: fx.time
-    property real asp: fx.width / Math.max(1, fx.height)
-    property real dt: 1 / Math.max(10, fx.fps)
-    property vector2d texel: Qt.vector2d(1 / inkSource.textureSize.width, 1 / inkSource.textureSize.height)
-    property color c1: fx.c1
-    property color c2: fx.c2
-    property color c3: fx.c3
-    property real bass: fx.bass
-    property real energy: fx.energy
-    property real swell: fx.swell
-    property real snap: fx.snap
-    property real build: fx.build
-    property real drop: fx.drop
-    property real kicks: fx.kicks
-    property vector4d kickAge: fx.kickAge
-    property real fresh: fx.inkFresh
-    property real intro: fx.inkIntro
+  // A recursive source must never change size in place (Qt swaps its texture
+  // out from under the bound shader and the NVIDIA driver crashes on it; see
+  // VizPost.qml's feedback buffer). The water follows the view's size, so a
+  // resize tears it down and builds it fresh once the size holds still.
+  readonly property size inkWant: Qt.size(Math.max(16, Math.round(width * dpr * inkScale)),
+                                          Math.max(16, Math.round(height * dpr * inkScale)))
+  property size inkSize
+  property bool inkReady: false
+  onInkWantChanged: {
+    if (!inkReady && !inkRebuild.running) return   // not built yet: Component.onCompleted does it
+    if (inkWant.width === inkSize.width && inkWant.height === inkSize.height) return
+    inkReady = false
+    inkRebuild.restart()
   }
+  Timer { id: inkRebuild; interval: 150; onTriggered: { fx.inkSize = fx.inkWant; fx.inkReady = true } }
 
-  ShaderEffectSource {
-    id: inkSource
-    sourceItem: inkFx
-    hideSource: true
-    recursive: true
-    live: fx.wantsInk
-    smooth: true
-    format: ShaderEffectSource.RGBA16F
-    textureSize: Qt.size(Math.max(16, Math.round(fx.width * fx.dpr * fx.inkScale)),
-                         Math.max(16, Math.round(fx.height * fx.dpr * fx.inkScale)))
+  Loader {
+    id: inkLoader
+    active: fx.inkReady
+    // fresh texture, so fresh water
+    onLoaded: { fx.inkWasLive = false; fx.inkWake() }
+    sourceComponent: Item {
+      readonly property alias src: inkSource
+      ShaderEffect {
+        id: inkFx
+        width: fx.inkSize.width
+        height: fx.inkSize.height
+        fragmentShader: Qt.resolvedUrl("shaders/inkstate.frag.qsb")
+        property var prev: inkSource
+        property real time: fx.time
+        property real asp: fx.width / Math.max(1, fx.height)
+        property real dt: 1 / Math.max(10, fx.fps)
+        property vector2d texel: Qt.vector2d(1 / fx.inkSize.width, 1 / fx.inkSize.height)
+        property color c1: fx.c1
+        property color c2: fx.c2
+        property color c3: fx.c3
+        property real bass: fx.bass
+        property real energy: fx.energy
+        property real swell: fx.swell
+        property real snap: fx.snap
+        property real build: fx.build
+        property real drop: fx.drop
+        property real kicks: fx.kicks
+        property vector4d kickAge: fx.kickAge
+        property real fresh: fx.inkFresh
+        property real intro: fx.inkIntro
+      }
+
+      ShaderEffectSource {
+        id: inkSource
+        sourceItem: inkFx
+        hideSource: true
+        recursive: true
+        live: fx.wantsInk
+        smooth: true
+        format: ShaderEffectSource.RGBA16F
+        // set once: a resize rebuilds the whole Loader (see inkWant)
+        Component.onCompleted: textureSize = fx.inkSize
+      }
+    }
   }
 
   // ---- style transitions ------------------------------------------------------
@@ -272,7 +297,7 @@ ShaderEffect {
   property real lastBar: 0
   readonly property var kinds: ({ prism: 0, skyline: 0, horizon: 3, orb: 2, tunnel: 1, halo: 2, scope: 3, nova: 1, ridge: 0, ink: 4, abyss: 1, aurora: 4 })
 
-  Component.onCompleted: { shownStyle = styleName; inkWake() }
+  Component.onCompleted: { shownStyle = styleName; inkSize = inkWant; inkReady = true; inkWake() }
   onStyleNameChanged: requestStyle()
   function requestStyle() {
     if (shownStyle === "") return

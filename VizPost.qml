@@ -96,38 +96,65 @@ Item {
   property real amount: 0
   onFeedbackOnChanged: { amount = 0; if (feedbackOn) warmup.restart() }
   Timer { id: warmup; interval: 50; onTriggered: post.amount = 1 }
-  Component.onCompleted: if (feedbackOn) warmup.restart()
+  Component.onCompleted: { fbSize = fbWant; fbReady = true; if (feedbackOn) warmup.restart() }
 
-  ShaderEffect {
-    id: fbFx
-    width: post.width; height: post.height
-    blending: false
-    visible: post.feedbackOn
-    property var prev: fbSrc
-    property var fresh: post.fresh
-    property vector2d res: Qt.vector2d(post.width, post.height)
-    property vector4d warpA: post.warpA
-    property vector4d warpB: post.warpB
-    property vector4d warpC: post.warpC
-    property color c1: post.c1
-    property color c2: post.c2
-    property color c3: post.c3
-    property real time: post.time
-    property real amount: post.amount
-    property real light: post.light
-    fragmentShader: Qt.resolvedUrl("shaders/feedback.frag.qsb")
+  // The buffer renders from its own last frame (a recursive source), and a
+  // recursive source must never change size in place: Qt reallocates its
+  // texture while the shader still holds the old one bound, and the NVIDIA
+  // D3D11 driver crashes on it (access violation in nvwgf2umx.dll). The size
+  // moves with auto quality's render scale and with every window resize, so
+  // instead the buffer is torn down when the wanted size changes and built
+  // fresh once the size has held still for a moment; meanwhile the frame
+  // shows without trails.
+  readonly property size fbWant: Qt.size(Math.max(1, Math.round(sourceSize.width * fbScale)),
+                                         Math.max(1, Math.round(sourceSize.height * fbScale)))
+  property size fbSize           // the size the live buffer was built at
+  property bool fbReady: false   // built in Component.onCompleted, once sizes are in
+  onFbWantChanged: {
+    if (fbWant.width === fbSize.width && fbWant.height === fbSize.height) return
+    fbReady = false
+    fbRebuild.restart()
   }
-  ShaderEffectSource {
-    id: fbSrc
-    sourceItem: fbFx
-    hideSource: true
-    recursive: true
-    smooth: true
-    live: post.feedbackOn
-    // Half float: decays well below 1/255 per frame still reach zero.
-    format: ShaderEffectSource.RGBA16F
-    textureSize: Qt.size(Math.max(1, Math.round(post.sourceSize.width * post.fbScale)),
-                         Math.max(1, Math.round(post.sourceSize.height * post.fbScale)))
+  Timer { id: fbRebuild; interval: 150; onTriggered: { post.fbSize = post.fbWant; post.fbReady = true } }
+  readonly property var trailSrc: feedbackOn && fbLoader.item ? fbLoader.item.src : null
+
+  Loader {
+    id: fbLoader
+    active: post.feedbackOn && post.fbReady
+    onLoaded: { post.amount = 0; warmup.restart() }
+    sourceComponent: Item {
+      readonly property alias src: fbSrc
+      ShaderEffect {
+        id: fbFx
+        width: post.width; height: post.height
+        blending: false
+        property var prev: fbSrc
+        property var fresh: post.fresh
+        property vector2d res: Qt.vector2d(post.width, post.height)
+        property vector4d warpA: post.warpA
+        property vector4d warpB: post.warpB
+        property vector4d warpC: post.warpC
+        property color c1: post.c1
+        property color c2: post.c2
+        property color c3: post.c3
+        property real time: post.time
+        property real amount: post.amount
+        property real light: post.light
+        fragmentShader: Qt.resolvedUrl("shaders/feedback.frag.qsb")
+      }
+      ShaderEffectSource {
+        id: fbSrc
+        sourceItem: fbFx
+        hideSource: true
+        recursive: true
+        smooth: true
+        live: true
+        // Half float: decays well below 1/255 per frame still reach zero.
+        format: ShaderEffectSource.RGBA16F
+        // set once: a resize rebuilds the whole Loader instead (see above)
+        Component.onCompleted: textureSize = post.fbSize
+      }
+    }
   }
 
   // ---- 3. this frame, crisp, with the trails showing through, and the drop fx --
@@ -136,8 +163,8 @@ Item {
     width: post.width; height: post.height
     visible: post.needShow
     property var fresh: post.fresh
-    property var trail: post.feedbackOn ? fbSrc : post.fresh
-    property real gain: post.feedbackOn ? post.gain : 0
+    property var trail: post.trailSrc ? post.trailSrc : post.fresh
+    property real gain: post.trailSrc ? post.gain : 0
     property real light: post.light
     property real fxOn: post.dropLive ? 1 : 0
     property vector2d res: Qt.vector2d(post.width, post.height)
