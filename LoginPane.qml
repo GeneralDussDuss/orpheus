@@ -13,7 +13,7 @@ Rectangle {
   readonly property var login: api ? api.login : ({})
   property bool hires: host && host.page.hires === true
 
-  color: Color.background
+  color: Color.glass === true ? "transparent" : Color.background   // under glass the window paints the tint
   focus: true
 
   function signOut() { api.post("/logout") }

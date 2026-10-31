@@ -157,7 +157,10 @@ FloatingWindow {
   // gets inside a pane (the palette's colour at that strength), not against
   // the bare background, so readability never depends on what the music does.
   readonly property real ambientSee: 0.5
-  readonly property color boxFill: ambientLayer.on ? Tui.alpha(bg, 1 - ambientSee) : bg
+  // Under glass the window already paints the tint; a full coat here would stack
+  // back to near-opaque, so panes only lift it a little.
+  readonly property color boxFill: Color.glass === true ? Tui.alpha(bg, ambientLayer.on ? 0.15 : 0.25)
+                                  : ambientLayer.on ? Tui.alpha(bg, 1 - ambientSee) : bg
   readonly property color textBg: ambientLayer.on
                                   ? Tui.mix(bg, Tui.mix(Color.accent, Color.foreground, 0.3), ambientLayer.strength * ambientSee)
                                   : bg

@@ -160,7 +160,9 @@ Item {
   property color c1: liveC1
   property color c2: liveC2
   property color c3: liveC3
-  property color bg: Color.background
+  // Solid under glass mode too (Color.background then carries the window tint's
+  // alpha), or the visualizers would turn see-through.
+  property color bg: Color.glass === true ? Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 1) : Color.background
   property color fg: Color.foreground
   readonly property bool lightTheme: (0.2126 * Color.background.r + 0.7152 * Color.background.g + 0.0722 * Color.background.b) > 0.5
 

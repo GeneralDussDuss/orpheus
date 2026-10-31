@@ -242,7 +242,7 @@ Item {
       property color accent: boot.accRaw
     }
 
-    Rectangle { anchors.fill: parent; color: boot.bg }
+    Rectangle { anchors.fill: parent; color: Qt.rgba(boot.bg.r, boot.bg.g, boot.bg.b, 1) }
 
     Column {
       id: stack

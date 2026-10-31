@@ -86,7 +86,7 @@ TuiBox {
   }
 
   implicitHeight: content.implicitHeight + ch * 2
-  background: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, fill ? 1 : 0.82)
+  background: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, fill ? (Color.glass === true ? 0 : 1) : 0.82)
   title: full ? "orpheus · " + (engine ? (engine.styleLabels[engine.widgetViz] || "") : "").toLowerCase() : "now playing"
   keyHint: player && player.isPlaying ? "▶" : "‖"
   clock: engine ? engine.time : -1
