@@ -181,6 +181,67 @@ ShaderEffect {
     textureSize: Qt.size(32, 40)
   }
 
+  // ---- ink: the water ---------------------------------------------------------
+  //
+  // Ink's dye lives in a persistent half-float buffer at ~0.4 of the view
+  // (capped at 1280 wide), advected every frame by inkstate.frag along an
+  // analytic curl-noise flow and fed by the music; ink.frag then shades it.
+  // Like the history it renders from its own previous frame, and only while
+  // ink is on screen (or leaving it in a transition). Each time it goes live
+  // the water is cleared for a few frames, then the emitters let out a cloud.
+  readonly property bool wantsInk: (shownStyle || styleName) === "ink" || (transitioning && oldStyle === "ink")
+  property var inkState: inkSource
+  readonly property real inkScale: Math.min(0.4, 1280 / Math.max(1, width * dpr))
+  property real inkFresh: 1
+  property real inkIntro: 0
+  // Checked a beat later: starting a transition flips wantsInk off and on
+  // again within one update, and that must not wipe the water.
+  property bool inkWasLive: false
+  onWantsInkChanged: Qt.callLater(inkWake)
+  function inkWake() {
+    if (wantsInk && !inkWasLive) { inkFresh = 1; inkIntroAnim.stop(); inkWarm.restart() }
+    inkWasLive = wantsInk
+  }
+  Timer { id: inkWarm; interval: 60; onTriggered: { fx.inkFresh = 0; inkIntroAnim.restart() } }
+  NumberAnimation { id: inkIntroAnim; target: fx; property: "inkIntro"; from: 1; to: 0; duration: 1400; easing.type: Easing.OutQuad }
+
+  ShaderEffect {
+    id: inkFx
+    width: inkSource.textureSize.width
+    height: inkSource.textureSize.height
+    fragmentShader: Qt.resolvedUrl("shaders/inkstate.frag.qsb")
+    property var prev: inkSource
+    property real time: fx.time
+    property real asp: fx.width / Math.max(1, fx.height)
+    property real dt: 1 / Math.max(10, fx.fps)
+    property vector2d texel: Qt.vector2d(1 / inkSource.textureSize.width, 1 / inkSource.textureSize.height)
+    property color c1: fx.c1
+    property color c2: fx.c2
+    property color c3: fx.c3
+    property real bass: fx.bass
+    property real energy: fx.energy
+    property real swell: fx.swell
+    property real snap: fx.snap
+    property real build: fx.build
+    property real drop: fx.drop
+    property real kicks: fx.kicks
+    property vector4d kickAge: fx.kickAge
+    property real fresh: fx.inkFresh
+    property real intro: fx.inkIntro
+  }
+
+  ShaderEffectSource {
+    id: inkSource
+    sourceItem: inkFx
+    hideSource: true
+    recursive: true
+    live: fx.wantsInk
+    smooth: true
+    format: ShaderEffectSource.RGBA16F
+    textureSize: Qt.size(Math.max(16, Math.round(fx.width * fx.dpr * fx.inkScale)),
+                         Math.max(16, Math.round(fx.height * fx.dpr * fx.inkScale)))
+  }
+
   // ---- style transitions ------------------------------------------------------
   //
   // A new style (picked, palette, autoStyle) waits for the next downbeat when
@@ -197,7 +258,7 @@ ShaderEffect {
   property real lastBar: 0
   readonly property var kinds: ({ prism: 0, skyline: 0, horizon: 3, orb: 2, tunnel: 1, halo: 2, scope: 3, nova: 1, ridge: 0, ink: 4, abyss: 1, aurora: 4 })
 
-  Component.onCompleted: shownStyle = styleName
+  Component.onCompleted: { shownStyle = styleName; inkWake() }
   onStyleNameChanged: requestStyle()
   function requestStyle() {
     if (shownStyle === "") return
@@ -251,6 +312,7 @@ ShaderEffect {
     blending: true
     fragmentShader: fx.oldStyle !== "" ? Qt.resolvedUrl("shaders/" + fx.oldStyle + ".frag.qsb") : ""
     property var hist: fx.hist
+    property var inkState: fx.inkState
     property real time: fx.time
     property vector2d res: fx.res
     property vector4d b0: fx.b0
