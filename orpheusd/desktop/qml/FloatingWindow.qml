@@ -1,5 +1,7 @@
 import QtQuick
 import QtQuick.Window
+import OrpheusDesktop
+import qs.Commons
 
 // A normal top-level window that opens at its implicit size. On Hyprland these
 // have no decorations, so here they are frameless too: the TUI boxes are the
@@ -23,6 +25,21 @@ Window {
   minimumHeight: minimumSize.height
   maximumWidth: maximumSize.width
   maximumHeight: maximumSize.height
+
+  // Glass mode (Windows): the window clears to the theme background at
+  // Color.glassAlpha, over the blur backdrop.py puts behind it. A Binding,
+  // so it wins over a window that pins its own opaque colour (Library.qml)
+  // and hands that colour back when glass goes off. backdrop.py keeps the
+  // window from being layered, so see-through pixels still take clicks.
+  readonly property bool glass: Qt.platform.os === "windows" && Color.glass
+  readonly property color glassTint: Color.background
+  Binding {
+    target: w
+    property: "color"
+    when: w.glass
+    value: Qt.rgba(w.glassTint.r, w.glassTint.g, w.glassTint.b, Color.glassAlpha)
+  }
+  Component.onCompleted: if (Qt.platform.os === "windows") Backdrop.track(w)
 
   // Beneath the window's own content: a press on anything that takes clicks
   // (the status line's hints) goes to it, and a press on plain text or empty

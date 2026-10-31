@@ -299,6 +299,12 @@ def theme_menu(parent, key=None):
     return m
 
 
+def set_glass(on: bool):
+    from .shims import THEME
+    if THEME:
+        THEME[0].set_glass(on)
+
+
 def elide(text: str, n: int) -> str:
     return text if len(text) <= n else text[: n - 1].rstrip() + "…"
 
@@ -327,7 +333,7 @@ class Tray:
         ▶ Title — Artist          opens the player
         Pause / Next / Previous
         ─ Player · Visualizer · Mini player
-        ─ Desktop widget ✓ · Theme ▸
+        ─ Desktop widget ✓ · Theme ▸ · Glass ✓
         ─ Settings… · Start with Windows ✓
         ─ Quit Orpheus
 
@@ -371,6 +377,12 @@ class Tray:
         themes = theme_menu(m)
         m.addMenu(themes)
         self.labelled.append(("theme:next", themes, "Theme"))
+        self.glass = None
+        if winsys.WINDOWS:
+            # Glass: the player shows a blur of the desktop behind it (backdrop.py).
+            self.glass = QAction("Glass", m, checkable=True)
+            self.glass.toggled.connect(set_glass)
+            m.addAction(self.glass)
         m.addSeparator()
         item("Settings…", "settings")
         self.auto = None
@@ -427,6 +439,12 @@ class Tray:
             self.auto.blockSignals(True)
             self.auto.setChecked(winsys.starts_with_windows())
             self.auto.blockSignals(False)
+        if self.glass is not None:
+            from .shims import THEME
+            self.glass.blockSignals(True)
+            self.glass.setChecked(bool(THEME and THEME[0].property("glass")))
+            self.glass.setEnabled(bool(THEME))
+            self.glass.blockSignals(False)
         try:
             st = json.loads(call("orpheus", "status") or "{}")
             self.widget.setChecked((st.get("widget") or {}).get("enabled") is not False)
@@ -556,6 +574,7 @@ def main():
     from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType
     from . import shims  # noqa: F401  registers the stand-in modules
     from . import wallpaper  # noqa: F401  registers OrpheusDesktop.Wallpaper
+    from . import backdrop  # noqa: F401  registers OrpheusDesktop.Backdrop (glass mode)
     qmlRegisterType(QUrl.fromLocalFile(str(HERE / "qml" / "PanelEdges.qml")), "OrpheusDesktop", 1, 0, "PanelEdges")
     for name in ("PanelWindow", "FloatingWindow"):
         qmlRegisterType(QUrl.fromLocalFile(str(HERE / "qml" / f"{name}.qml")), "Quickshell", 1, 0, name)

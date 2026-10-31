@@ -724,13 +724,40 @@ def _prefs_path() -> Path:
     return STATE_DIR / "desktop.json"
 
 
-def saved_theme() -> str:
+def load_prefs() -> dict:
+    """desktop.json: the theme and glass mode. Missing or unreadable is {}."""
     import json
     try:
-        name = json.loads(_prefs_path().read_text(encoding="utf-8")).get("theme", DEFAULT_THEME)
-    except (OSError, ValueError, AttributeError):
-        return DEFAULT_THEME
-    return name if name in theme_names() else DEFAULT_THEME
+        d = json.loads(_prefs_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
+def save_prefs(**changes):
+    """Merge `changes` into desktop.json, keeping every other key."""
+    import json
+    d = load_prefs()
+    d.update(changes)
+    p = _prefs_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(d) + "\n", encoding="utf-8")
+
+
+def saved_theme() -> str:
+    name = load_prefs().get("theme", DEFAULT_THEME)
+    return name if isinstance(name, str) and name in theme_names() else DEFAULT_THEME
+
+
+# Glass mode (Windows): the window shows a blur of what is behind it, tinted
+# with the theme background at this opacity. Text is held to its contrast
+# against the opaque background, and 0.74 of a dark theme over the brightest
+# wallpaper still leaves body text near 6:1. backdrop.py does the Win32 part.
+GLASS_ALPHA = 0.74
+
+
+def saved_glass() -> bool:
+    return sys.platform == "win32" and load_prefs().get("glass") is True
 
 
 THEME: list = []   # the live Color singleton, once the QML has made it
@@ -787,13 +814,13 @@ class Color(QObject):
         self._timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._timer.setInterval(16)
         self._timer.timeout.connect(self._step)
+        self._glass = saved_glass()
         THEME[:] = [self]
         from .albumtheme import AlbumTheme
         self.album = AlbumTheme(self, self)
         self.set_theme(saved_theme(), save=False)
 
     def set_theme(self, name: str, save: bool = True):
-        import json
         from .themegen import to_toml
         if name == "album":
             # Until the first cover arrives, keep looking like Orpheus.
@@ -809,9 +836,7 @@ class Color(QObject):
             self._apply(t, path.read_text(encoding="utf-8") if path else "", THEME_GLIDE_MS)
         self.changed.emit()
         if save:
-            p = _prefs_path()
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(json.dumps({"theme": name}) + "\n", encoding="utf-8")
+            save_prefs(theme=name)
 
     def apply_album(self, palette: dict):
         from .themegen import to_toml
@@ -846,10 +871,7 @@ class Color(QObject):
 
     def _apply(self, t: dict, toml_text: str, ms: int = 0):
         bg = QColor(t.get("background", "#0b0d12"))
-        # Omarchy's background is slightly see-through over a blurring compositor.
-        # Windows has no blur behind, and a window whose colour has any alpha is
-        # made layered, which Windows hit-tests as clear: clicks would fall through.
-        bg.setAlphaF(1.0 if sys.platform == "win32" else 0.94)
+        bg.setAlphaF(self._bg_alpha())
         end = {"background": bg,
                "foreground": QColor(t.get("foreground", "#d7dbe6")),
                "accent": QColor(t["accent"]) if "accent" in t else _accent(),
@@ -865,6 +887,50 @@ class Color(QObject):
                        {k: _to_oklab(c) for k, c in end.items()}, end, time.monotonic(), ms)
         self._timer.start()
         self._step()
+
+    def _bg_alpha(self) -> float:
+        # Omarchy's background is slightly see-through over a blurring compositor.
+        # On Windows it is opaque unless glass mode is on: Qt makes a frameless
+        # window with alpha layered, and Windows hit-tests a layered GPU-drawn
+        # window as clear, so clicks fell through. backdrop.py takes the layered
+        # style back off glass windows, so they keep every click.
+        if sys.platform != "win32":
+            return 0.94
+        return GLASS_ALPHA if self._glass else 1.0
+
+    # ---- glass mode -----------------------------------------------------------
+    glassChanged = Signal()
+
+    def set_glass(self, on: bool, save: bool = True):
+        on = bool(on) and sys.platform == "win32"   # Linux: the compositor blurs already
+        if on == self._glass:
+            return
+        self._glass = on
+        a = self._bg_alpha()
+        # Into what is on screen and into where a glide is heading, so a theme
+        # change in flight does not bring the old alpha back.
+        if "background" in self._v:
+            c = QColor(self._v["background"])
+            c.setAlphaF(a)
+            self._v = dict(self._v, background=c)
+        if self._glide:
+            start, end_lab, end, t0, ms = self._glide
+            c = QColor(end["background"])
+            c.setAlphaF(a)
+            self._glide = (dict(start, background=start["background"][:3] + (a,)),
+                           dict(end_lab, background=end_lab["background"][:3] + (a,)),
+                           dict(end, background=c), t0, ms)
+        if save:
+            save_prefs(glass=on)
+        self.glassChanged.emit()
+        self.colorsChanged.emit()
+
+    glass = Property(bool, lambda self: self._glass, notify=glassChanged)
+    glassAlpha = Property(float, lambda self: GLASS_ALPHA, constant=True)
+
+    @Slot(bool)
+    def setGlass(self, on):
+        self.set_glass(on)
 
     def _step(self):
         if not self._glide:
