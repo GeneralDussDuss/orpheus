@@ -36,6 +36,8 @@ var styles = {
   scope:   { zoom: 1.0, dy: 0.0018, turb: 0.0022, decay: 0.95, shift: 0.06, gain: 0.95, cx: 0.5, cy: 0.5 },
   // Hyperspace: stars smear into long streaks, hardest on kicks.
   nova:    { zoom: 1.012, zoomK: 0.04, zoomS: 0.008, smear: 0.006, smearK: 0.03, decay: 0.915, shift: 0.07, gain: 0.9, cx: 0.5, cy: 0.5 },
+  // The ridges' light drifts up off the lines and back toward the horizon, like the rows themselves.
+  ridge:   { zoom: 0.998, zoomK: -0.003, dy: 0.0010, turb: 0.0004, decay: 0.92, shift: 0.05, gain: 0.7, cx: 0.5, cy: 0.27 },
   // The water already remembers: only a faint, short wet sheen that drifts with the current.
   ink:     { zoom: 1.0, turb: 0.0006, decay: 0.86, shift: 0.02, gain: 0.32, cx: 0.5, cy: 0.5 }
 }
