@@ -152,6 +152,12 @@ PanelWindow {
 
   // ---- keys ------------------------------------------------------------------
 
+  function shiftedDigit(e) {
+    if (e.key >= Qt.Key_1 && e.key <= Qt.Key_9) return e.key - Qt.Key_1 + 1
+    var i = "!@#$%^&*(".indexOf(e.text)
+    return i >= 0 ? i + 1 : 0
+  }
+
   function handleKey(e) {
     if (e.key === Qt.Key_Escape) leave(close)
     else if (e.key === Qt.Key_Right || e.text === "l") stepStyle(1)
@@ -159,6 +165,11 @@ PanelWindow {
     else if (e.text === "p" && !bleed) engine.setMiniPlayer(!engine.miniPlayer)
     else if (e.text === "f") leave(toggleShow)
     else if (e.text >= "1" && e.text <= "9" && Number(e.text) <= engine.styles.length) pick(engine.styles[Number(e.text) - 1])
+    // past nine styles: 0 is the tenth, shift+1-9 the eleventh on. Shift+1 arrives
+    // as "!" on most layouts, so take either the digit key or the US symbol row.
+    else if (e.text === "0" && engine.styles.length >= 10) pick(engine.styles[9])
+    else if ((e.modifiers & Qt.ShiftModifier) && shiftedDigit(e) > 0 && 9 + shiftedDigit(e) < engine.styles.length)
+      pick(engine.styles[9 + shiftedDigit(e)])
     else if (e.key === Qt.Key_Space && engine.player) engine.player.togglePlaying()
     else return false
     return true
