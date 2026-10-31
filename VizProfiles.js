@@ -36,6 +36,8 @@ var styles = {
   scope:   { zoom: 1.0, dy: 0.0018, turb: 0.0022, decay: 0.95, shift: 0.06, gain: 0.95, cx: 0.5, cy: 0.5 },
   // Hyperspace: stars smear into long streaks, hardest on kicks.
   nova:    { zoom: 1.012, zoomK: 0.04, zoomS: 0.008, smear: 0.006, smearK: 0.03, decay: 0.915, shift: 0.07, gain: 0.9, cx: 0.5, cy: 0.5 },
+  // Rising light: the curtains' brightest rays leave a slow upward wisp, like the aurora's own drift.
+  aurora:  { zoom: 1.0, dy: 0.0011, turb: 0.0004, decay: 0.95, shift: 0.04, gain: 0.7, cx: 0.5, cy: 0.5 },
   // A short heat shimmer rising off the lines (trails lighten over the ridge fills, so keep them close).
   ridge:   { zoom: 1.0, dy: 0.0008, turb: 0.0006, decay: 0.86, shift: 0.05, gain: 0.4, cx: 0.5, cy: 0.27 },
   // The water already remembers: only a faint, short wet sheen that drifts with the current.
