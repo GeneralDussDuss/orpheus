@@ -37,7 +37,7 @@ var styles = {
   // Hyperspace: stars smear into long streaks, hardest on kicks.
   nova:    { zoom: 1.012, zoomK: 0.04, zoomS: 0.008, smear: 0.006, smearK: 0.03, decay: 0.915, shift: 0.07, gain: 0.9, cx: 0.5, cy: 0.5 },
   // A short heat shimmer rising off the lines (trails lighten over the ridge fills, so keep them close).
-  ridge:   { zoom: 1.0, dy: 0.0008, turb: 0.0006, decay: 0.88, shift: 0.05, gain: 0.55, cx: 0.5, cy: 0.27 },
+  ridge:   { zoom: 1.0, dy: 0.0008, turb: 0.0006, decay: 0.86, shift: 0.05, gain: 0.4, cx: 0.5, cy: 0.27 },
   // The water already remembers: only a faint, short wet sheen that drifts with the current.
   ink:     { zoom: 1.0, turb: 0.0006, decay: 0.86, shift: 0.02, gain: 0.32, cx: 0.5, cy: 0.5 }
 }
