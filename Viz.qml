@@ -195,7 +195,7 @@ ShaderEffect {
   property int tkind: 0
   property real tseed: 0
   property real lastBar: 0
-  readonly property var kinds: ({ prism: 0, skyline: 0, horizon: 3, orb: 2, tunnel: 1, halo: 2, scope: 3, nova: 1, ridge: 0, ink: 4, abyss: 1 })
+  readonly property var kinds: ({ prism: 0, skyline: 0, horizon: 3, orb: 2, tunnel: 1, halo: 2, scope: 3, nova: 1, ridge: 0, ink: 4, abyss: 1, aurora: 4 })
 
   Component.onCompleted: shownStyle = styleName
   onStyleNameChanged: requestStyle()
