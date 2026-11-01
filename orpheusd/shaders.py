@@ -142,6 +142,34 @@ def _functions(text: str):
         yield m.group(2), m.start(), i + 1
 
 
+def _block_members(common: str) -> set:
+    """The names in _common.glsl's uniform block (plus what _common_for adds):
+    globals in a translated shader, so a user global of the same name clashes."""
+    b = common.index("uniform buf {")
+    body = _code(common[b:common.index("\n};", b)])
+    return {m.group(1) for m in re.finditer(r"\b(?:float|vec[234]|mat[234]|int)\s+([A-Za-z_]\w*)\s*;", body)
+            if not m.group(1).startswith("qt_")} | {"mouse", "frame", "dt"}
+
+
+def _globals_named(code: str, names: set) -> set:
+    """Which of `names` `code` declares at file scope (a variable, const or
+    function): everything inside braces and parentheses is blanked first, so a
+    local or a parameter of the same name, which may shadow, does not count."""
+    out, depth = [], 0
+    for ch in code:
+        if ch in "{(":
+            depth += 1
+        elif ch in "})":
+            depth = max(0, depth - 1)
+            out.append(" ")
+            continue
+        out.append(ch if depth == 0 or ch == "\n" else " ")
+    top = "".join(out)
+    return {n for n in names
+            if re.search(rf"(?:\b[A-Za-z_]\w*\s+|,\s*){re.escape(n)}\s*(?:[=;,\[]|\(\s*\))", top)
+            and not re.search(rf"^\s*#\s*define\s+{re.escape(n)}\b", top, re.M)}
+
+
 def _common_for(common: str, user: str) -> str:
     """_common.glsl with two edits for a translated shader: the output renamed
     (the user's `out vec4 fragColor` parameter must not fight a global) and
@@ -200,6 +228,12 @@ def translate(src: str, *, common: str, slug: str = "", time_mode: str = "clock"
     uses = sorted({"iChannel" + n for n in re.findall(r"\biChannel([0-3])\b", code)}
                   | ({"iMouse"} if re.search(r"\biMouse\b", code) else set()))
 
+    # A user global named like an Orpheus uniform (`vec3 light`, `const vec3 bg`:
+    # raymarchers are full of them) would be a redefinition: the user's name
+    # is renamed throughout their own code instead, which is all that can see it.
+    for n in sorted(_globals_named(code, _block_members(common))):
+        text = re.sub(rf"\b{re.escape(n)}\b", f"{n}_u", text)
+
     head = ["#version 440", _common_for(common, text).rstrip("\n"),
             "", f"// ---- Shadertoy idioms (orpheusd/shaders.py){' · ' + slug if slug else ''} ----"]
     for ch in CHANNELS:
@@ -211,11 +245,11 @@ def translate(src: str, *, common: str, slug: str = "", time_mode: str = "clock"
              "#define iTime _iTime", "#define iTimeDelta dt", "#define iFrame int(frame)",
              "#define iFrameRate (1.0 / max(dt, 0.001))", "#define iResolution _iRes", "#define iMouse _iMouse",
              "#define iDate vec4(0.0)", "#define iSampleRate 44100.0",
-             "#define iChannelResolution _chanRes", "#define iChannelTime _chanTime", "#line 1"]
-    head_text = "\n".join(head)
-    header_lines = head_text.count("\n") + 1
+             "#define iChannelResolution _chanRes", "#define iChannelTime _chanTime"]
     t = "flow" if time_mode == "flow" else "time"
-    foot = f"""
+    # main() comes before the user's code, so a `#define time iTime` or
+    # `#define res iResolution.xy` of theirs can't reach into it.
+    foot = f"""void mainImage(out vec4 fragColor, in vec2 fragCoord);
 void main() {{
     vec2 fc = vec2(qt_TexCoord0.x, 1.0 - qt_TexCoord0.y) * res;    // Shadertoy's origin is bottom-left
     _fragCoord = vec4(fc, 0.0, 1.0);
@@ -230,9 +264,11 @@ void main() {{
     if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0);   // one NaN would poison the RGBA16F trail buffer for good
     c = clamp(c, 0.0, 16.0);
     _orpheusOut = vec4(c.rgb, 1.0) * qt_Opacity;         // opaque and premultiplied, as VizPost expects
-}}
-"""
-    return Translated(head_text + "\n" + text + "\n" + foot, header_lines, uses, len(user))
+}}"""
+    head += foot.split("\n") + ["#line 1"]
+    head_text = "\n".join(head)
+    header_lines = head_text.count("\n") + 1
+    return Translated(head_text + "\n" + text + "\n", header_lines, uses, len(user))
 
 
 def map_errors(output: str, header_lines: int, user_lines: int) -> tuple[str, list]:

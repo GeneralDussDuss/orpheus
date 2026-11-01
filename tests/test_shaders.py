@@ -104,6 +104,27 @@ class TranslateTest(unittest.TestCase):
         self.assertEqual(g.uses, [])
         self.assertIn("float hash(vec2 p) { return fract", g.glsl)
 
+    def test_user_defines_cannot_reach_main(self):
+        for src in ("#define time iTime\nvoid mainImage(out vec4 o, in vec2 u){ o = vec4(sin(time)); }",
+                    "#define res iResolution.xy\nvoid mainImage(out vec4 o, in vec2 u){ o = vec4(u/res,0,1); }"):
+            tr = S.translate(src, common=COMMON)
+            g = tr.glsl
+            self.assertLess(g.index("void main()"), g.index("#line 1"))     # main() before the user's #define
+            self.assertIn("void mainImage(out vec4 fragColor, in vec2 fragCoord);", g)
+            self.assertEqual(g.split("\n")[tr.header_lines - 1], "#line 1")
+
+    def test_user_globals_named_like_uniforms(self):
+        src = ("vec3 light = vec3(1.0);\nconst vec3 bg = vec3(0.1), fg = vec3(1);\n"
+               "float f(float energy) { float kick = energy; return kick; }\n"
+               "void mainImage(out vec4 o, in vec2 u){ vec3 c = light + bg + fg; o = vec4(c * f(beat), 1); }")
+        user = S.translate(src, common=COMMON).glsl.split("#line 1\n", 1)[1]
+        self.assertIn("vec3 light_u = vec3(1.0);", user)
+        self.assertIn("const vec3 bg_u = vec3(0.1), fg_u = vec3(1);", user)
+        self.assertIn("light_u + bg_u + fg_u", user)
+        self.assertIn("float f(float energy)", user)          # a parameter or local may shadow: kept
+        self.assertIn("float kick = energy", user)
+        self.assertIn("f(beat)", user)                         # an Orpheus uniform still in scope
+
     def test_dependent_helpers_go_too(self):
         g = S.translate("float bandAt(int i) { return 0.0; }\n" + PLAIN, common=COMMON).glsl
         self.assertNotIn("float band(float x)", g)    # band() calls the dropped bandAt()
