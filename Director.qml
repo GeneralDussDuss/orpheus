@@ -34,6 +34,19 @@ import QtQml
 //   steady     everything else.
 // A section must be wanted for a bar or two before it is entered and lasts at
 // least two bars (a drop eight), so it does not flicker.
+//
+// The drop map. When the daemon has analysed the track ahead of time
+// (DropMapSource.qml, orpheusd/dropmap.py), `map` holds its beats, bars,
+// builds, drops and sections on the song's own clock, and the song position
+// (songBase, learned at clock songAt) puts the playhead on it. Trust in the
+// map eases in (mapWeight) while it is confident, playing and agrees with what
+// the live grid hears; the phases then *switch* over at a bar boundary
+// (mapOn), never mix, and switch back the same way. Build and section follow
+// the map while it drives; the live detector keeps its followers warm but
+// stays quiet, so a drop never fires twice. Ahead of each mapped drop
+// `anticipate` winds up over the last 8 beats and `dropIn` counts down; the
+// drop pulse fires on the map's own time. Without a map, or without trust in
+// it, everything runs exactly as it does without one.
 QtObject {
   id: d
 
@@ -41,6 +54,11 @@ QtObject {
   property bool enabled: true
   property bool beatLock: true
   property real lookahead: 0.085         // s, see Service.lookahead
+  property var map: null                 // DropMapSource.map or null
+  property real songBase: -1             // song position (s), Api.posBase
+  property real songAt: 0                // the clock ms it was learned at (Api.posAt; same clock as tick(ms))
+  property bool playing: false
+  property real mapLead: 0.03            // s, presentation lead for the timeline path; NOT `lookahead`
 
   // ---- outputs ----
   property real beatPhase: 0
@@ -55,10 +73,17 @@ QtObject {
   property int drops: 0                  // counts drops; watch it for "a drop just happened"
   property real phasePulse: 0            // exp decay from the predicted beat (what `beat` becomes when locked)
   property real lockWeight: 0            // 0..1 how much `beat` follows the grid right now
+  property real anticipate: 0            // 0..1 over the last 8 beats before a mapped drop
+  property real dropIn: -1               // s until the next mapped drop (presented time), -1 = none
+  property real mapWeight: 0             // 0..1 eased trust in the map
+  property bool mapOn: false             // the switched state: phases come from the map
+  property real armedDrop: -1            // song time of the drop whose 1.5 s window has begun (changes once per drop)
+  property real dropMapped: 0            // 1 while the current drop pulse came from the map, else 0
 
   // ---- grid state (analysis clock, seconds) ----
   property real gridA: 0                 // the time of beat number gridN
   property real gridP: 0                 // beat period; 0 = no grid yet
+  property real gridConf: 0              // the live grid's own confidence (beatConfidence is the output)
   property real gridN: 0
   property int downSlot: 0               // beats n with (n - downSlot) % 4 == 0 are downbeats
   property var slotScore: [0, 0, 0, 0]
@@ -91,6 +116,7 @@ QtObject {
   property real kickRate: 0
   property var hist: []                  // every 0.5 s: [eS, hatRate, hiS]
   property real lastHistTs: -1
+  property real liveBuild: 0             // the live detector's build (build is the output)
   property real buildHold: 0
   property real tension: 0
   property real secT0: 0
@@ -102,12 +128,12 @@ QtObject {
 
   function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x }
   function wrap(x, p) { x = x % p; if (x > p / 2) x -= p; else if (x <= -p / 2) x += p; return x }
-  function barLen() { return gridP > 0 && beatConfidence > 0.3 ? 4 * gridP : 2.0 }
+  function barLen() { return gridP > 0 && gridConf > 0.3 ? 4 * gridP : 2.0 }
 
   function reset() {
-    gridP = 0; tempoP = 0; tempoVotes = 0; gridN = 0; gridA = 0; beatConfidence = 0; downSlot = 0; slotScore = [0, 0, 0, 0]
+    gridP = 0; tempoP = 0; tempoVotes = 0; gridN = 0; gridA = 0; gridConf = 0; beatConfidence = 0; downSlot = 0; slotScore = [0, 0, 0, 0]
     odfT = new Array(ringCap).fill(-1e9); odfV = new Array(ringCap).fill(0); odfL = new Array(ringCap).fill(0); odfH = new Array(ringCap).fill(0); pulseGain = 0
-    build = 0; drop = 0; sectionCode = 0; secT0 = lastTs; candCode = -1; buildHold = 0; tension = 0
+    liveBuild = 0; build = 0; drop = 0; sectionCode = 0; secT0 = lastTs; candCode = -1; buildHold = 0; tension = 0
     grooveFor = 0; eRef = 0; subRef = 0; hiRef = 0; hist = []; hatT = []; kickT = []
     prevSeg = null; segN = 0; segSum = new Array(32).fill(0)
   }
@@ -141,6 +167,8 @@ QtObject {
     while (gridP > 0 && ts >= gridA + gridP && guard++ < 16) { gridA += gridP; gridN += 1; onBeat(ts) }
 
     structure(lv, ts, dt, lowOn, hiOn)
+    if (!mapOn) beatConfidence = gridConf
+    if (mapWeight <= 0) build = liveBuild
   }
 
   // ---- beat grid ------------------------------------------------------------
@@ -194,11 +222,11 @@ QtObject {
     if (tempoP <= 0) { tempoP = bestP; return }
     if (Math.abs(bestP / tempoP - 1) < 0.03) { tempoP += (bestP - tempoP) * 0.3; tempoVotes = 0; return }
     // Locked, a challenger needs to be clearly better for 6 s running.
-    var locked = beatConfidence > 0.5
+    var locked = gridConf > 0.5
     if (bestS > curS * (locked ? 1.4 : 1.25)) {
       if (tempoCand > 0 && Math.abs(bestP / tempoCand - 1) < 0.03) tempoVotes++
       else { tempoCand = bestP; tempoVotes = 1 }
-      if (tempoVotes >= (locked ? 6 : 3) || beatConfidence < 0.2) { tempoP = bestP; tempoVotes = 0 }
+      if (tempoVotes >= (locked ? 6 : 3) || gridConf < 0.2) { tempoP = bestP; tempoVotes = 0 }
     } else tempoVotes = 0
   }
 
@@ -230,7 +258,7 @@ QtObject {
 
   function updateGrid(ts) {
     if (lastTempoAt < 0 || ts - lastTempoAt >= 1 || ts < lastTempoAt) { lastTempoAt = ts; searchTempo(ts) }
-    if (!(tempoP > 0)) { beatConfidence *= 0.97; return }
+    if (!(tempoP > 0)) { gridConf *= 0.97; return }
     var reseed = false
     if (gridP <= 0) { reseed = true; gridA = ts; gridN = 0 }
     else if (Math.abs(tempoP / gridP - 1) > 0.05) gridP = tempoP   // a new tempo: keep the phase where it fits
@@ -267,15 +295,15 @@ QtObject {
       var g = 0.4 * clamp01((rub - 0.2) / 0.3) * evidence
       // Locked, and the kicks have stopped: hold the phase (a flywheel). Off-beat
       // hats would otherwise walk the grid off the beat a nudge at a time.
-      if (!low && (beatConfidence > 0.4 || Math.abs(e) > 0.12 * gridP)) g = 0
+      if (!low && (gridConf > 0.4 || Math.abs(e) > 0.12 * gridP)) g = 0
       gridA += e * g
       gridP += (bestP - gridP) * 0.1 * g + e * 0.03 * g
     }
     var inst = clamp01((rub - 0.2) / 0.4)
-    if (evidence > 0 && (low || inst > beatConfidence))
-      beatConfidence += (inst - beatConfidence) * (inst > beatConfidence ? 0.07 : 0.2) * evidence
+    if (evidence > 0 && (low || inst > gridConf))
+      gridConf += (inst - gridConf) * (inst > gridConf ? 0.07 : 0.2) * evidence
     else
-      beatConfidence *= 0.99         // no kicks: coast on the flywheel, slowly losing faith
+      gridConf *= 0.99         // no kicks: coast on the flywheel, slowly losing faith
   }
 
   // The audio clock just passed beat gridN (at gridA).
@@ -317,28 +345,201 @@ QtObject {
     segN = 0
   }
 
-  // Display outputs at clock `ms` (both per frame and per clock tick).
+  // Display outputs at clock `ms` (both per frame and per clock tick). The
+  // live grid's values are worked out first; the map's replace them while it
+  // drives. Each output is written once.
   function tick(ms) {
     // No audio frames for a while (paused, stopped): let the grid's authority fade.
     var idle = lastTs < 0 ? 0 : ms / 1000 - lastTs
-    if (idle > 1.5) beatConfidence = Math.min(beatConfidence, Math.exp(-(idle - 1.5)))
-    if (!enabled || gridP <= 0) {
-      beatPhase = 0; barPhase = 0; downbeat = 0; phasePulse = 0; lockWeight = 0
-    } else {
+    if (idle > 1.5) gridConf = Math.min(gridConf, Math.exp(-(idle - 1.5)))
+    var lb = 0, lr = 0, ld = 0, lp = 0, ll = 0
+    if (enabled && gridP > 0) {
       var td = ms / 1000 + lookahead
       var b = gridN + (td - gridA) / gridP
-      beatPhase = b - Math.floor(b)
+      lb = b - Math.floor(b)
       var bb = b - downSlot
-      barPhase = (((bb % 4) + 4) % 4) / 4
-      var since = barPhase * 4 * gridP
-      downbeat = barPhase < 0.25 ? beatConfidence * Math.exp(-since / 0.25) : 0
+      lr = (((bb % 4) + 4) % 4) / 4
+      var since = lr * 4 * gridP
+      ld = lr < 0.25 ? gridConf * Math.exp(-since / 0.25) : 0
       // The grid's own beat pulse, scaled by how hard the beats are actually
       // hitting: through a kickless breakdown the grid keeps time quietly.
-      phasePulse = Math.exp(-beatPhase * gridP / 0.085) * clamp01(pulseGain * 1.6)
-      lockWeight = beatLock ? clamp01((beatConfidence - 0.4) / 0.3) : 0
+      lp = Math.exp(-lb * gridP / 0.085) * clamp01(pulseGain * 1.6)
+      ll = beatLock ? clamp01((gridConf - 0.4) / 0.3) : 0
     }
+    mapTick(ms, lb, lr)
+    if (mapOn) {
+      beatConfidence = Math.max(gridConf, mapConf)
+      beatPhase = mBeat; barPhase = mBar; downbeat = mDown; phasePulse = mPulse
+      lockWeight = beatLock ? clamp01((beatConfidence - 0.4) / 0.3) : 0
+      if (sectionCode !== mSec) sectionCode = mSec
+    } else {
+      beatConfidence = gridConf
+      beatPhase = lb; barPhase = lr; downbeat = ld; phasePulse = lp; lockWeight = ll
+    }
+    build = mapWeight > 0 ? liveBuild * (1 - mapWeight) + mBuild * mapWeight : liveBuild
     var age = ms / 1000 + lookahead - dropAt
     drop = enabled && age >= 0 && age < 8 ? Math.exp(-age / 1.5) : 0
+    if (dropMapped > 0 && drop < 0.006) dropMapped = 0
+  }
+
+  // ---- drop map --------------------------------------------------------------
+
+  // The playhead's anchor, what the live grid thinks of the map, and the map's
+  // tables as plain arrays (cached once per map: nothing is allocated per tick).
+  property real songOff: NaN             // song seconds minus clock seconds
+  property int firedIdx: -1              // the last drop fired (or passed); -2 = re-base silently
+  property real agreeP: 0                // EMA of |live beat phase - map beat phase|
+  property real agreeT: 0                // s the live tempo has sat off every octave of the map's
+  property bool agreeOff: false          // the live grid disagreed: it wins until the next seek or map
+  property real crossAt: -1              // clock s when mapWeight crossed 0.5, -1 = not waiting
+  property real lastMapAt: -1
+  property real lastTl: -1
+  property real mapConf: 0
+  property real mapPer: 0.5
+  property var beatsA: null
+  property var barsA: null
+  property var strengthA: null
+  property var dropT: null
+  property var dropS: null
+  property var buildS: null
+  property var buildP: null
+  property var secStart: null
+  property var secCode: null
+  property int bi: 0                     // cursors: how many entries are <= the presented song time
+  property int ri: 0
+  property int di: 0
+  property int si: 0
+  property real mBeat: 0; property real mBar: 0; property real mDown: 0; property real mPulse: 0
+  property real mBuild: 0; property int mSec: 4
+
+  // The number of entries <= t (the first index past t).
+  function upperBound(a, t) { var lo = 0, hi = a.length; while (lo < hi) { var m = (lo + hi) >> 1; if (a[m] <= t) lo = m + 1; else hi = m } return lo }
+
+  onMapChanged: {
+    firedIdx = -1; songOff = NaN; agreeP = 0; agreeT = 0; agreeOff = false; crossAt = -1; lastTl = -1
+    mapWeight = 0; mapOn = false; anticipate = 0; dropIn = -1; armedDrop = -1; dropMapped = 0
+    bi = 0; ri = 0; di = 0; si = 0; mBuild = 0
+    var m = map
+    if (m && m.beats && m.beats.length > 1 && m.bpm > 0) {
+      beatsA = m.beats; barsA = m.bars && m.bars.length ? m.bars : [m.beats[0]]
+      strengthA = m.strength && m.strength.length === m.beats.length ? m.strength : null
+      var drops = m.drops || [], builds = m.builds || [], secs = m.sections || []
+      dropT = drops.map(function(x) { return x.t }); dropS = drops.map(function(x) { return x.strength })
+      buildS = builds.map(function(x) { return x.start }); buildP = builds.map(function(x) { return x.peak })
+      secStart = secs.map(function(x) { return x.start }); secCode = secs.map(function(x) { return x.code })
+      mapConf = m.confidence || 0; mapPer = 60 / m.bpm
+    } else {
+      beatsA = null; barsA = null; strengthA = null; dropT = null; dropS = null
+      buildS = null; buildP = null; secStart = null; secCode = null; mapConf = 0
+    }
+  }
+
+  // Song seconds at clock ms (no lead), -1 while there is nothing to follow.
+  function songTime(ms) {
+    if (!beatsA || songBase < 0) return -1
+    var want = songBase - songAt / 1000            // works paused too: a paused seek still re-bases firedIdx
+    if (isNaN(songOff) || Math.abs(want - songOff) > 0.25) {
+      // A seek or a fresh anchor: no pulse for drops skipped past, and the
+      // live grid gets to judge the map afresh.
+      songOff = want; firedIdx = -2; agreeOff = false; agreeP = 0; agreeT = 0
+    } else songOff += Math.max(-0.002, Math.min(0.002, want - songOff))   // slew the per-status anchor jitter
+    return playing ? ms / 1000 + songOff : songBase
+  }
+
+  // lb, lr: the live grid's beat and bar phase this tick.
+  function mapTick(ms, lb, lr) {
+    var ts = ms / 1000
+    var dt = lastMapAt < 0 ? 0 : Math.max(0, Math.min(0.1, ts - lastMapAt))
+    lastMapAt = ts
+    var B = beatsA
+    if (!B) {
+      if (mapOn) mapOn = false
+      if (mapWeight !== 0) mapWeight = 0
+      if (anticipate !== 0) anticipate = 0
+      if (dropIn !== -1) dropIn = -1
+      if (armedDrop !== -1) armedDrop = -1
+      return
+    }
+    var t = songTime(ms)
+    var ok = enabled && t >= 0 && mapConf >= 0.5 && playing && !agreeOff
+    var tl = Math.max(0, t) + mapLead, per = mapPer, n = B.length
+    // Cursors walk forward; after a seek (or a jump of over a second) they search.
+    if (lastTl < 0 || tl < lastTl || tl - lastTl > 1) {
+      bi = upperBound(B, tl); ri = upperBound(barsA, tl); di = upperBound(dropT, tl); si = upperBound(secStart, tl)
+    } else {
+      while (bi < n && B[bi] <= tl) bi++
+      while (ri < barsA.length && barsA[ri] <= tl) ri++
+      while (di < dropT.length && dropT[di] <= tl) di++
+      while (si < secStart.length && secStart[si] <= tl) si++
+    }
+    lastTl = tl
+
+    // Where the map's beat and bar are (past either end, extended by the period).
+    var b0 = bi > 0 ? B[bi - 1] : B[0] - per
+    var b1 = bi < n ? B[bi] : b0 + per
+    var mb = clamp01((tl - b0) / Math.max(1e-3, b1 - b0))
+    var R = barsA, nr = R.length
+    var r0 = ri > 0 ? R[ri - 1] : R[0] - 4 * per
+    var r1 = ri < nr ? R[ri] : r0 + 4 * per
+    var mr = clamp01((tl - r0) / Math.max(1e-3, r1 - r0))
+
+    // Does the live grid agree? Its tempo must sit on an octave of the map's
+    // and, at the same octave, its phase on the map's beat.
+    if (ok && gridP > 0 && gridConf > 0.5) {
+      var okOct = Math.abs(gridP / (per / 2) - 1) < 0.06 || Math.abs(gridP / per - 1) < 0.06 || Math.abs(gridP / (2 * per) - 1) < 0.06
+      agreeT = okOct ? 0 : agreeT + dt
+      if (Math.abs(gridP / per - 1) < 0.05) agreeP += (Math.abs(wrap(lb - mb, 1)) - agreeP) * 0.02
+      if (agreeT > 4 || agreeP > 0.3) { agreeOff = true; ok = false }
+    }
+
+    // Trust eases in and out; the phases switch at a bar boundary, or when the
+    // live grid has nothing to say, or after 2.5 s regardless.
+    var target = ok ? 1 : 0
+    var w = mapWeight + (target - mapWeight) * (1 - Math.exp(-dt / 0.2))
+    if (w < 0.01 && target === 0) w = 0
+    if (w > 0.99 && target === 1) w = 1
+    if (mapWeight !== w) mapWeight = w
+    if (mapOn ? w < 0.5 : w > 0.5) {
+      if (crossAt < 0) crossAt = ts
+      if (gridConf < 0.3 || gridP <= 0 || ((lr < 0.1 || lr > 0.9) && (mr < 0.1 || mr > 0.9)) || ts - crossAt > 2.5) {
+        mapOn = !mapOn; crossAt = -1
+      }
+    } else crossAt = -1
+
+    if (mapOn) {
+      mBeat = mb; mBar = mr
+      mDown = mr < 0.25 ? mapConf * Math.exp(-mr * (r1 - r0) / 0.25) : 0
+      var hit = strengthA && bi > 0 ? strengthA[bi - 1] : 1
+      mPulse = Math.exp(-mb * (b1 - b0) / 0.085) * clamp01(1.6 * Math.max(pulseGain, 0.6 * hit))
+      mSec = si > 0 ? secCode[si - 1] : (secCode.length ? secCode[0] : 4)
+    }
+
+    // The build ramps from its start up to the drop it leads to.
+    var mbuild = 0
+    for (var k = 0; k < buildS.length; k++)
+      if (buildS[k] <= tl && buildP[k] >= tl) { mbuild = clamp01((tl - buildS[k]) / Math.max(0.5, buildP[k] - buildS[k])); break }
+    mBuild = mbuild
+
+    // Anticipation: the next mapped drop, wound up over its last 8 beats.
+    var nd = dropT.length, kd = di
+    var din = ok && kd < nd ? dropT[kd] - tl : -1
+    if (dropIn !== din) dropIn = din
+    var ant = din >= 0 && dropS[kd] >= 0.35 ? clamp01(1 - din / (8 * per)) * w : 0
+    if (anticipate !== ant) anticipate = ant
+    var arm = mapOn && din > 0 && din <= 1.5 && dropS[kd] >= 0.35 ? dropT[kd] : -1
+    if (armedDrop !== arm) armedDrop = arm
+
+    // Fire the drop the playhead just passed, on the map's own time: the
+    // pulse's age is 0 exactly when the presented song time reaches it.
+    var last = kd - 1
+    if (firedIdx === -2) firedIdx = last
+    else if (last >= 0 && last > firedIdx) {
+      if (mapOn && playing && tl - dropT[last] < 0.5) {
+        fireDrop(dropT[last] - songOff - mapLead + lookahead, true)
+        dropMapped = 1
+      }
+      firedIdx = last
+    } else if (last < firedIdx) firedIdx = last      // seeked back: it may fire again
   }
 
   // ---- structure -----------------------------------------------------------
@@ -395,11 +596,14 @@ QtObject {
     var bright = clamp01((hiS / Math.max(0.02, eS) - 1.1) / 0.8)
     // (A rise alone is not tension: cava's autosens lifts every quiet passage.)
     tension = subGone * clamp01(bright * (0.55 + 0.45 * Math.max(rise, hatsUp, hiUp)) + 0.15 * hiPresent + 0.35 * dense)
-    build += (tension - build) * ease(tension > build ? 2.0 : 3.0)
-    buildHold = Math.max(build, buildHold * hold(3))
+    liveBuild += (tension - liveBuild) * ease(tension > liveBuild ? 2.0 : 3.0)
+    buildHold = Math.max(liveBuild, buildHold * hold(3))
 
     var bar = barLen()
     var groove = kickRate > 0.8 && subGone < 0.5
+    // The map drives: the drop and section machine below stays quiet, its
+    // followers warm for when the live grid takes over again.
+    if (mapOn) { if (groove) grooveFor += dt; if (e < 0.01) silentFor += dt; else silentFor = 0; return }
     if (groove) grooveFor += dt
     if (e < 0.01) silentFor += dt; else silentFor = 0
 
@@ -412,7 +616,7 @@ QtObject {
     if (lowOn > 0.3) lastKickTs = ts
     var armed = buildHold > 0.45
     if (armed && ts - lastKickTs < 0.15 && sub > 0.4 * subRef && hiFast > 0.55 * hiRef && sinceDrop > 6 * bar
-        && beatConfidence > 0.2) {
+        && gridConf > 0.2) {
       fireDrop(lastKickTs)
       return
     }
@@ -420,7 +624,7 @@ QtObject {
     // ---- sections ----
     var want
     if (silentFor > 3) want = 0
-    else if ((build > 0.45 && (grooveFor > 4 || tension > 0.6)) || (sectionCode === 1 && build > 0.2)) want = 1
+    else if ((liveBuild > 0.45 && (grooveFor > 4 || tension > 0.6)) || (sectionCode === 1 && liveBuild > 0.2)) want = 1
     else if (grooveFor > 8 && subGone > 0.6 && kickRate < 0.75) want = 3
     else if (sectionCode === 2 && ts - secT0 < 16 * bar) want = 2
     else if (sectionCode === 0 && ts - secT0 < 32 * bar) want = 0
@@ -437,12 +641,13 @@ QtObject {
     }
   }
 
-  function fireDrop(ts) {
+  // exact: the map says when, so ts is kept; the live grid's bar still re-anchors on it.
+  function fireDrop(ts, exact) {
     var t = ts
-    if (gridP > 0 && beatConfidence > 0.3) {
+    if (gridP > 0 && gridConf > 0.3) {
       // Land it on the grid: the beat this kick belongs to becomes beat 1.
       var nb = Math.round(gridN + (ts - gridA) / gridP)
-      t = gridA + (nb - gridN) * gridP
+      if (!exact) t = gridA + (nb - gridN) * gridP
       downSlot = ((nb % 4) + 4) % 4
       var sc = slotScore.slice(), m = Math.max(sc[0], sc[1], sc[2], sc[3])
       sc[downSlot] = m * 1.5 + 0.1
@@ -452,7 +657,8 @@ QtObject {
     dropAt = t
     drops = drops + 1
     sectionCode = 2; secT0 = ts; candCode = -1
-    build = 0; buildHold = 0
+    liveBuild = 0; build = 0; buildHold = 0
+    if (!exact) dropMapped = 0
   }
 
   // For inspection: the onset events still in the ring, [t, all, low, high].
@@ -464,7 +670,8 @@ QtObject {
   }
 
   function state() {
-    return { gridP: gridP, gridA: gridA, gridN: gridN, downSlot: downSlot, coherence: coherence, conf: beatConfidence,
+    return { gridP: gridP, gridA: gridA, gridN: gridN, downSlot: downSlot, coherence: coherence, conf: beatConfidence, gridConf: gridConf,
+             mapWeight: mapWeight, mapOn: mapOn, agreeP: agreeP, agreeT: agreeT, agreeOff: agreeOff, songOff: songOff,
              build: build, tension: tension, section: section, drops: drops, dropAt: dropAt,
              eS: eS, eRef: eRef, subS: subS, subRef: subRef, subFast: subFast, hatRate: hatRate, kickRate: kickRate,
              hiS: hiS, pulseGain: pulseGain, grooveFor: grooveFor, slotScore: slotScore }
