@@ -25,6 +25,8 @@ PanelWindow {
   readonly property bool show: mode === "fullscreen"
   readonly property bool wallpaperMode: desktop && windows
   readonly property bool bleed: show || wallpaperMode       // no card: the visuals are the window
+  // The scene inside the frame: the visualizer, or the cassette deck (t).
+  readonly property bool deck: !!engine && engine.scene === "cassette"
   readonly property var hyprMonitor: Hyprland.monitorFor(screen)
   readonly property bool fullscreen: !!(hyprMonitor && hyprMonitor.activeWorkspace
                                         && hyprMonitor.activeWorkspace.hasFullscreen)
@@ -91,7 +93,13 @@ PanelWindow {
 
   // Every manual change says what it changed to (VizLabel over the visuals).
   signal picked(string name)
-  function pick(name) { liveStyle = ""; engine.setStyle(name); picked(engine.styleLabels[name] || name) }
+  // Picking a style from the deck goes back to the visualizer to show it.
+  function pick(name) {
+    liveStyle = ""
+    engine.setStyle(name)
+    if (deck && engine.setScene) engine.setScene("viz")
+    picked(engine.styleLabels[name] || name)
+  }
   function stepStyle(d) {
     var s = engine.styles, i = s.indexOf(current)
     pick(s[(i + d + s.length) % s.length])
@@ -158,8 +166,26 @@ PanelWindow {
     return i >= 0 ? i + 1 : 0
   }
 
+  // The deck in whichever view is up (the card's or the show's), or null.
+  function deckItem() {
+    var v = bleed ? showView.item : cardView.item
+    return v && v.deckItem ? v.deckItem : null
+  }
+  function deckShuttle(s) { var d = deckItem(); if (d) d.shuttle(s) }
+  function deckEject() { var d = deckItem(); if (d) d.eject(); else leave(close) }
+  function toggleScene() {
+    if (!engine.cycleScene) return
+    engine.cycleScene()
+    picked(engine.scene === "cassette" ? "cassette deck" : (engine.styleLabels[current] || current))
+  }
+
   function handleKey(e) {
     if (e.key === Qt.Key_Escape) leave(close)
+    else if (e.text === "t") toggleScene()
+    // under the deck the arrows run the tape, and e ejects it
+    else if (deck && (e.key === Qt.Key_Right || e.text === "l")) deckShuttle(10)
+    else if (deck && (e.key === Qt.Key_Left || e.text === "h")) deckShuttle(-10)
+    else if (deck && e.text === "e") deckEject()
     else if (e.key === Qt.Key_Right || e.text === "l") stepStyle(1)
     else if (e.key === Qt.Key_Left || e.text === "h") stepStyle(-1)
     else if (e.text === "p" && !bleed) engine.setMiniPlayer(!engine.miniPlayer)
@@ -220,23 +246,29 @@ PanelWindow {
     Keys.onPressed: function(e) { e.accepted = win.handleKey(e) }
 
     Loader {
+      id: showView
       anchors.fill: parent
       active: win.bleed
       opacity: win.presence
       sourceComponent: StageView {
         engine: win.engine
         styleName: win.current
+        cursorHidden: win.show && !win.awake
+        onSceneMoved: win.wake()
+        onSceneLeave: if (win.show) win.leave(function() { win.engine.setPlacement("overlay") })
+        onSceneEjected: win.leave(win.close)
       }
     }
 
     // The show takes the mouse for style changes; the wallpaper takes nothing.
     // A left click waits out the double-click time, so the double-click that
-    // leaves the show does not change the style on its way out.
+    // leaves the show does not change the style on its way out. The deck has
+    // its own mouse (reels, keys, the j-card), so this one steps aside for it.
     MouseArea {
       id: showMouse
       anchors.fill: parent
-      enabled: win.show
-      visible: win.show
+      enabled: win.show && !win.deck
+      visible: win.show && !win.deck
       hoverEnabled: true
       acceptedButtons: Qt.LeftButton | Qt.RightButton
       cursorShape: win.awake ? Qt.ArrowCursor : Qt.BlankCursor
@@ -274,8 +306,15 @@ PanelWindow {
       opacity: win.presence * (win.awake ? 1 : 0)
       HoverHandler { id: hintHover }
       Behavior on opacity { NumberAnimation { duration: win.awake ? Tui.STATE : Tui.PAGE; easing.type: Easing.InOutCubic } }
-      items: [
+      items: win.deck ? [
+        { k: "t", l: "viz", run: function() { win.toggleScene() }, tip: "back to the visualizer" },
+        { k: "←→", l: "tape", run: function() { win.deckShuttle(10) }, tip: "shuttle ± 10 s · drag a reel to scrub", tipKey: "← →" },
+        { k: "e", l: "eject", run: function() { win.deckEject() }, tip: "eject · close the deck" },
+        { k: "space", l: "play", run: function() { if (win.engine.player) win.engine.player.togglePlaying() }, tip: "play / pause" },
+        { k: "f", l: "window", run: function() { win.leave(win.toggleShow) }, tip: "back to the window · or double-click" },
+        { k: "esc", l: "close", run: function() { win.leave(win.close) }, tip: "close the visualizer" }] : [
         { k: "←→", l: "style", run: function() { win.stepStyle(1) }, tip: "next style · click, right-click and scroll work too", tipKey: "← →" },
+        { k: "t", l: "tape", run: function() { win.toggleScene() }, tip: "cassette deck" },
         { k: "space", l: "play", run: function() { if (win.engine.player) win.engine.player.togglePlaying() }, tip: "play / pause" },
         { k: "f", l: "window", run: function() { win.leave(win.toggleShow) }, tip: "back to the window · or double-click" },
         { k: "esc", l: "close", run: function() { win.leave(win.close) }, tip: "close the visualizer" }]
@@ -289,11 +328,20 @@ PanelWindow {
     width: parent ? parent.width : 0
     height: column.implicitHeight + ch * 2
     opacity: win.presence
-    title: "orpheus · " + (win.engine ? win.engine.styleLabels[win.current].toLowerCase() : "")
+    title: "orpheus · " + (win.deck ? "cassette" : (win.engine ? (win.engine.styleLabels[win.current] || win.current).toLowerCase() : ""))
     // The hints give way before the title does: labels first, then the
     // lesser keys. Every key still works, and each hint keeps its tooltip.
-    readonly property var allHints: [
+    readonly property var allHints: win.deck ? deckHints : vizHints
+    readonly property var deckHints: [
+      { k: "t", l: "viz", run: function() { win.toggleScene() }, tip: "back to the visualizer", keep: 1 },
+      { k: "←→", l: "tape", run: function() { win.deckShuttle(10) }, tip: "shuttle ± 10 s · drag a reel to scrub", tipKey: "← →", keep: 2 },
+      { k: "e", l: "eject", run: function() { win.deckEject() }, tip: "eject · close the deck", keep: 2 },
+      { k: "f", l: "full", run: function() { win.leave(win.toggleShow) }, tip: "fullscreen show", keep: 0 },
+      { k: "space", l: "play", run: function() { if (win.engine.player) win.engine.player.togglePlaying() }, tip: "play / pause", keep: 1 },
+      { k: "esc", l: "close", run: function() { win.leave(win.close) }, tip: "close the visualizer", keep: 0 }]
+    readonly property var vizHints: [
       { k: "←→", l: "style", run: function() { win.stepStyle(1) }, tip: "next style · click, right-click and scroll the picture too", tipKey: "← →", keep: 1 },
+      { k: "t", l: "tape", run: function() { win.toggleScene() }, tip: "cassette deck", keep: 2 },
       { k: "p", l: "player", run: function() { win.engine.setMiniPlayer(!win.engine.miniPlayer) }, tip: (win.engine && win.engine.miniPlayer ? "hide" : "show") + " the mini player", keep: 2 },
       { k: "f", l: "full", run: function() { win.leave(win.toggleShow) }, tip: "fullscreen show", keep: 0 },
       { k: "space", l: "play", run: function() { if (win.engine.player) win.engine.player.togglePlaying() }, tip: "play / pause", keep: 1 },
@@ -348,6 +396,7 @@ PanelWindow {
         }
         readonly property bool compact: fullWidth > width - (pulse.visible ? pulse.implicitWidth : 0) - card.cw * 2
         Row {
+          visible: !win.deck
           spacing: tabs.compact ? card.cw : card.cw * 2
           Repeater {
             model: win.engine ? win.engine.styles : []
@@ -367,6 +416,16 @@ PanelWindow {
             }
           }
         }
+        // Under the deck the tabs give way to the side of the tape that is playing.
+        Text {
+          visible: win.deck
+          anchors.verticalCenter: parent.verticalCenter
+          readonly property var d: cardView.item ? cardView.item.deckItem : null
+          text: "tape · side " + (d && d.side ? d.side : "a")
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+          color: win.dim
+        }
         Text {
           id: pulse
           anchors.right: parent.right
@@ -383,16 +442,23 @@ PanelWindow {
       }
 
       Loader {
+        id: cardView
         width: parent.width
         height: win.vizHeight
         active: !win.bleed
         sourceComponent: StageView {
           engine: win.engine
           styleName: win.current
+          cursorHidden: false
+          onSceneEjected: win.leave(win.close)
 
+          // Declared here, so it sits above everything StageView makes: off
+          // under the deck, whose reels, keys and j-card take the mouse.
           MouseArea {
             id: cardMouse
             anchors.fill: parent
+            enabled: !win.deck
+            visible: !win.deck
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -409,7 +475,8 @@ PanelWindow {
       MiniPlayer {
         engine: win.engine
         width: parent.width
-        visible: win.engine && win.engine.miniPlayer
+        // one transport is enough: the deck has its own keys
+        visible: win.engine && win.engine.miniPlayer && !win.deck
       }
     }
   }

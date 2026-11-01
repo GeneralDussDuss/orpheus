@@ -6,12 +6,21 @@ import "Tui.js" as Tui
 
 // What the stage shows inside its frame (or full-bleed): the visualizer, at a
 // resolution auto quality picks from the measured frame rate, with the title
-// card, the kinetic lyrics and the fps readout over it.
+// card, the kinetic lyrics and the fps readout over it. Or, with the engine's
+// scene on "cassette", the cassette deck (Cassette.qml) in its place: the two
+// crossfade at page pace, and the window is never rebuilt for it.
 Item {
   id: view
 
   property var engine: null
   property string styleName: "skyline"
+  property bool cursorHidden: false       // the show's sleeping pointer, for the deck's own mouse
+  // The deck's mouse, passed up to the Stage: wake the show, leave it, close after an eject.
+  signal sceneMoved()
+  signal sceneLeave()
+  signal sceneEjected()
+  readonly property bool deck: !!engine && engine.scene === "cassette"
+  readonly property var deckItem: deckLoader.item
 
   readonly property color bg: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 1)
   readonly property color fg: Tui.ensure(Color.foreground, bg, 7)
@@ -45,7 +54,7 @@ Item {
   property string idle: ""
   onIdleWantChanged: idleWait.restart()
   Timer { id: idleWait; interval: view.idle === "" ? 900 : 250; onTriggered: view.idle = view.idleWant }
-  Component.onCompleted: { idleWait.restart(); if (trackKey !== "" && engine && engine.trackTitle) titleCard.play() }
+  Component.onCompleted: { idleWait.restart(); if (trackKey !== "" && engine && engine.trackTitle && !deck) titleCard.play() }
   // The player window's global key (on Windows as the hotkeys actually bound it).
   readonly property string libraryKey: {
     if (typeof OrpheusKeys === "undefined") return "super+shift+m"
@@ -54,15 +63,44 @@ Item {
     return ""
   }
 
-  Viz {
-    id: viz
+  // ---- the scene ----------------------------------------------------------------
+  //
+  // One Loader per scene. The one going out fades over the incoming one and
+  // unloads when it is gone, so the visualizer's recursive buffers are torn
+  // down with it (never resized) and the two only overlap for the fade.
+  Loader {
+    id: vizLoader
     anchors.fill: parent
-    engine: view.engine
-    styleName: view.styleName
-    renderScale: view.scale_
+    property real shown: view.deck ? 0 : 1
+    Behavior on shown { NumberAnimation { duration: Tui.PAGE; easing.type: Easing.InOutCubic } }
+    active: !view.deck || shown > 0.01
     // At rest the picture steps back; the music brings it forward again.
-    opacity: view.idle === "" || view.idle === "deaf" ? 1 : 0.55
-    Behavior on opacity { NumberAnimation { duration: Tui.PAGE; easing.type: Easing.InOutCubic } }
+    property real rest: view.idle === "" || view.idle === "deaf" ? 1 : 0.55
+    Behavior on rest { NumberAnimation { duration: Tui.PAGE; easing.type: Easing.InOutCubic } }
+    opacity: shown * rest
+    sourceComponent: Viz {
+      engine: view.engine
+      styleName: view.styleName
+      renderScale: view.scale_
+    }
+  }
+  Loader {
+    id: deckLoader
+    anchors.fill: parent
+    property real shown: view.deck ? 1 : 0
+    Behavior on shown { NumberAnimation { duration: Tui.PAGE; easing.type: Easing.InOutCubic } }
+    active: view.deck || shown > 0.01
+    opacity: shown
+    visible: shown > 0.001
+    sourceComponent: Cassette {
+      engine: view.engine
+      unit: view.unit
+      cursorHidden: view.cursorHidden
+      onMoved: view.sceneMoved()
+      onLeave: view.sceneLeave()
+      onEjected: view.sceneEjected()
+    }
+    onLoaded: item.powerOn()
   }
 
   // ---- auto quality --------------------------------------------------------
@@ -81,6 +119,8 @@ Item {
   property real cap: 1e9               // a ceiling that is not ours to fix
   readonly property real target: Math.min(engine ? engine.fps : 60, cap)
   onStyleNameChanged: { cap = 1e9; low = 0; good = 0; fpsBeforeDrop = 0 }
+  // A scene change starts the measuring over too (the deck ignores the scale).
+  onDeckChanged: { cap = 1e9; low = 0; good = 0; fpsBeforeDrop = 0; step = 0 }
   readonly property int fpsSetting: engine ? engine.fps : 60
   onFpsSettingChanged: cap = 1e9
   property int frames: 0
@@ -144,7 +184,7 @@ Item {
     api: view.engine && view.engine.lyricsOverViz ? view.api : null
     track: view.track
   }
-  readonly property bool lyricsOn: !!engine && engine.lyricsOverViz && lyr.lines.length > 0
+  readonly property bool lyricsOn: !!engine && engine.lyricsOverViz && lyr.lines.length > 0 && !deck   // not over the deck's keys
   readonly property real pos: api ? (api.position || 0) : 0
   readonly property int lineIdx: lyricsOn ? lyr.lineAt(pos + 0.45 - lyr.offset) : -1
   readonly property string lineText: lineIdx >= 0 ? (lyr.lines[lineIdx].text || "") : ""
@@ -357,7 +397,7 @@ Item {
   // wide tracking, the artist follows, it holds, and it all fades away.
   readonly property string trackKey: track ? String(track.id || track.title || "") : ""
   onTrackKeyChanged: {
-    if (trackKey !== "" && engine && engine.trackTitle) titleCard.play()
+    if (trackKey !== "" && engine && engine.trackTitle && !deck) titleCard.play()   // the j-card names it there
     else titleCard.clear()                 // nothing loaded: no stale title over an empty stage
   }
 
@@ -498,7 +538,9 @@ Item {
     anchors.centerIn: parent
     width: parent.width * 0.8
     spacing: view.unit * 0.3
+    // The deck shows two of these itself: ejected for no track, needles at rest when deaf.
     readonly property bool on: view.idle !== "" && view.idle !== "paused"
+                               && !(view.deck && (view.idle === "nothing playing" || view.idle === "deaf"))
     opacity: on ? 1 : 0
     visible: opacity > 0.01
     Behavior on opacity { NumberAnimation { duration: Tui.PAGE; easing.type: Easing.InOutCubic } }
@@ -542,7 +584,7 @@ Item {
     font.family: view.family
     font.pixelSize: Math.max(Style.font.caption, view.unit * 0.42)
     color: view.dim
-    readonly property bool on: view.idle === "paused"
+    readonly property bool on: view.idle === "paused" && !view.deck
     property real shown: on ? 1 : 0
     Behavior on shown { NumberAnimation { duration: Tui.STATE; easing.type: Easing.InOutCubic } }
     opacity: shown * (0.6 + 0.4 * view.breath)
