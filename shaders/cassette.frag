@@ -234,7 +234,7 @@ void main() {
                         -0.62 + 0.08 * cos(time * 0.07), 0.85));
     Hk = normalize(Lk + vec3(0.0, 0.0, 1.0));
     // how hard the tape glows: never dark, even paused
-    glowAmt = (0.22 + 0.55 * bass + 0.30 * swell + 0.55 * kk + 0.45 * drp + 0.15 * snap) * (1.0 - ej);
+    glowAmt = (0.38 + 0.85 * bass + 0.40 * swell + 0.95 * kk + 0.85 * drp + 0.25 * snap) * (1.0 - ej);
 
     vec2 cL = vec2(reel.x, reel.z), cR = vec2(reel.y, reel.z);
     vec3 tapeHot = mix(c1.rgb, c2.rgb, 0.5);
@@ -263,7 +263,7 @@ void main() {
     float dW = rrectD(p, well, W * 0.035);
     float inW = clamp(0.5 - dW, 0.0, 1.0);
     // light spills out around the machine on the beat
-    col.rgb += tapeHot * lit(glow(max(dW, 0.0), W * 0.05) * (0.06 + 0.22 * kk + 0.18 * drp) * hasTape) * (1.0 - inW);
+    col.rgb += tapeHot * lit(glow(max(dW, 0.0), W * 0.06) * (0.08 + 0.40 * kk + 0.35 * drp) * hasTape) * (1.0 - inW);
     if (inW > 0.0) {
         float brush = 0.5 + 0.5 * sin(p.y * 1.7 + hash(vec2(floor(p.y * 0.6), 1.0)) * 6.0);
         vec3 plate = mix(bg.rgb, fg.rgb, 0.035 + 0.015 * brush);
@@ -316,14 +316,14 @@ void main() {
             float u = clamp((r - r0) / max(1.0, pr - r0), 0.0, 1.0);
             float wind = 0.5 + 0.5 * sin(r * 2.3 + hash(vec2(floor(r * 0.45), float(k))) * 6.0);
             // the tape's sheen: a spun-disc bowtie across the light
-            vec3 tc = tapeC * (0.85 + 0.25 * wind) + fg.rgb * 0.22 * aniso(th, 18.0) * (1.0 - 0.5 * blur);
+            vec3 tc = mix(tapeC, mix(c1.rgb, c2.rgb, u) * 0.30, 0.55) * (0.85 + 0.25 * wind) + fg.rgb * 0.22 * aniso(th, 18.0) * (1.0 - 0.5 * blur);
             col = over(col, tc, cov);
             // light caught in the pack, turning with the reel (smeared when it races)
             float rel = th - a;
             float arc = pow(0.5 + 0.5 * cos(rel), mix(10.0, 1.2, blur)) + 0.45 * pow(0.5 + 0.5 * cos(rel + PI), mix(10.0, 1.2, blur));
             vec3 ec = mix(c1.rgb, c2.rgb, u);
-            emit += ec * cov * glowAmt * (0.30 + 0.70 * arc) * (0.65 + 0.35 * wind);
-            emit += c2.rgb * glow(r - pr, 2.5 + rMax * 0.02) * glowAmt * 0.8 * hasTape * inB;
+            emit += ec * cov * glowAmt * (0.45 + 1.35 * arc) * (0.65 + 0.35 * wind);
+            emit += c2.rgb * glow(r - pr, 2.5 + rMax * 0.03) * glowAmt * 1.4 * hasTape * inB;
             // the cassette's own hub: pale plastic with three slots turning with it
             float hub = ringAA(r, holeR, r0) * inB;
             float sl = fract((th - a) * 3.0 / (2.0 * PI));
@@ -364,7 +364,8 @@ void main() {
         float shellA = (0.80 - 0.30 * glassy) * (1.0 - inWin * 0.88);
         col = over(col, sc, shellMask * shellA * ca);
         // the light through it: clear in the window, scattered by the smoke elsewhere
-        float transmit = mix(0.30 + 0.25 * kk, 1.0, inWin);
+        float transmit = mix(0.45 + 0.35 * kk, 1.0, inWin);
+        emit /= 1.0 + max3(emit) * 0.7;                      // stacked light flares, never flattens to white
         col.rgb += lit(1.0) * emit * transmit * ca;
 
         // window glass: a slow diagonal reflection, brighter on the kick
@@ -411,14 +412,14 @@ void main() {
         // kick: a ring of light rolls out from the middle as the hit decays
         vec2 bc = body.xy + body.zw * 0.5;
         float rr = (1.0 - kk) * W * 0.55;
-        col.rgb += tapeHot * lit(glow(length((q - bc) / vec2(1.0, 0.7)) - rr, W * 0.025) * kk * 0.35) * inB * ca;
+        col.rgb += tapeHot * lit(glow(length((q - bc) / vec2(1.0, 0.7)) - rr, W * 0.035) * kk * 0.75) * inB * ca;
         // build: the shell's edge lights up from the bottom as it climbs
         float climb = smoothstep(1.0 - build * 1.15, 1.05 - build * 1.15, b.y);
         col.rgb += c3.rgb * lit(glow(dB, 2.0 + W * 0.006) * build * climb * 0.9) * ca;
         // drop: a streak of light sweeps across, again and again while it lasts
         float sx = b.x + (b.y - 0.5) * 0.35;
         float sp = fract(time * 0.42) * 1.8 - 0.4;
-        col.rgb += mix(c1.rgb, vec3(1.0), 0.4) * lit(glow(sx - sp, 0.045) * drp * 0.45) * inB * ca;
+        col.rgb += mix(c1.rgb, c2.rgb, 0.5) * lit(glow(sx - sp, 0.06) * drp * 0.85) * inB * ca;
         // the edge highlight that sells it as a solid
         col.rgb += fg.rgb * lit(0.10) * rimAA(dB) * clamp(dot(-rrectN(q, body, W * 0.03), Lk.xy) + 0.4, 0.0, 1.0) * ca;
     }
