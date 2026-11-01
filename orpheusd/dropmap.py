@@ -114,6 +114,8 @@ class Features:
 
 
 def _onset(f):
+    if f.size == 0:                 # ffmpeg wrote nothing: decode() reports its error
+        return np.zeros(0, np.float32)
     loc = np.convolve(f, np.ones(16, np.float32) / 16, mode="same")
     e = np.maximum(f - loc, 0)
     return (e / (e.max() + 1e-9)).astype(np.float32) if e.size else e.astype(np.float32)
@@ -564,6 +566,8 @@ def main(argv=None) -> int:
         else:
             with open(job["pcm"], "rb") as fh:
                 f = feed(fh)
+            if f.n_samples < 2 * SR:
+                raise DecodeError("short")
         _say(analyse(f, float(job["duration"]), float(job.get("bpm") or 0)))
         return 0
     except DecodeError as e:
@@ -571,6 +575,9 @@ def main(argv=None) -> int:
         return 2
     except OSError as e:
         _say({"state": "failed", "error": redact(str(e.strerror or e))[:200]})
+        return 2
+    except (ValueError, FloatingPointError, IndexError) as e:   # a degenerate signal: a JSON line, not a traceback
+        _say({"state": "failed", "error": f"analysis: {type(e).__name__}"})
         return 2
 
 

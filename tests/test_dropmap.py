@@ -208,6 +208,17 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(p.returncode, 4)
         self.assertEqual(json.loads(p.stdout)["state"], "failed")
 
+    def test_g_no_audio_is_short_not_a_crash(self):
+        f = dm.feed(io.BytesIO(b""))               # ffmpeg 403 / bad manifest: nothing on stdout
+        self.assertEqual((f.env.size, f.n_samples), (0, 0))
+        with tempfile.TemporaryDirectory() as tmp:
+            pcm = Path(tmp) / "empty.pcm"
+            pcm.write_bytes(b"")
+            p = _idle.run([sys.executable, "-m", "orpheusd.dropmap"],
+                          input=(json.dumps({"pcm": str(pcm), "duration": 60}) + "\n").encode(), cwd=str(REPO))
+            self.assertNotIn(b"Traceback", p.stderr)
+            self.assertEqual(json.loads(p.stdout)["state"], "failed")
+
     def test_g_numpy_missing(self):
         saved, out = dm.np, io.StringIO()
         try:

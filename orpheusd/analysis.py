@@ -187,7 +187,8 @@ class Analysis:
             return self.bump()
 
         mine = [j for j in self._queue if j.key == key]
-        if (self._running and self._running.key == key) or mine:
+        running = self._running and self._running.key == key and not self._running.cancelled
+        if running or mine:
             if role == "current" and mine:
                 self._queue = mine[:1] + [j for j in self._queue if j.key != key]
             return
@@ -201,7 +202,7 @@ class Analysis:
         job = Job(key, str(track["id"]), "tidal", source, dash, float(track.get("duration") or 0),
                   float(track.get("bpm") or 0), role, sig)
         if dash:
-            job.mpd_copy = self.tmp / f"{key}.mpd"
+            job.mpd_copy = self.tmp / f"{key}-{time.monotonic_ns()}.mpd"   # a dying job for the same key unlinks only its own
             try:
                 job.mpd_copy.write_bytes(manifest)
             except OSError as e:
@@ -224,6 +225,9 @@ class Analysis:
         """The player's current and next tracks now (every 0.5 s): anything
         queued or running for another track stops; all of it when switched off."""
         self._next_key = next_key or ""
+        moved = bool(current_key) and current_key != self._current_key
+        if moved:                       # a gapless or crossfade move never goes through _load
+            self._current_key = current_key
         want = {k for k in (current_key, next_key) if k} if self.on() else set()
         gone = [j for j in self._queue if j.key not in want]
         if gone:
@@ -232,7 +236,7 @@ class Analysis:
                 self._forget(j)
         if self._running and self._running.key not in want:
             self._kill(self._running)
-        if gone:
+        if gone or moved:
             self.bump()
 
     def _forget(self, job: Job):
@@ -319,7 +323,8 @@ class Analysis:
             self._running = None
             self._unlink(job)
             if job.cancelled:
-                self._forget(job)
+                if not any(j.key == job.key for j in self._queue):   # else wanted again: it stays "pending"
+                    self._forget(job)
                 log.info("analysis %s: stopped after %d ms", job.key, ms)
             elif rc == 0 and isinstance(data, dict) and data.get("state") == "ready" and self._fits(job, data):
                 data.update(v=MAP_V, key=job.key, id=job.track_id, provider=job.provider, at=time.time(), ms=ms)

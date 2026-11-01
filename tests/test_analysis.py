@@ -131,6 +131,24 @@ class AnalysisTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.a.state()["key"], "tidal_2_60")
         self.assertFalse((self.tmp / "cache" / "analysis" / "tidal_1_60.json").exists())
 
+    async def test_retarget_follows_a_gapless_move(self):
+        self.a.retarget("tidal_1_60", "tidal_2_60")
+        self.a.schedule(track("2", bpm=0.5), self.bts(), "next")
+        v = self.a.version
+        self.a.retarget("tidal_2_60", None)        # start-file / crossfade promotion: no _load
+        self.assertEqual(self.a.state()["key"], "tidal_2_60")
+        self.assertGreater(self.a.version, v)
+        await self.until(lambda: self.a.state()["state"] == "ready")
+
+    async def test_back_to_a_cancelled_key_requeues(self):
+        self.a.schedule(track("1", bpm=8), self.bts(), "current")
+        await self.until(lambda: self.a._running and self.a._running.proc)
+        self.a.retarget("tidal_9_60", None)        # killed, not yet reaped
+        self.a.retarget("tidal_1_60", None)
+        self.a.schedule(track("1", bpm=0.2), self.bts(), "current")
+        self.assertEqual(self.a._state.get("tidal_1_60"), "pending")
+        await self.until(lambda: self.a.state()["state"] == "ready")
+
     async def test_next_survives_current(self):
         self.a.retarget("tidal_1_60", "tidal_2_60")
         self.a.schedule(track("2", bpm=1.0), self.bts(), "next")
@@ -189,8 +207,9 @@ class AnalysisTest(unittest.IsolatedAsyncioTestCase):
         mpd = self.tmp / "101.mpd"
         mpd.write_text("<MPD>https://sp.example/seg</MPD>")
         self.a.schedule(track(), {"source": str(mpd), "dash": True}, "current")
-        copy = self.tmp / "run" / "analysis" / "tidal_101_60.mpd"
-        self.assertTrue(copy.exists())
+        copies = list((self.tmp / "run" / "analysis").glob("tidal_101_60-*.mpd"))
+        self.assertEqual(len(copies), 1)
+        copy = copies[0]
         await self.until(lambda: self.a.state()["state"] == "ready")
         self.assertFalse(copy.exists())
         data = json.loads((self.tmp / "cache" / "analysis" / "tidal_101_60.json").read_text())
