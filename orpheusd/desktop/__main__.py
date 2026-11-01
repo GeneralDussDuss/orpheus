@@ -602,6 +602,14 @@ def main():
         sys.exit(1)
     say(f"QML loaded at {since_start()}")
 
+    stall_test = os.environ.get("ORPHEUS_TEST_STALL")
+    if not args.shot or stall_test:
+        from orpheusd.system import STATE_DIR as _state
+        from .hangrec import HangRecorder
+        hang = HangRecorder(_state, say).start(app)       # evidence for the next GUI hang
+    if stall_test:
+        QTimer.singleShot(3000, lambda: time.sleep(float(stall_test)))
+
     keep = None
     hotkeys = None
     if args.shot:
