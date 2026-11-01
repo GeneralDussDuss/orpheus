@@ -27,6 +27,7 @@ import logging
 import os
 import re
 import shutil
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,7 +44,7 @@ UA = "Orpheus/0.1 (https://github.com/GeneralDussDuss/orpheus)"
 API = "https://www.shadertoy.com/api/v1/shaders/{id}"
 
 # Bumped when the wrapper changes in a way that should rebuild every style.
-BUILD_V = "2"
+BUILD_V = "3"
 MAX_SOURCE = 256 * 1024     # a .frag in the folder (a dozen KB is typical)
 MAX_DROP = 1024 * 1024      # a file dropped on the stage
 SETTLE = 0.3                # seconds a changed file must sit still: editors save in steps
@@ -408,7 +409,16 @@ class UserShaders:
         q = system.qsb_path()
         if not q:
             return 127, NO_QSB
-        return system.run_quiet([q, "--qt6", "-o", str(out), str(glsl)], timeout=30)
+        rc, text = system.run_quiet([q, "--qt6", "-o", str(out), str(glsl)], timeout=30)
+        if rc == 0 and system.WINDOWS:
+            # Bake DXBC in (orpheusd/dxbc.py): without it D3D11 compiles the HLSL on
+            # the render thread at first draw, seconds for a raymarcher, a frozen
+            # window. A failed bake still leaves a working, just slow-to-start, style.
+            brc, btext = system.run_quiet([sys.executable, "-m", "orpheusd.dxbc", str(out)], timeout=120,
+                                          env=dict(system.qsb_env(), QSB=q, PYTHONPATH=str(Path(__file__).resolve().parent.parent)))
+            if brc != 0:
+                log.warning("dxbc bake failed for %s: %s", out.name, btext.strip()[-300:])
+        return rc, text
 
     # ---- start ------------------------------------------------------------
 
