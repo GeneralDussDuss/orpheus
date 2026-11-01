@@ -59,6 +59,13 @@ Item {
         readonly property string feedback: "off"
         readonly property bool dropFx: false
         readonly property int fps: 20
+        // A user style (@name) is found through the engine; without these the
+        // small Viz fell back to the builtin URL and drew prism behind @ferro.
+        function isUserStyle(n) { return !!amb.engine && !!amb.engine.isUserStyle && amb.engine.isUserStyle(n) }
+        function userStyle(n) { return amb.engine && amb.engine.userStyle ? amb.engine.userStyle(n) : null }
+        function styleUrl(n) {
+          return amb.engine && amb.engine.styleUrl ? amb.engine.styleUrl(n) : Qt.resolvedUrl("shaders/" + n + ".frag.qsb")
+        }
       }
       readonly property var keys: ["b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "p0", "p1", "p2", "p3", "p4", "p5", "p6", "p7",
                                    "c1", "c2", "c3", "bg", "fg", "bass", "energy", "beat", "paceBpm", "kick", "snap", "swell",
