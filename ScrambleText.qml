@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import qs.Commons
+import "Tui.js" as Tui
 
 // Text that decodes into a new value, like a terminal: on a change every
 // character churns through noise glyphs, then they settle left to right into
@@ -21,7 +22,7 @@ GlowText {
   property string target: ""
   property var key: undefined
   property bool animate: true
-  property int duration: 520
+  property int duration: Tui.DECODE
 
   property real progress: 1
   property int seed: 0
@@ -29,29 +30,12 @@ GlowText {
   property string lastTarget: ""
   property bool born: false
 
-  // ASCII and the CP437 shades: in every monospace face, one cell each.
-  readonly property string glyphs: "!<>-_\\/[]{}=+*^?#%&$@01░▒▓"
   readonly property bool live: animate && !!s.Window.window && s.Window.window.visible
                                && s.Window.window.visibility !== Window.Minimized
 
-  function wide(code) {
-    // CJK, Hangul, fullwidth forms, emoji: two cells, left as they are
-    return code >= 0x1100 && (code <= 0x115f || (code >= 0x2e80 && code <= 0xa4cf) || (code >= 0xac00 && code <= 0xd7a3)
-                              || (code >= 0xf900 && code <= 0xfaff) || (code >= 0xfe30 && code <= 0xfe4f)
-                              || (code >= 0xff00 && code <= 0xff60) || (code >= 0xffe0 && code <= 0xffe6) || code >= 0x1f000)
-  }
-  function decoded(t, p, sd) {
-    if (p >= 1) return t
-    // A short all-noise beat first, then the settle sweeps left to right.
-    var settled = Math.floor(t.length * Math.max(0, (p - 0.18) / 0.82))
-    var out = t.slice(0, settled)
-    for (var i = settled; i < t.length; i++) {
-      var c = t.charAt(i), code = t.charCodeAt(i)
-      if (c === " " || wide(code) || (code >= 0xd800 && code <= 0xdfff)) { out += c; continue }
-      out += glyphs.charAt(Math.floor(Math.abs(Math.sin((i + 1) * 12.9898 + sd * 78.233) * 43758.5453)) % glyphs.length)
-    }
-    return out
-  }
+  // The glyph set, the noise beat and the wide-char guard live in Tui.decode
+  // (shared with TuiBox titles and the boot screen).
+  function decoded(t, p, sd) { return Tui.decode(t, p, sd) }
 
   text: progress >= 1 ? target : decoded(target, progress, seed)
 

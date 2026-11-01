@@ -124,21 +124,10 @@ Item {
   function clamp01(v) { return Math.max(0, Math.min(1, v)) }
   function smooth(a, b, v) { var x = clamp01((v - a) / (b - a)); return x * x * (3 - 2 * x) }
 
-  // Text mid-decode: noise first, then settling left to right. One glyph per
-  // character, spaces kept, so the monospace line never changes width.
-  readonly property string noise: "!<>-_\\/[]{}=+*^?#%&$@01░▒▓"
+  // Text mid-decode (Tui.decode: noise beat, then a left-to-right settle, one
+  // glyph per character, so the monospace line never changes width).
   readonly property int churn: Math.floor(t * 24)           // the noise moves at 24 Hz, not per frame
-  function decode(s, p, salt) {
-    s = String(s)
-    if (p >= 1) return s
-    var settled = Math.floor(s.length * clamp01((p - 0.15) / 0.85))
-    var out = s.slice(0, settled)
-    for (var i = settled; i < s.length; i++) {
-      var c = s.charAt(i)
-      out += c === " " ? " " : noise.charAt(Math.floor(Math.abs(Math.sin((i + 1) * 12.9898 + (churn + salt) * 78.233) * 43758.5453)) % noise.length)
-    }
-    return out
-  }
+  function decode(s, p, salt) { return Tui.decode(s, p, churn + salt) }
   function pad(s, n) { s = String(s); while (s.length < n) s += " "; return s.length > n ? s.slice(0, n) : s }
   function lpad(s, n) { s = String(s); while (s.length < n) s = " " + s; return s }
 
@@ -299,9 +288,12 @@ Item {
             readonly property real at: boot.logAt + index * boot.logStep
             readonly property var st: boot.settled[index]
             readonly property real since: st ? boot.t - st.at : 0
-            readonly property string detail: st ? boot.decode(st.d, since / 0.16, 11 + index) : ""
+            // the detail is fitted to what the 48-cell rule leaves after the
+            // status, the label and the shortest leader, so long names never overflow
+            readonly property string detail: st ? boot.decode(Tui.fit(st.d, boot.cols - 10 - boot.labels[index].length), since / 0.16, 11 + index) : ""
             readonly property string label: boot.decode(boot.labels[index], (boot.t - at) / 0.16, 5 + index)
             opacity: boot.t >= at ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.OUT } }
             Text {   // status, right-aligned in four cells
               width: boot.colW * 4
               horizontalAlignment: Text.AlignRight

@@ -48,19 +48,38 @@ function meter(value, n, full, empty, knob) {
   return s
 }
 
-var SCRAMBLE = "▖▗▘▙▚▛▜▝▞▟░▒▓<>/\\|=+*#%@01"
+// ASCII and the CP437 shades: in every monospace face, one cell each.
+var SCRAMBLE = "!<>-_\\/[]{}=+*^?#%&$@01░▒▓"
 
-// Text mid-decode: settled characters from the left, noise for the rest.
+// CJK, Hangul, fullwidth forms, emoji: two cells, left as they are.
+function wide(code) {
+  return code >= 0x1100 && (code <= 0x115f || (code >= 0x2e80 && code <= 0xa4cf) || (code >= 0xac00 && code <= 0xd7a3)
+                            || (code >= 0xf900 && code <= 0xfaff) || (code >= 0xfe30 && code <= 0xfe4f)
+                            || (code >= 0xff00 && code <= 0xff60) || (code >= 0xffe0 && code <= 0xffe6) || code >= 0x1f000)
+}
+
+// Text mid-decode: a short all-noise beat, then settled characters sweep in
+// from the left over noise. Spaces, wide glyphs and surrogate halves stay as
+// they are, so a monospace line never changes width while it resolves.
+// Callers churn the noise by moving `seed` (ScrambleText: ~22 Hz).
 function decode(text, progress, seed) {
   text = String(text || "")
   if (progress >= 1) return text
-  var settled = Math.floor(text.length * Math.max(0, progress))
+  var settled = Math.floor(text.length * Math.max(0, (progress - 0.18) / 0.82))
   var out = text.slice(0, settled)
   for (var i = settled; i < text.length; i++) {
-    var c = text.charAt(i)
-    out += c === " " ? " " : SCRAMBLE.charAt(Math.floor(Math.abs(Math.sin((i + 1) * 12.9898 + seed) * 43758.5453)) % SCRAMBLE.length)
+    var c = text.charAt(i), code = text.charCodeAt(i)
+    if (c === " " || wide(code) || (code >= 0xd800 && code <= 0xdfff)) { out += c; continue }
+    out += SCRAMBLE.charAt(Math.floor(Math.abs(Math.sin((i + 1) * 12.9898 + (seed || 0) * 78.233) * 43758.5453)) % SCRAMBLE.length)
   }
   return out
+}
+
+// `s` cut to `n` cells with an ellipsis, so a decode never outgrows its slot.
+function fit(s, n) {
+  s = String(s || "")
+  n = Math.max(1, Math.floor(n))
+  return s.length <= n ? s : s.slice(0, n - 1) + "…"
 }
 
 // Braille spectrum: `levels` (0..1) drawn as `rows` lines of braille, each
@@ -156,9 +175,32 @@ function spinner(time) {
   return SPIN.charAt(Math.floor(Math.max(0, time || 0) * 12) % SPIN.length)
 }
 
-// The motion scale every surface shares (ms; ease Easing.InOutCubic):
-// a hover answers in HOVER, a selection or state change takes STATE, a theme
-// or page-scale change takes PAGE.
-var HOVER = 120
-var STATE = 180
-var PAGE = 420
+// The motion scale every surface shares (ms). Press answers in-frame (TAP);
+// a release or hover takes HOVER, a selection or state change STATE, a page
+// or scene PAGE. Enter eases OUT, exit IN, an in-place change EASE.
+var TAP = 0, TIP = 90, HOVER = 120, STATE = 180, PAGE = 420
+var GLIDE = 650          // theme glide; mirrors shims.THEME_GLIDE_MS (Windows, Python-driven)
+var DECODE = 520         // ScrambleText / title decode; secondary lines DECODE * 1.35
+var STAGGER = 14, STAGGER_MAX = 24   // per-row print-in
+var SPINNER_DELAY = 150  // never flash a spinner for a fast fetch
+var EASE = 7, OUT = 6, IN = 5        // Easing.InOutCubic / OutCubic / InCubic (numeric: pragma library)
+var SPRING = { spring: 6, damping: 0.4 }   // the Heart's spring; a press release
+// A toast stays long enough to read: ~40 ms a character, 1.8..6 s.
+function toastMs(text) { return Math.max(1800, Math.min(6000, 1400 + String(text || "").length * 40)) }
+
+// Type scale (px at the 13 px body). Call sites write Tui.T.title.
+var T = { caption: 11, body: 13, lead: 15, title: 17, display: 21, hero: 26 }
+var TRACK = { label: 1, brand: 2, display: 3 }
+
+// Alpha ladder for fills over a surface.
+var A = { hover: .07, tint: .12, cursor: .16, press: .3, select: .35, scrim: .6, chip: .82, card: .97 }
+
+// "⠹  loading albums…" as styled text, the spinner in the accent.
+function busy(time, label, accentHex) {
+  return '<font color="' + accentHex + '">' + spinner(time) + '</font>&nbsp;&nbsp;' + esc(label || "") + '…'
+}
+
+// One scroll physics for every Flickable, and a clamped programmatic scroll
+// (pair it with a contentY Behavior gated on !moving, so wheel/drag stay direct).
+var FLICK = { decel: 4500, vmax: 3200 }
+function scrollTo(f, y) { f.contentY = Math.max(0, Math.min(y, f.contentHeight - f.height)) }
