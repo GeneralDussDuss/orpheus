@@ -111,6 +111,10 @@ Item {
   property real ledR: 0
   property real thump: 0
   property real swellNow: 0
+  property real bassNow: 0              // the shader's music: gated copies of the engine's
+  property real snapNow: 0
+  property real buildNow: 0
+  property real dropNow: 0
   property real needleKick: 0
   property real clock: 0                // the shader's time: advances only while live
   property real lastPos: -1
@@ -130,6 +134,7 @@ Item {
       && !shuttleAnim.running && !brakeAnim.running && !offAnim.running && !powerAnim.running
       && Math.abs(vuLv) < 2e-3 && Math.abs(vuRv) < 2e-3 && vuL < 0.002 && vuR < 0.002
       && ledL < 0.01 && ledR < 0.01 && thump < 0.002 && swellNow < 0.002
+      && bassNow < 0.002 && snapNow < 0.002 && buildNow < 0.002 && dropNow < 0.002
       && !ejectAnim.running && !insertAnim.running && needleKick === 0
   readonly property bool live: visible && !!engine && !engine.gameMode && !!Window.window && Window.window.visible && !settled
   Connections { target: deck.engine; function onTimeChanged() { if (deck.live) deck.step(-1) } }
@@ -212,6 +217,16 @@ Item {
     swellNow = (engine ? engine.swell : 0) * gate
     if (thump < 0.002) thump = 0
     if (swellNow < 0.002) swellNow = 0
+    // the rest of the music, for the light: eased so a paused deck still settles
+    var ease = 1 - Math.exp(-dt / 0.12)
+    bassNow += ((engine ? engine.bass : 0) * gate - bassNow) * ease
+    snapNow = (engine ? engine.snap : 0) * gate
+    buildNow += ((engine ? engine.build : 0) * gate - buildNow) * ease
+    dropNow += ((engine ? engine.drop : 0) * gate - dropNow) * ease
+    if (bassNow < 0.002) bassNow = 0
+    if (snapNow < 0.002) snapNow = 0
+    if (buildNow < 0.002) buildNow = 0
+    if (dropNow < 0.002) dropNow = 0
 
     // 7. flutter dies away; the deck's own clock moves
     wobble *= Math.exp(-dt / 0.45)
@@ -352,7 +367,7 @@ Item {
     x: 0; y: 0
     width: Math.min(deck.width, deck.deckX + deck.deckW + deck.unit * 0.4)
     height: deck.height
-    fragmentShader: "shaders/cassette.frag.qsb"
+    fragmentShader: deck.engine && deck.engine.deckLook === "light" ? "shaders/cassette_light.frag.qsb" : "shaders/cassette.frag.qsb"
     property real time: deck.clock
     property vector2d res: Qt.vector2d(width, height)
     property color c1: deck.engine ? deck.engine.c1 : deck.accent
@@ -372,6 +387,8 @@ Item {
     property real bloomAmt: deck.bloomOn ? (deck.engine.bloom === "full" ? 1.0 : 0.6) : 0
     property real glassy: deck.glassy ? 1 : 0
     property real kick: deck.thump
+    property vector4d music: Qt.vector4d(deck.bassNow, deck.swellNow, deck.buildNow, deck.dropNow)
+    property vector2d hits: Qt.vector2d(deck.snapNow, deck.engine ? deck.engine.kicks : 0)
 
     // Static per (setting, theme, size): never toggled by the music. Not a
     // recursive source, and no textureSize override: the layer is the item's size.

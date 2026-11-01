@@ -77,7 +77,7 @@ Item {
                                      autoQuality: true, showFps: false, bloom: "subtle",
                                      endless: true, crossfade: 0, remote: "off",
                                      director: true, beatLock: true, lookaheadMs: 85, feedback: "subtle", dropMap: true, dropMapLeadMs: 30,
-                                     ambient: "subtle", dropFx: true, titleFx: true, pulseUi: true, bootScreen: true, scene: "viz",
+                                     ambient: "subtle", dropFx: true, titleFx: true, pulseUi: true, bootScreen: true, scene: "viz", deckLook: "shell",
                                      widget: { enabled: true, style: "full", corner: "bottom-right", monitor: "", viz: "prism", layer: "top" } })
 
   // ---- Config ------------------------------------------------------------
@@ -119,6 +119,9 @@ Item {
   readonly property bool titleFx: config.titleFx !== false  // titles decode in on a track change
   readonly property bool pulseUi: config.pulseUi !== false  // UI accents breathe with the kick
   readonly property bool bootScreen: config.bootScreen !== false  // Boot.qml over the player window, once per run
+  // The cassette deck's look: "shell" a lit clear-shell machine, "light" the deck drawn in light.
+  readonly property var deckLooks: ["shell", "light"]
+  readonly property string deckLook: deckLooks.indexOf(config.deckLook) >= 0 ? config.deckLook : "shell"
   readonly property var widget: {
     var w = {}
     for (var k in defaults.widget) w[k] = defaults.widget[k]

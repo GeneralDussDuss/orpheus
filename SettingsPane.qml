@@ -110,6 +110,8 @@ Rectangle {
                desc: "a chroma burst, grain and a vignette when a drop lands" })
       r.push({ kind: "choice", id: "ambient", label: "ambient light", options: ["off", "subtle", "vivid"], def: d.ambient,
                desc: "the visualizer, dim and blurred, behind the player's panes · dark themes only" })
+      r.push({ kind: "choice", id: "deckLook", label: "cassette look", options: ["shell", "light"], def: d.deckLook,
+               desc: "the deck (t): a lit clear-shell machine, or the same deck drawn in light" })
       r.push({ kind: "header", label: "motion" })
       r.push({ kind: "toggle", id: "titleFx", label: "title decode", def: d.titleFx,
                desc: "a new track's title scrambles and resolves in, like a terminal" })
@@ -368,6 +370,7 @@ Rectangle {
     case "bloom": return engine.bloom
     case "feedback": return engine.feedback
     case "ambient": return engine.ambient || "subtle"
+    case "deckLook": return engine.deckLook || "shell"
     case "glass": return Color.glass === true
     case "stage": return engine.open
     case "widget.enabled": return engine.widget.enabled !== false
