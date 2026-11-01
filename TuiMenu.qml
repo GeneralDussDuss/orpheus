@@ -19,7 +19,10 @@ Item {
   signal closed()
 
   anchors.fill: parent
-  visible: shown
+  // It opens out of the click (OUT) and folds away (IN) rather than cutting.
+  visible: opacity > 0.01
+  opacity: shown ? 1 : 0
+  Behavior on opacity { NumberAnimation { duration: Tui.HOVER; easing.type: menu.shown ? Tui.OUT : Tui.IN } }
   z: 60
 
   readonly property color bgc: Color.background
@@ -71,6 +74,7 @@ Item {
   // Outside: any button closes, and nothing underneath gets the click.
   MouseArea {
     anchors.fill: parent
+    enabled: menu.shown          // a menu fading out no longer eats the next click
     acceptedButtons: Qt.AllButtons
     onPressed: menu.close()
     onWheel: menu.close()
@@ -108,12 +112,30 @@ Item {
     background: menu.bg
     title: menu.heading
     focused: true
+    // grows a hair out of the corner it opened at
+    transformOrigin: Item.TopLeft
+    scale: menu.shown ? 1 : 0.98
+    Behavior on scale { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.OUT } }
     MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons }   // inside the box is not "outside"
+
+    // The cursor slides between entries; it lands at once when the menu opens.
+    Rectangle {
+      readonly property Item at: menu.cursor >= 0 ? rep.itemAt(menu.cursor) : null
+      visible: !!at
+      x: -menu.cw * 0.5
+      y: at ? at.y : 0
+      width: col.width + menu.cw
+      height: at ? at.height : 0
+      color: Tui.alpha(Color.accent, Tui.A.cursor)
+      Behavior on y { enabled: menu.shown; NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+      Rectangle { width: Math.max(2, menu.cw * 0.3); height: parent.height; color: menu.accent }
+    }
 
     Column {
       id: col
       width: parent.width
       Repeater {
+        id: rep
         model: menu.entries
         Item {
           id: row
@@ -129,12 +151,12 @@ Item {
             width: parent.width; height: 1
             color: Tui.mix(menu.dim, menu.bg, 0.5)
           }
+          // a held entry deepens at once: the click landed
           Rectangle {
-            visible: row.isCursor
+            visible: rowMouse.pressed
             anchors.fill: parent
             anchors.leftMargin: -menu.cw * 0.5; anchors.rightMargin: -menu.cw * 0.5
-            color: Tui.alpha(Color.accent, 0.16)
-            Rectangle { width: Math.max(2, menu.cw * 0.3); height: parent.height; color: menu.accent }
+            color: Tui.alpha(Color.accent, Tui.A.press)
           }
           Text {
             visible: !row.modelData.sep
@@ -155,6 +177,7 @@ Item {
             color: row.isCursor ? menu.accentText : menu.dim
           }
           MouseArea {
+            id: rowMouse
             anchors.fill: parent
             enabled: row.live
             hoverEnabled: true

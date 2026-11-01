@@ -61,15 +61,20 @@ Item {
   Rectangle {
     id: chip
     parent: tip.Window.contentItem
-    visible: tip.shown && !!parent
+    // Fades and rises in; on leave it fades out instead of vanishing.
+    visible: opacity > 0.01 && !!parent
     z: 100000
     width: label.implicitWidth + fm.advanceWidth("M") * 1.6
     height: label.implicitHeight + 6
     color: tip.bg
     border.width: 1
     border.color: tip.line
-    opacity: visible ? 1 : 0
-    Behavior on opacity { NumberAnimation { duration: 90 } }
+    opacity: tip.shown ? 1 : 0
+    Behavior on opacity { NumberAnimation { duration: Tui.TIP; easing.type: Tui.EASE } }
+    transform: Translate {
+      y: tip.shown ? 0 : 2
+      Behavior on y { NumberAnimation { duration: Tui.TIP; easing.type: Tui.EASE } }
+    }
     FontMetrics { id: fm; font.family: Style.font.family; font.pixelSize: Style.font.caption }
     Text {
       id: label

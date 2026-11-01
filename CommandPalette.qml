@@ -26,7 +26,7 @@ Item {
   anchors.fill: parent
   visible: opacity > 0
   opacity: shown ? 1 : 0
-  Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.InOutCubic } }
+  Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
   z: 50
 
   function open() {
@@ -330,6 +330,13 @@ Item {
     y: parent.height * 0.12
     width: Math.min(parent.width - host.cw * 4, host.cw * 80)
     height: Math.min(parent.height * 0.76, host.ch * 28)
+    // it settles into place as it fades in, rather than appearing on top
+    scale: pal.shown ? 1 : 0.985
+    Behavior on scale { NumberAnimation { duration: Tui.STATE; easing.type: Tui.OUT } }
+    transform: Translate {
+      y: pal.shown ? 0 : host.ch * 0.5
+      Behavior on y { NumberAnimation { duration: Tui.STATE; easing.type: Tui.OUT } }
+    }
     background: Qt.rgba(pal.base.r, pal.base.g, pal.base.b, 1)
     title: "commands"
     hintItems: [{ k: "⏎", l: "run", run: function() { pal.run(pal.cursor) } }, { k: "↑↓", l: "pick" },
@@ -350,7 +357,7 @@ Item {
         font.family: host.family; font.pixelSize: Style.font.body
         color: host.fg
         selectionColor: Tui.alpha(Color.accent, 0.35)
-        cursorDelegate: Rectangle { width: host.cw; color: host.accent; opacity: 0.7 }
+        cursorDelegate: TuiCaret { host: pal.host }
         onTextEdited: pal.filter()
         Keys.onPressed: function(e) {
           var k = e.key, ctrl = e.modifiers & Qt.ControlModifier
@@ -385,6 +392,7 @@ Item {
       currentIndex: pal.cursor
       highlightFollowsCurrentItem: false
       boundsBehavior: Flickable.StopAtBounds
+      flickDeceleration: Tui.FLICK.decel; maximumFlickVelocity: Tui.FLICK.vmax
       onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
       onCountChanged: { currentIndex = -1; currentIndex = Qt.binding(function() { return pal.cursor }) }
       highlight: Rectangle {
@@ -393,7 +401,7 @@ Item {
         y: results.currentItem ? results.currentItem.y + results.currentItem.headH : 0
         visible: !!results.currentItem
         color: host.cursorFill
-        Behavior on y { NumberAnimation { duration: 120; easing.type: Easing.InOutCubic } }
+        Behavior on y { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
         Rectangle { width: Math.max(2, host.cw * 0.3); height: parent.height; color: host.accent }
       }
       delegate: Item {
@@ -423,6 +431,14 @@ Item {
           y: hit.headH
           width: parent.width
           height: hit.rowH
+          // a faint fill under the pointer, a deep one while held
+          Rectangle {
+            z: -1
+            anchors.fill: parent
+            color: Tui.alpha(Color.accent, rowMouse.pressed ? Tui.A.press : Tui.A.hover)
+            opacity: rowMouse.pressed || (rowMouse.containsMouse && !hit.isCursor) ? 1 : 0
+            Behavior on opacity { enabled: !rowMouse.pressed; NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+          }
           Text {
             id: groupText
             x: host.cw
@@ -463,6 +479,7 @@ Item {
           // The pointer moves the cursor and a click runs, like ⏎: a double-click
           // to run a command read as a palette that ignored the first click.
           MouseArea {
+            id: rowMouse
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
@@ -471,12 +488,13 @@ Item {
           }
         }
       }
-      Text {
+      TuiEmpty {
         anchors.centerIn: parent
-        visible: !pal.hits.length
-        text: "nothing by that name · try fewer letters"
-        font.family: host.family; font.pixelSize: Style.font.body
-        color: host.dim
+        width: Math.min(parent.width - host.cw * 4, host.cw * 50)
+        host: pal.host
+        shown: !pal.hits.length
+        title: "no match"
+        reason: "try fewer letters · esc closes"
       }
     }
   }
