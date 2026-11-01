@@ -16,8 +16,22 @@ ShaderEffect {
   // The style on screen: it trails styleName while a change waits for the
   // downbeat (see "style transitions" below).
   property string shownStyle: ""
-  fragmentShader: Qt.resolvedUrl("shaders/" + (shownStyle || styleName) + ".frag.qsb")
+  // A user style ("@name", orpheusd/shaders.py) lives wherever the daemon built
+  // it; a rebuild changes the URL (content hash) with styleName unchanged, so
+  // Qt loads the new package in place, no transition: the live-edit feel. The
+  // fallback keeps engines without styleUrl (dev tools' fakes) working.
+  fragmentShader: engine && engine.styleUrl ? engine.styleUrl(shownStyle || styleName)
+                                            : Qt.resolvedUrl("shaders/" + (shownStyle || styleName) + ".frag.qsb")
   blending: true
+
+  // What the daemon knows about a user style (uses, scale, transition); null for builtins.
+  readonly property var userMeta: engine && engine.userStyle ? engine.userStyle(shownStyle || styleName) : null
+  readonly property var oldMeta: engine && engine.userStyle && transitioning ? engine.userStyle(oldStyle) : null
+  function uses(m, w) { return !!m && !!m.uses && m.uses.indexOf(w) >= 0 }
+  // qsb can't see a D3D11/GL-side failure; the item would keep its previous
+  // material and show the old picture with no word. Say so instead.
+  onStatusChanged: if (status === ShaderEffect.Error && engine && engine.isUserStyle && engine.reportShaderRuntime
+                       && engine.isUserStyle(shownStyle || styleName)) engine.reportShaderRuntime(shownStyle || styleName, log)
 
   // Fraction of full resolution to shade at (the stage's auto quality sets it).
   // Below 1 the effect renders into a smaller layer that is scaled back up, so
@@ -25,14 +39,19 @@ ShaderEffect {
   // qt_TexCoord0 and `res`, so nothing in them changes.
   property real renderScale: 1
   readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+  // A user style shades at its own scale on top of that (0.8 unless its
+  // `//! scale:` says otherwise): Shadertoy shaders commonly cost 5-20x an
+  // Orpheus style. Bloom and trails still key off renderScale alone.
+  readonly property real userScale: userMeta && userMeta.scale > 0 ? userMeta.scale : 1
+  readonly property real effScale: renderScale * userScale
   // Drop effects ride in VizPost too, so with them on the chain stays built even
   // with bloom and trails off (no layer toggle, and so no hitch, on the drop).
   readonly property bool dropFxOn: !!engine && engine.dropFx === true && styleName !== "mini" && Math.min(width, height) >= 48
   readonly property bool postOn: bloomOn || feedbackOn || transitioning || dropFxOn
-  layer.enabled: renderScale < 0.999 || postOn
+  layer.enabled: effScale < 0.999 || postOn
   layer.smooth: true
-  layer.textureSize: Qt.size(Math.max(1, Math.round(width * dpr * renderScale)),
-                             Math.max(1, Math.round(height * dpr * renderScale)))
+  layer.textureSize: Qt.size(Math.max(1, Math.round(width * dpr * effScale)),
+                             Math.max(1, Math.round(height * dpr * effScale)))
   // Bloom and feedback read the layer in half float, so light the shaders push
   // past 1.0 still counts as hot instead of being clipped first.
   layer.format: postOn ? ShaderEffectSource.RGBA16F : ShaderEffectSource.RGBA8
@@ -148,11 +167,63 @@ ShaderEffect {
   property real build: engine ? engine.build : 0
   property real drop: engine ? engine.drop : 0
   property real section: engine ? engine.sectionCode : 4
+  // Shadertoy imports (orpheusd/shaders.py): iMouse, iFrame, iTimeDelta. Builtins ignore them.
+  // The mouse is in item pixels, bottom-up, like `res` and fragCoord; the click
+  // (zw) stays 0, since a click on the stage already switches style.
+  property vector4d mouse: hov.hovered && uses(userMeta, "iMouse")
+                           ? Qt.vector4d(hov.point.position.x, height - hov.point.position.y, 0, 0) : zero
+  property real frame: 0
+  onTimeChanged: frame = (frame + 1) % 16777216
+  property real dt: 1 / Math.max(10, fps)
+  // passive, and only on for a style that reads iMouse: the stage's MouseAreas still get every click
+  HoverHandler { id: hov; enabled: fx.uses(fx.userMeta, "iMouse") }
+
+  // ---- Shadertoy channels -------------------------------------------------------
+  //
+  // Samplers bind by name: iChannel0/2/3 are a 512x2 audio texture in
+  // Shadertoy's layout (row 0 the spectrum, row 1 a wave the bands drive),
+  // iChannel1 the spectrum history below. No builtin declares them, so for
+  // those the properties are ignored and the audio pass never runs.
+  property var iChannel0: audioSource
+  property var iChannel1: histSource
+  property var iChannel2: audioSource
+  property var iChannel3: audioSource
+  function usesAudio(m) { return uses(m, "iChannel0") || uses(m, "iChannel2") || uses(m, "iChannel3") }
+  readonly property bool wantsAudio: usesAudio(userMeta) || usesAudio(oldMeta)
+
+  ShaderEffect {
+    id: audioFx
+    width: 512
+    height: 2
+    fragmentShader: Qt.resolvedUrl("shaders/audiotex.frag.qsb")
+    property vector4d b0: fx.b0
+    property vector4d b1: fx.b1
+    property vector4d b2: fx.b2
+    property vector4d b3: fx.b3
+    property vector4d b4: fx.b4
+    property vector4d b5: fx.b5
+    property vector4d b6: fx.b6
+    property vector4d b7: fx.b7
+    property real time: fx.time
+    property real energy: fx.energy
+    property real kick: fx.kick
+  }
+
+  ShaderEffectSource {
+    id: audioSource
+    sourceItem: audioFx
+    hideSource: true
+    live: fx.wantsAudio && fx.visible && !!fx.engine && fx.engine.energy > 0.001
+    smooth: true
+    format: ShaderEffectSource.RGBA8
+    textureSize: Qt.size(512, 2)   // fixed, and not recursive: nothing here ever resizes in place
+  }
 
   // Spectrum history for Prism, Horizon, Scope and Skyline, kept on the GPU: histFx renders a 32x40 target
   // from its own previous frame (rows shift back one step, row 0 = now).
   function usesHistory(s) { return s === "prism" || s === "horizon" || s === "scope" || s === "skyline" || s === "ridge" }
   readonly property bool wantsHistory: usesHistory(shownStyle || styleName) || (transitioning && usesHistory(oldStyle))
+                                       || uses(userMeta, "iChannel1") || uses(oldMeta, "iChannel1")
   property var hist: histSource
 
   ShaderEffect {
@@ -325,7 +396,10 @@ ShaderEffect {
     oldStyle = shownStyle
     shownStyle = pendingStyle
     pendingStyle = ""
-    tkind = kinds[shownStyle] !== undefined ? kinds[shownStyle] : Math.floor(Math.random() * 4)
+    // A user style may name its own way in (`//! transition:`); otherwise a random one.
+    var um = engine && engine.userStyle ? engine.userStyle(shownStyle) : null
+    tkind = kinds[shownStyle] !== undefined ? kinds[shownStyle]
+          : (um && um.transition >= 0 ? um.transition : Math.floor(Math.random() * 4))
     tseed = Math.floor(Math.random() * 1000)
     tprog = 0
     transAnim.duration = Math.round(1000 * Math.max(0.8, Math.min(1.5, 1 / Math.max(0.3, tempo))))
@@ -349,7 +423,9 @@ ShaderEffect {
     width: fx.width; height: fx.height
     visible: fx.transitioning && fx.oldStyle !== ""
     blending: true
-    fragmentShader: fx.oldStyle !== "" ? Qt.resolvedUrl("shaders/" + fx.oldStyle + ".frag.qsb") : ""
+    fragmentShader: fx.oldStyle === "" ? ""
+                    : fx.engine && fx.engine.styleUrl ? fx.engine.styleUrl(fx.oldStyle)
+                    : Qt.resolvedUrl("shaders/" + fx.oldStyle + ".frag.qsb")
     property var hist: fx.hist
     property var inkState: fx.inkState
     property real time: fx.time
@@ -394,6 +470,13 @@ ShaderEffect {
     property real build: fx.build
     property real drop: fx.drop
     property real section: fx.section
+    property vector4d mouse: fx.mouse
+    property real frame: fx.frame
+    property real dt: fx.dt
+    property var iChannel0: fx.iChannel0
+    property var iChannel1: fx.iChannel1
+    property var iChannel2: fx.iChannel2
+    property var iChannel3: fx.iChannel3
   }
   ShaderEffectSource {
     id: oldSrc

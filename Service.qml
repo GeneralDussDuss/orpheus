@@ -29,10 +29,43 @@ Item {
   readonly property string cavaConfigPath: stateDir + "/cava.conf"
   readonly property string themeRoot: home + "/.local/state/omarchy/current"
 
-  readonly property var styles: ["prism", "skyline", "horizon", "orb", "tunnel", "halo", "scope", "nova", "ridge", "ink", "abyss", "aurora"]
-  readonly property var styleLabels: ({ prism: "Prism", skyline: "Skyline", horizon: "Horizon", orb: "Orb", tunnel: "Tunnel",
-                                       halo: "Halo", scope: "Scope", nova: "Nova",
-                                       ridge: "Ridge", ink: "Ink", abyss: "Abyss", aurora: "Aurora" })
+  readonly property var builtinStyles: ["prism", "skyline", "horizon", "orb", "tunnel", "halo", "scope", "nova", "ridge", "ink", "abyss", "aurora"]
+  readonly property var builtinLabels: ({ prism: "Prism", skyline: "Skyline", horizon: "Horizon", orb: "Orb", tunnel: "Tunnel",
+                                         halo: "Halo", scope: "Scope", nova: "Nova",
+                                         ridge: "Ridge", ink: "Ink", abyss: "Abyss", aurora: "Aurora" })
+  // Your own shaders, compiled by orpheusd (orpheusd/shaders.py) and listed by
+  // GET /shaders. A user style is "@" + its file name, so it can never collide
+  // with a builtin. Only styles with a build join the list: one that has never
+  // compiled shows up in settings with its error instead.
+  property var userStyles: []                 // replaced only when the daemon's shaders.version moves
+  property string shaderDir: ""
+  property var shaderCompiler: null           // { path, version } or null
+  readonly property var styles: {
+    var s = builtinStyles.slice()
+    for (var i = 0; i < userStyles.length; i++) if (userStyles[i].url) s.push("@" + userStyles[i].name)
+    return s
+  }
+  readonly property var styleLabels: {
+    var l = {}
+    for (var k in builtinLabels) l[k] = builtinLabels[k]
+    for (var i = 0; i < userStyles.length; i++) l["@" + userStyles[i].name] = userStyles[i].label || userStyles[i].name
+    return l
+  }
+  readonly property var userStyleUrls: {
+    var u = {}
+    for (var i = 0; i < userStyles.length; i++) u["@" + userStyles[i].name] = userStyles[i].url
+    return u
+  }
+  function isUserStyle(name) { return typeof name === "string" && name.charAt(0) === "@" }
+  function userStyle(name) {
+    if (!isUserStyle(name)) return null
+    for (var i = 0; i < userStyles.length; i++) if ("@" + userStyles[i].name === name) return userStyles[i]
+    return null
+  }
+  // Where a style's .qsb lives: builtins beside this file, user styles wherever
+  // the daemon built them. Reads userStyleUrls, so a binding on it re-evaluates
+  // when a rebuild changes the URL (the file is named by a hash of its content).
+  function styleUrl(name) { return isUserStyle(name) ? (userStyleUrls[name] || "") : Qt.resolvedUrl("shaders/" + name + ".frag.qsb") }
   // railViz: the visualizer plane inside the player window. "off" shows album
   // art there instead. Prism is the default because it measured as the cheapest
   // style by a wide margin (+0.7% shell CPU, against +13 to +20 for the others).
@@ -239,6 +272,60 @@ Item {
   // ---- Player service (orpheusd) -----------------------------------------
   Api { id: apiClient; active: root.libraryOpen || root.open || root.widgetShown }
   readonly property var api: apiClient
+
+  // ---- your shaders ------------------------------------------------------
+  //
+  // /status carries shaders.version; the list itself is fetched only when it
+  // moves (the likedVersion pattern), so styles/styleLabels are rebuilt on a
+  // real change and never on every long-poll return. The events drive the
+  // toast, the stage's tick and its fps peek.
+  property int shadersVersion: -1
+  readonly property int serverShadersVersion: apiClient.status && apiClient.status.shaders ? apiClient.status.shaders.version : -1
+  onServerShadersVersionChanged: if (serverShadersVersion >= 0 && serverShadersVersion !== shadersVersion) refreshShaders()
+  signal shaderEvent(string kind, string name, string text)     // ready | reloaded | error | removed | gpu
+  function refreshShaders() {
+    apiClient.get("/shaders", function(ok, d) {
+      if (!ok || !d || !d.styles) return
+      var before = {}, first = shadersVersion < 0
+      for (var i = 0; i < userStyles.length; i++) before[userStyles[i].name] = userStyles[i]
+      shadersVersion = d.version
+      shaderDir = d.dir || ""
+      shaderCompiler = d.compiler || null
+      userStyles = d.styles
+      if (first) return          // what was already there at startup is not news
+      var seen = {}
+      for (var j = 0; j < d.styles.length; j++) {
+        var s = d.styles[j], b = before[s.name]
+        seen[s.name] = true
+        if (!b) { if (s.ok) shaderEvent("ready", s.name, s.label); else if (s.error) shaderEvent("error", s.name, s.error) }
+        else if (s.ok && (!b.ok || b.built !== s.built)) shaderEvent("reloaded", s.name, (s.ms / 1000).toFixed(2) + " s")
+        else if (!s.ok && s.error && s.error !== b.error) shaderEvent("error", s.name, s.error)
+      }
+      for (var n in before) if (!seen[n]) shaderEvent("removed", n, "")
+    })
+  }
+  // A shadertoy link or id, GLSL with mainImage (or //#common), or a file URL
+  // (the stage's drop). done(ok, message) gets a line fit for a toast.
+  function importShader(text, done) {
+    var t = String(text || "").trim()
+    var body = /mainImage\s*\(|\/\/#common/.test(t) ? { source: t } : t ? { url: t } : null
+    if (!body) { if (done) done(false, "the clipboard has neither a shadertoy link nor glsl with mainImage"); return }
+    apiClient.post("/shaders/import", body, function(ok, d, code) {
+      if (!ok || !d || !d.style) {
+        var m = typeof d === "string" && d ? d : code === 0 ? "orpheusd isn't running" : "import failed"
+        if (done) done(false, "shader ✕ " + m); else shaderEvent("error", "", m)
+        return
+      }
+      var s = d.style
+      if (s.url) setStyle("@" + s.name)
+      if (done) done(!!s.ok, s.ok ? "shader ╱╱ " + s.label + " · on the stage" : "shader ✕ " + s.name + " · " + s.error)
+    })
+  }
+  // Viz saw ShaderEffect.Error: a D3D11/GL-side failure that qsb could not see.
+  function reportShaderRuntime(name, log) {
+    console.warn("orpheus: shader", name, "failed on the gpu:", String(log || "").split("\n")[0])
+    shaderEvent("gpu", String(name).replace(/^@/, ""), "failed on the gpu · see desktop.log")
+  }
 
   // ---- Audio (cava) ------------------------------------------------------
   // On Windows cava hears the whole default output: a game, Discord, a video.
@@ -911,6 +998,7 @@ Item {
     function director(on: string): string { return root.setStageFlag("director", on) }
     function beatLock(on: string): string { return root.setStageFlag("beatLock", on) }
     function widget(key: string, value: string): string { return root.setWidget(key, value) }
+    function importShader(text: string): string { root.importShader(text); return root.statusText() }
   }
 
   // Nothing tears this plugin down for us. Disabling it at runtime left the
