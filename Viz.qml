@@ -177,7 +177,7 @@ ShaderEffect {
   property vector4d mouse: hov.hovered && uses(userMeta, "iMouse")
                            ? Qt.vector4d(hov.point.position.x, height - hov.point.position.y, 0, 0) : zero
   property real frame: 0
-  onTimeChanged: frame = (frame + 1) % 16777216
+  onTimeChanged: if (userMeta || oldMeta) frame = (frame + 1) % 16777216   // builtins never read it
   property real dt: 1 / Math.max(10, fps)
   // passive, and only on for a style that reads iMouse: the stage's MouseAreas still get every click
   HoverHandler { id: hov; enabled: fx.uses(fx.userMeta, "iMouse") }
@@ -188,39 +188,49 @@ ShaderEffect {
   // Shadertoy's layout (row 0 the spectrum, row 1 a wave the bands drive),
   // iChannel1 the spectrum history below. No builtin declares them, so for
   // those the properties are ignored and the audio pass never runs.
-  property var iChannel0: audioSource
+  readonly property var audioTex: audioPass.item ? audioPass.item.tex : null
+  property var iChannel0: audioTex
   property var iChannel1: histSource
-  property var iChannel2: audioSource
-  property var iChannel3: audioSource
+  property var iChannel2: audioTex
+  property var iChannel3: audioTex
   function usesAudio(m) { return uses(m, "iChannel0") || uses(m, "iChannel2") || uses(m, "iChannel3") }
   readonly property bool wantsAudio: usesAudio(userMeta) || usesAudio(oldMeta)
 
-  ShaderEffect {
-    id: audioFx
-    width: 512
-    height: 2
-    fragmentShader: Qt.resolvedUrl("shaders/audiotex.frag.qsb")
-    property vector4d b0: fx.b0
-    property vector4d b1: fx.b1
-    property vector4d b2: fx.b2
-    property vector4d b3: fx.b3
-    property vector4d b4: fx.b4
-    property vector4d b5: fx.b5
-    property vector4d b6: fx.b6
-    property vector4d b7: fx.b7
-    property real time: fx.time
-    property real energy: fx.energy
-    property real kick: fx.kick
-  }
+  // Built only for a style that samples it: otherwise its eleven bindings would
+  // dirty a hidden 512x2 pass every frame on every Viz (stage, rail, widget, mini).
+  Loader {
+    id: audioPass
+    active: fx.wantsAudio
+    sourceComponent: Item {
+      property alias tex: audioSource
+      ShaderEffect {
+        id: audioFx
+        width: 512
+        height: 2
+        fragmentShader: Qt.resolvedUrl("shaders/audiotex.frag.qsb")
+        property vector4d b0: fx.b0
+        property vector4d b1: fx.b1
+        property vector4d b2: fx.b2
+        property vector4d b3: fx.b3
+        property vector4d b4: fx.b4
+        property vector4d b5: fx.b5
+        property vector4d b6: fx.b6
+        property vector4d b7: fx.b7
+        property real time: fx.time
+        property real energy: fx.energy
+        property real kick: fx.kick
+      }
 
-  ShaderEffectSource {
-    id: audioSource
-    sourceItem: audioFx
-    hideSource: true
-    live: fx.wantsAudio && fx.visible && !!fx.engine && fx.engine.energy > 0.001
-    smooth: true
-    format: ShaderEffectSource.RGBA8
-    textureSize: Qt.size(512, 2)   // fixed, and not recursive: nothing here ever resizes in place
+      ShaderEffectSource {
+        id: audioSource
+        sourceItem: audioFx
+        hideSource: true
+        live: fx.wantsAudio && fx.visible && !!fx.engine && fx.engine.energy > 0.001
+        smooth: true
+        format: ShaderEffectSource.RGBA8
+        textureSize: Qt.size(512, 2)   // fixed, and not recursive: nothing here ever resizes in place
+      }
+    }
   }
 
   // Spectrum history for Prism, Horizon, Scope and Skyline, kept on the GPU: histFx renders a 32x40 target

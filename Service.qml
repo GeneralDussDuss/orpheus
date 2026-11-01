@@ -66,7 +66,9 @@ Item {
   // Where a style's .qsb lives: builtins beside this file, user styles wherever
   // the daemon built them. Reads userStyleUrls, so a binding on it re-evaluates
   // when a rebuild changes the URL (the file is named by a hash of its content).
-  function styleUrl(name) { return isUserStyle(name) ? (userStyleUrls[name] || "") : Qt.resolvedUrl("shaders/" + name + ".frag.qsb") }
+  function styleUrl(name) {
+    return isUserStyle(name) ? (userStyleUrls[name] || Qt.resolvedUrl("shaders/prism.frag.qsb")) : Qt.resolvedUrl("shaders/" + name + ".frag.qsb")
+  }
   // railViz: the visualizer plane inside the player window. "off" shows album
   // art there instead. Prism is the default because it measured as the cheapest
   // style by a wide margin (+0.7% shell CPU, against +13 to +20 for the others).
@@ -80,7 +82,13 @@ Item {
 
   // ---- Config ------------------------------------------------------------
   property var config: defaults
-  readonly property string style: styles.indexOf(config.style) >= 0 ? config.style : "prism"
+  readonly property string style: knownStyle(config.style)
+  // A saved style, or prism. Before the first GET /shaders lands (or with the
+  // daemon down) a user style is kept: styleUrl draws prism under its name
+  // until the list arrives, and the swap is then in place, no transition.
+  function knownStyle(name) {
+    return styles.indexOf(name) >= 0 || (shadersVersion < 0 && isUserStyle(name) && name.length > 1) ? name : "prism"
+  }
   readonly property bool miniPlayer: config.miniPlayer !== false
   // overlay: a card over everything; desktop: on the wallpaper (on Windows, behind
   // the icons, full monitor); fullscreen: the show, full-bleed on showMonitor.
@@ -121,9 +129,9 @@ Item {
   // With syncViz on (the default) the widget shows whatever the visualizer shows,
   // and choosing a style from either one changes both.
   readonly property bool syncViz: config.syncViz !== false
-  readonly property string widgetViz: syncViz ? style : (styles.indexOf(widget.viz) >= 0 ? widget.viz : "prism")
+  readonly property string widgetViz: syncViz ? style : knownStyle(widget.viz)
   readonly property string railViz: config.railViz === "off" ? "off"
-                                    : (styles.indexOf(config.railViz) >= 0 ? config.railViz : "prism")
+                                    : knownStyle(config.railViz)
 
   function applyConfig(raw) {
     var parsed = {}
@@ -297,15 +305,16 @@ Item {
   readonly property int serverShadersVersion: apiClient.status && apiClient.status.shaders ? apiClient.status.shaders.version : -1
   onServerShadersVersionChanged: if (serverShadersVersion >= 0 && serverShadersVersion !== shadersVersion) refreshShaders()
   signal shaderEvent(string kind, string name, string text)     // ready | reloaded | error | removed | gpu
-  function refreshShaders() {
+  function refreshShaders(then) {
     apiClient.get("/shaders", function(ok, d) {
-      if (!ok || !d || !d.styles) return
+      if (!ok || !d || !d.styles) { if (then) then(); return }
       var before = {}, first = shadersVersion < 0
       for (var i = 0; i < userStyles.length; i++) before[userStyles[i].name] = userStyles[i]
       shadersVersion = d.version
       shaderDir = d.dir || ""
       shaderCompiler = d.compiler || null
       userStyles = d.styles
+      if (then) then()
       if (first) return          // what was already there at startup is not news
       var seen = {}
       for (var j = 0; j < d.styles.length; j++) {
@@ -319,7 +328,8 @@ Item {
     })
   }
   // A shadertoy link or id, GLSL with mainImage (or //#common), or a file URL
-  // (the stage's drop). done(ok, message) gets a line fit for a toast.
+  // (the stage's drop). done(ok, message, name) gets a line fit for a toast
+  // and the daemon's style name (it may have added -2 to the file's).
   function importShader(text, done) {
     var t = String(text || "").trim()
     var body = /mainImage\s*\(|\/\/#common/.test(t) ? { source: t } : t ? { url: t } : null
@@ -331,8 +341,14 @@ Item {
         return
       }
       var s = d.style
-      if (s.url) setStyle("@" + s.name)
-      if (done) done(!!s.ok, s.ok ? "shader ╱╱ " + s.label + " · on the stage" : "shader ✕ " + s.name + " · " + s.error)
+      var line = s.ok ? "shader ╱╱ " + s.label + " · on the stage" : "shader ✕ " + s.name + " · " + s.error
+      if (!s.url) { if (done) done(!!s.ok, line, s.name); return }
+      // The list has to know the new style before setStyle will take it: the
+      // /status shaders.version that would refetch it may not have moved yet.
+      refreshShaders(function() {
+        var msg = setStyle("@" + s.name)
+        if (done) done(!!s.ok, String(msg).indexOf("unknown style") === 0 ? "shader ✕ " + s.name + " · not in the list yet" : line, s.name)
+      })
     })
   }
   // Viz saw ShaderEffect.Error: a D3D11/GL-side failure that qsb could not see.

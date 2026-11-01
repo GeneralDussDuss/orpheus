@@ -247,20 +247,16 @@ PanelWindow {
     var m = text.match(/([^\/\\]+)\.(frag|glsl|fs|txt)$/i)
     pendingImport = m ? m[1].toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") : ""
     picked("compiling " + (pendingImport || "shader") + "…")
-    win.engine.importShader(text, function(ok, msg) { if (!ok) { picked(msg); win.pendingImport = "" } })
-    drop.accept()
-  }
-  Connections {
-    target: win.engine
-    ignoreUnknownSignals: true
-    function onShaderEvent(kind, name, text) {
-      if (win.pendingImport === "" || name !== win.pendingImport) return
+    // The answer names the style the daemon made (a taken name gets -2, a long
+    // one is cut), and comes once the style list has it: settle on that, not
+    // on a guess from the file name.
+    win.engine.importShader(text, function(ok, msg, name) {
       win.pendingImport = ""
-      if (kind === "ready" || kind === "reloaded") {
-        if (win.deck && win.engine.setScene) win.engine.setScene("viz")     // plan decision 12
-        win.picked(win.engine.styleLabels["@" + name] || name)
-      } else if (kind === "error") win.picked("✕ " + name)
-    }
+      if (!ok) { win.picked(msg); return }
+      if (win.deck && win.engine.setScene) win.engine.setScene("viz")     // plan decision 12
+      win.picked(win.engine.styleLabels["@" + name] || name || msg)
+    })
+    drop.accept()
   }
   // (Not while the pointer rests on the key strip itself: it would vanish under the click.)
   Timer { id: sleepTimer; interval: 2000; running: win.show; onTriggered: if (hintHover.hovered) restart(); else win.awake = false }
