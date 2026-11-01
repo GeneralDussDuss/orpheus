@@ -1,6 +1,7 @@
 """Every shipped .qsb carries DXBC: without it D3D11 compiles the HLSL on the
 render thread at first draw, and a heavy style (ridge, prism) froze the window
 for 7-11 s, long enough for Windows to call Orpheus hung (orpheusd/dxbc.py)."""
+import os
 import subprocess
 import sys
 import unittest
@@ -11,12 +12,25 @@ from orpheusd import system
 SHADERS = Path(__file__).resolve().parent.parent / "shaders"
 
 
-@unittest.skipUnless(sys.platform == "win32" and system.qsb_path(), "needs qsb on Windows")
+def _qsb():
+    """qsb, looked up at run time: other test modules point LOCALAPPDATA at a
+    sandbox while they run, which hides the documented drop-in spot."""
+    home = Path.home() / "AppData" / "Local" / "Orpheus" / "tools" / "qsb" / "qsb.exe"
+    return system.qsb_path() or (str(home) if home.is_file() else None)
+
+
+def _need_qsb(t):
+    if sys.platform != "win32" or not _qsb():
+        t.skipTest("needs qsb and Direct3D 11 on Windows")
+    os.environ.setdefault("QSB", _qsb())
+
+
 class ShippedShadersHaveDxbc(unittest.TestCase):
     def test_every_package_has_dxbc(self):
+        _need_qsb(self)
         missing = []
         for q in sorted(SHADERS.glob("*.qsb")):
-            out = subprocess.run([system.qsb_path(), "-d", str(q)], capture_output=True, text=True,
+            out = subprocess.run([_qsb(), "-d", str(q)], capture_output=True, text=True,
                                  env=system.qsb_env(), creationflags=0x08000000).stdout
             if "DXBC 50" not in out:
                 missing.append(q.name)
@@ -73,13 +87,13 @@ void main() { fragColor = texture(src, qt_TexCoord0) * qt_Opacity; }
 """
 
 
-@unittest.skipUnless(sys.platform == "win32" and system.qsb_path(), "needs qsb and Direct3D 11")
 class BakedShaderSamplesItsOwnTexture(unittest.TestCase):
     """A baked package must read binding 1 from binding 1. The first bake kept
     qsb's packed registers (binding 1 = t0) with no binding map for the DXBC
     entry, so every style sampled Qt's glyph atlas: red text over the picture."""
 
     def test_binding_one_reads_the_green_texture(self):
+        _need_qsb(self)
         import os
         import tempfile
         with tempfile.TemporaryDirectory() as td:
@@ -87,7 +101,7 @@ class BakedShaderSamplesItsOwnTexture(unittest.TestCase):
             frag.write_text(_FRAG)
             py.write_text(_PIX)
             env = system.qsb_env()
-            subprocess.run([system.qsb_path(), "--qt6", "-o", str(qsb), str(frag)], check=True, env=env,
+            subprocess.run([_qsb(), "--qt6", "-o", str(qsb), str(frag)], check=True, env=env,
                            capture_output=True, creationflags=0x08000000)
             from orpheusd import dxbc
             dxbc.bake(qsb)
