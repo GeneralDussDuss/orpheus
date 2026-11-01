@@ -58,10 +58,12 @@ Item {
   property real downbeat: 0
   property real beatPhase: 0
   property real snap: 0
+  property real anticipate: 0            // 0..1 wind-up before a mapped drop (Director.anticipate)
+  property real mapped: 0                // 1 while the drop pulse came from the map
 
   // Live from a build's first tension to the end of a drop's tail (~8 s). The
   // envelopes are floored at those thresholds so nothing pops on or off.
-  readonly property bool dropLive: dropFx && (drop > 0.006 || build > 0.02)
+  readonly property bool dropLive: dropFx && (drop > 0.006 || build > 0.02 || anticipate > 0.001)
   readonly property real dropK: dropLive ? Math.max(0, drop - 0.006) / 0.994 : 0
   readonly property real buildK: dropLive ? Math.max(0, build - 0.02) / 0.98 : 0
 
@@ -176,6 +178,8 @@ Item {
     property real swell: post.swell
     property color c1: post.c1
     property color c2: post.c2
+    property real anticipate: post.anticipate
+    property real mapped: post.mapped
     fragmentShader: Qt.resolvedUrl("shaders/fbshow.frag.qsb")
   }
   // Only needed as a texture when bloom reads it; otherwise showFx draws itself.

@@ -11,6 +11,13 @@
 // with loudness. A build tightens the vignette and lays in faint grain; the
 // drop releases it. Light themes: no colour split, no ring, a whisper of the
 // rest. With `fxOn` 0 this is exactly the plain trails composite.
+//
+// A drop the daemon mapped ahead of time is seen coming: over its last 8 beats
+// (`anticipate`) the picture winds up -- a slow zoom out, the vignette closing
+// in, colour fringes and grain creeping up -- and through the last beat it
+// fades to black around a single point of light. The drop then lands on the
+// map's own time with a flash on top of the usual burst (`mapped`). Both are 0
+// without a map, and then every term below is exactly what it was.
 
 layout(location = 0) in vec2 qt_TexCoord0;
 layout(location = 0) out vec4 fragColor;
@@ -30,6 +37,8 @@ layout(std140, binding = 0) uniform buf {
     float swell;
     vec4 c1;
     vec4 c2;
+    float anticipate; // 0..1 over the last 8 beats before a mapped drop, 1 at the drop then 0
+    float mapped;     // 1 = the current drop pulse came from the map
 };
 layout(binding = 1) uniform sampler2D fresh;
 layout(binding = 2) uniform sampler2D trail;
@@ -63,6 +72,9 @@ void main() {
     float tail = sqrt(drop);                          // the drop's afterglow, ~3 s
     float hit = exp(-age / 0.38);                     // the burst, gone within a beat or so
     float b = build * build;
+    float a2 = anticipate * anticipate;
+    float dark = smoothstep(0.0, 1.0, (anticipate - 0.875) * 8.0) * dk;   // the last of the 8 beats: fade to black
+    float flash = mapped * exp(-age / 0.08) * 0.6 * dk;                    // the release, ~0.1 s after a mapped drop
     vec2 asp = vec2(res.x / max(res.y, 1.0), 1.0);
     vec2 dd = uv - 0.5;
     vec2 d = dd * asp;
@@ -73,7 +85,7 @@ void main() {
     // a shockwave ring travelling out that bends the picture as it passes.
     float lens = mix(0.5, 1.0, dk);
     float push = (0.032 * exp(-age / 0.16) + 0.010 * downbeat * tail) * lens;
-    vec2 su = 0.5 + dd * (1.0 - push);
+    vec2 su = 0.5 + dd * (1.0 + 0.06 * a2 - push);           // the wind-up zooms out; the drop's push zooms in
     float R = age * 1.8;
     float w = 0.07 + 0.12 * age;
     float x = (r - R) / w;
@@ -82,7 +94,7 @@ void main() {
     su -= dir * amp * ring;
 
     // ---- chromatic aberration: radial, red out and blue in, none on light themes.
-    float ca = (0.9 * hit + 0.16 * kick * tail + 0.10 * b) * dk;
+    float ca = (0.9 * hit + 0.16 * kick * tail + 0.10 * b + 0.40 * a2) * dk;
     vec2 sp = dd * 0.008 * ca + dir * amp * ring * 0.35 * dk;   // the ring splits a little too
     vec4 G = texture(fresh, su);
     vec4 F = G;
@@ -105,20 +117,30 @@ void main() {
     // Laid over as coverage, so it darkens what is behind the visualizer too.
     vec2 q = dd * 2.0;
     float vr = length(q * vec2(1.0, 0.9));
-    float inner = 0.85 - 0.30 * build - 0.18 * kick * tail;
+    float inner = 0.85 - 0.30 * build - 0.18 * kick * tail - 0.40 * a2;
     float vig = smoothstep(inner, inner + 0.75, vr);
     float vs = (0.32 * build + (0.18 + 0.30 * kick) * tail) * mix(0.3, 1.0, dk);
+    vs += 0.55 * a2 * mix(0.3, 1.0, dk);
     float vk = clamp(vs * vig, 0.0, 0.75);
     vec3 vc = light > 0.5 ? c1.rgb * 0.35 : vec3(0.0);
     o = vec4(o.rgb * (1.0 - vk) + vc * vk, o.a * (1.0 - vk) + vk);
 
     // ---- film grain: per pixel, per frame, rising with loudness in the drop.
     float g = ((0.016 + 0.040 * swell) * tail + 0.020 * b) * mix(0.3, 1.0, dk);
+    g += 0.030 * a2 * mix(0.3, 1.0, dk);
     float n = hash(floor(uv * res) + fract(time * 7.31) * vec2(113.0, 271.0)) - 0.5;
     n += hash(floor(uv * res) * 1.37 + fract(time * 3.17) * vec2(37.0, 191.0)) - 0.5;   // two taps: less salt, more film
     float gn = n * g;
     o.rgb = max(o.rgb + gn, 0.0);
     o.a = max(o.a, abs(gn));
+
+    // ---- the mapped drop: blackout through the last beat with one point of
+    // light at the centre, then the release flash on the drop itself.
+    vec3 vc2 = light > 0.5 ? c1.rgb * 0.35 : vec3(0.0);
+    o.rgb = mix(o.rgb, vc2, 0.85 * dark);
+    o.rgb += c1.rgb * exp(-r * r * 4000.0) * dark * 1.2;
+    o.rgb += mix(c1.rgb, c2.rgb, 0.5 + 0.5 * dd.x) * flash * (1.0 - r);
+    o.a = max(o.a, max(0.85 * dark, flash));
 
     fragColor = clamp(o, 0.0, 1.0) * qt_Opacity;
 }

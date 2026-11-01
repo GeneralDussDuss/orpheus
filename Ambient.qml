@@ -53,6 +53,7 @@ Item {
         property vector4d kickAge: Qt.vector4d(8, 8, 8, 0)
         property real beatPhase; property real barPhase; property real downbeat; property real beatConfidence
         property real build; property real drop; property real sectionCode: 4
+        property real anticipate; property real dropMapped
         readonly property bool lightTheme: false
         readonly property string bloom: "off"
         readonly property string feedback: "off"
@@ -66,6 +67,9 @@ Item {
         var e = amb.engine
         if (!e) return
         for (var i = 0; i < keys.length; i++) feed[keys[i]] = e[keys[i]]
+        // The drop map's two (an engine without them reads as no map).
+        feed.anticipate = e.anticipate || 0
+        feed.dropMapped = e.dropMapped || 0
         feed.time = e.time * 0.6
         feed.travel = e.travel * 0.6
       }
