@@ -47,7 +47,7 @@ ORPHEUS-NATIVE
 
 WHEN SOMETHING IS WRONG
   A toast, a tick on the stage, settings > visuals > your shaders, and
-  .build/<name>.log (the compiler's own words; .build/<name>.glsl is what it
+  .build/<name>.log (the compiler's own words; .build/<name>.frag is what it
   compiled). A shader that compiles but fails on the GPU says so too.
 
 COMPILER

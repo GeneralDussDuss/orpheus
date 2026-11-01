@@ -43,7 +43,7 @@ UA = "Orpheus/0.1 (https://github.com/GeneralDussDuss/orpheus)"
 API = "https://www.shadertoy.com/api/v1/shaders/{id}"
 
 # Bumped when the wrapper changes in a way that should rebuild every style.
-BUILD_V = "1"
+BUILD_V = "2"
 MAX_SOURCE = 256 * 1024     # a .frag in the folder (a dozen KB is typical)
 MAX_DROP = 1024 * 1024      # a file dropped on the stage
 SETTLE = 0.3                # seconds a changed file must sit still: editors save in steps
@@ -498,7 +498,7 @@ class UserShaders:
         self._manifest.pop(name, None)
         for p in self._builds(name):
             p.unlink(missing_ok=True)
-        for ext in (".glsl", ".log"):
+        for ext in (".frag", ".log"):
             (self.build / (name + ext)).unlink(missing_ok=True)
         log.info("shaders: @%s removed", name)
 
@@ -546,7 +546,9 @@ class UserShaders:
         if self._compiler is None and not system.qsb_path():
             st.error, st.errors = NO_QSB, []
             return
-        glsl = self.build / f"{st.name}.glsl"
+        # What qsb compiles. The .frag suffix matters: qsb picks the stage from
+        # it, and anything else builds a vertex shader that D3D11 then refuses.
+        glsl = self.build / f"{st.name}.frag"
         tmp = out.with_suffix(".tmp")
         glsl.write_text(tr.glsl, encoding="utf-8", newline="\n")
         rc, output = await asyncio.to_thread(self._compile_blocking, glsl, tmp)
