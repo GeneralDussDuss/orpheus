@@ -44,7 +44,7 @@ UA = "Orpheus/0.1 (https://github.com/GeneralDussDuss/orpheus)"
 API = "https://www.shadertoy.com/api/v1/shaders/{id}"
 
 # Bumped when the wrapper changes in a way that should rebuild every style.
-BUILD_V = "3"
+BUILD_V = "4"
 MAX_SOURCE = 256 * 1024     # a .frag in the folder (a dozen KB is typical)
 MAX_DROP = 1024 * 1024      # a file dropped on the stage
 SETTLE = 0.3                # seconds a changed file must sit still: editors save in steps

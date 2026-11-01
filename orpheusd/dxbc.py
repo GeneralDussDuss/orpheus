@@ -10,12 +10,18 @@ anything and froze again on the next launch.
 This extracts the HLSL, compiles it with the same D3DCompiler_47.dll, and adds
 it to the package as "dxbc,50", which QRhi takes in preference to source.
 
+The registers are renumbered first. qsb's HLSL packs them (texture binding 1 is
+t0/s0) and records a native resource binding map for the HLSL entry, but a
+replaced DXBC entry gets no map, and without one QRhi binds binding N to slot N:
+the shader then read whatever sat in t0, Qt's glyph atlas (red text all over the
+picture). With every register equal to its binding, no map is needed.
+
   python -m orpheusd.dxbc <file.qsb | dir> [...]     (qsb from system.qsb_path())
 
 Run as its own process (idle priority, through system.run_quiet) so a long
 compile never sits on the daemon's threads.
 """
-import ctypes, os, subprocess, sys, tempfile, time
+import ctypes, os, re, subprocess, sys, tempfile, time
 from ctypes import wintypes as w
 from pathlib import Path
 
@@ -47,6 +53,29 @@ def compile_hlsl(src: bytes, entry=b"main", target=b"ps_5_0"):
         raise RuntimeError(f"D3DCompile failed {hr & 0xffffffff:#x}: {msg}")
     return _bytes(code)
 
+def binding_map(dump: str) -> dict:
+    """The HLSL entry's native resource binding map from `qsb -d`: binding -> (reg, sampler reg)."""
+    m = re.search(r"Shader \d+: HLSL 50.*?Native resource binding map:\r?\n(.*?)\r?\nContents:", dump, re.S)
+    out = {}
+    for line in (m.group(1).splitlines() if m else []):
+        b = re.match(r"\s*(\d+) -> \[(-?\d+), (-?\d+)\]", line)
+        if b:
+            out[int(b.group(1))] = (int(b.group(2)), int(b.group(3)))
+    return out
+
+
+def renumber(hlsl: str, bmap: dict) -> str:
+    """Every register(bN/tN/sN) moved to its binding number, in one pass so swaps can't collide."""
+    to = {}
+    for binding, (reg, sreg) in bmap.items():
+        if sreg == -1:
+            to[("b", reg)] = binding      # a uniform block
+        else:
+            to[("t", reg)] = binding
+            to[("s", sreg)] = binding
+    return re.sub(r"register\(([bts])(\d+)\)", lambda m: f"register({m.group(1)}{to.get((m.group(1), int(m.group(2))), int(m.group(2)))})", hlsl)
+
+
 def stage(qsb: Path):
     return b"vs_5_0" if qsb.name.endswith(".vert.qsb") else b"ps_5_0"
 
@@ -56,8 +85,10 @@ def bake(qsb: Path, flags=0x08000000):
         r = subprocess.run([QSB, "-x", "hlsl,50", "-o", str(hl), str(qsb)], capture_output=True, creationflags=flags, env=system.qsb_env())
         if r.returncode or not hl.exists():
             raise RuntimeError("extract: " + (r.stderr or r.stdout).decode("utf-8", "replace"))
+        d = subprocess.run([QSB, "-d", str(qsb)], capture_output=True, creationflags=flags, env=system.qsb_env())
+        src = renumber(hl.read_text(encoding="utf-8"), binding_map(d.stdout.decode("utf-8", "replace")))
         t = time.perf_counter()
-        dx.write_bytes(compile_hlsl(hl.read_bytes(), target=stage(qsb)))
+        dx.write_bytes(compile_hlsl(src.encode("utf-8"), target=stage(qsb)))
         ms = (time.perf_counter() - t) * 1000
         r = subprocess.run([QSB, "-r", f"dxbc,50,{dx}", str(qsb)], capture_output=True, creationflags=flags, env=system.qsb_env())
         if r.returncode:
