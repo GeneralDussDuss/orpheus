@@ -34,6 +34,8 @@ HOTKEYS = [
     ("Win+Alt+J", WIN_ALT, ord("J"), "widget:toggle"),
     ("Win+Alt+E", WIN_ALT, ord("E"), "eq"),
     ("Win+Alt+L", WIN_ALT, ord("L"), "lyrics"),
+    # The cassette deck. Not K (Windows 11's call mute) and not D (the clock flyout).
+    ("Win+Alt+Q", WIN_ALT, ord("Q"), "cassette"),
     ("Win+Alt+Space", WIN_ALT, VK_SPACE, "control:toggle"),
     ("Win+Alt+Right", WIN_ALT, VK_RIGHT, "control:next"),
     ("Win+Alt+.", WIN_ALT, VK_OEM_PERIOD, "control:next"),
@@ -59,6 +61,7 @@ ACTION_LABELS = {
     "widget:toggle": "show/hide the widget",
     "eq": "open the equalizer",
     "lyrics": "open the lyrics",
+    "cassette": "cassette deck on/off",
     "control:toggle": "play / pause",
     "control:next": "next track",
     "control:previous": "previous track",

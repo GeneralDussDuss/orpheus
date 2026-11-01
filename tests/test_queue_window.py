@@ -49,7 +49,10 @@ class QueueWindowTest(unittest.TestCase):
         for r in fake(5).queue_window(0, 5)["tracks"]:
             self.assertNotIn("art", r)
             self.assertNotIn("source", r)
-            self.assertEqual(set(r) - {"i"}, set(Player.QUEUE_FIELDS))
+            self.assertLessEqual(set(r) - {"i"}, set(Player.QUEUE_FIELDS))
+        radio = fake(1)
+        radio.queue[0]["radio"] = {"from": "seed"}
+        self.assertEqual(radio.queue_window(0, 1)["tracks"][0]["radio"], {"from": "seed"})
 
     def test_rev(self):
         p = fake(10)

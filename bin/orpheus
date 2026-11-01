@@ -38,5 +38,6 @@ case "${1:-open}" in
   toggle) shell library >/dev/null ;;
   status) shell status ;;
   share)  shift; share "$@" ;;
-  *) echo "usage: orpheus [open|stage|close|toggle|status|share [-u]]" >&2; exit 2 ;;
+  tape)   shell cassette >/dev/null ;;
+  *) echo "usage: orpheus [open|stage|close|toggle|status|share [-u]|tape]" >&2; exit 2 ;;
 esac
