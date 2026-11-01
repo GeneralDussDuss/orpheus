@@ -522,9 +522,11 @@ QtObject {
 
     // Anticipation: the next mapped drop, wound up over its last 8 beats.
     var nd = dropT.length, kd = di
-    var din = ok && kd < nd ? dropT[kd] - tl : -1
+    // Counted whenever the map is usable, so losing trust fades it out with
+    // w instead of cutting it; only wound up while the mapped drop will fire.
+    var din = enabled && t >= 0 && playing && kd < nd ? dropT[kd] - tl : -1
     if (dropIn !== din) dropIn = din
-    var ant = din >= 0 && dropS[kd] >= 0.35 ? clamp01(1 - din / (8 * per)) * w : 0
+    var ant = mapOn && din >= 0 && dropS[kd] >= 0.35 ? clamp01(1 - din / (8 * per)) * w : 0
     if (anticipate !== ant) anticipate = ant
     var arm = mapOn && din > 0 && din <= 1.5 && dropS[kd] >= 0.35 ? dropT[kd] : -1
     if (armedDrop !== arm) armedDrop = arm
