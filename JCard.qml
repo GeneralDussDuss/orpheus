@@ -92,11 +92,21 @@ Item {
   function rowIn(i) { return Math.max(0, Math.min(1, (intro - 14 * Math.min(i, 24)) / 220)) }
 
   // ---- the paper ------------------------------------------------------------------
+  readonly property color c1: engine ? engine.c1 : accent
+  readonly property color c3: engine ? engine.c3 : accent
+  readonly property real paperA: deck && deck.glassy ? 0.5 : 0.9
   Rectangle {
     anchors.fill: parent
-    color: Tui.alpha(Tui.mix(card.bg, card.fg, 0.03), card.deck && card.deck.glassy ? 0.5 : 0.9)
+    // lit from the upper left, like the deck beside it
+    gradient: Gradient {
+      GradientStop { position: 0; color: Tui.alpha(Tui.mix(card.bg, card.fg, 0.055), card.paperA) }
+      GradientStop { position: 1; color: Tui.alpha(Tui.mix(card.bg, card.fg, 0.015), card.paperA) }
+    }
     border.width: 1
     border.color: card.line
+    // the shell label's two stripes, carried over to the card's head
+    Rectangle { x: 4; y: 4; width: parent.width - 8; height: Math.max(1, Math.round(card.unit * 0.1)); color: Tui.alpha(card.c1, 0.75) }
+    Rectangle { x: 4; y: 4 + Math.max(2, Math.round(card.unit * 0.16)); width: parent.width - 8; height: Math.max(1, Math.round(card.unit * 0.1)); color: Tui.alpha(card.c3, 0.65) }
     Rectangle {
       anchors.fill: parent
       anchors.margins: 3
@@ -267,8 +277,24 @@ Item {
       x: -card.cw * 0.5
       width: parent.width + card.cw * 0.5
       height: parent.height
-      color: row.now ? Tui.alpha(card.accent, 0.16) : rm.containsMouse ? Tui.alpha(card.fg, 0.07) : "transparent"
+      color: !row.now && rm.containsMouse ? Tui.alpha(card.fg, 0.07) : "transparent"
       Behavior on color { ColorAnimation { duration: Tui.HOVER } }
+      // the playing row is backlit: brightest at the lamp on the left, fading right
+      Rectangle {
+        anchors.fill: parent
+        visible: row.now
+        gradient: Gradient {
+          orientation: Gradient.Horizontal
+          GradientStop { position: 0; color: Tui.alpha(card.accent, 0.30 + 0.14 * row.beat) }
+          GradientStop { position: 0.55; color: Tui.alpha(card.accent, 0.10 + 0.05 * row.beat) }
+          GradientStop { position: 1; color: Tui.alpha(card.accent, 0.03) }
+        }
+      }
+      Rectangle {
+        visible: row.now
+        width: Math.max(2, Math.round(card.cw * 0.25)); height: parent.height
+        color: Tui.mix(card.accentText, card.fg, row.beat * 0.5)
+      }
     }
     readonly property color ink: now ? card.accentText : past ? card.dim : Tui.mix(card.dim, card.fg, 0.45)
     Text {
@@ -309,6 +335,34 @@ Item {
       onPositionChanged: if (card.deck) card.deck.moved()
       onClicked: { if (card.deck) card.deck.moved(); if (!row.now) card.engine.api.control("jump", { index: row.i }) }
       TuiTip { text: row.now ? "playing" : "play this now"; delay: 700 }
+    }
+  }
+
+  // A turn of the side throws a sweep of light across the card (the deck flips its label too).
+  onSideChanged: if (visible && width > 0) sweepAnim.restart()
+  Item {
+    anchors.fill: parent
+    clip: true
+    z: 5
+    Rectangle {
+      id: sweep
+      width: card.unit * 3; height: card.height * 1.6
+      y: -card.height * 0.3
+      x: -width * 2
+      rotation: 18
+      opacity: 0
+      gradient: Gradient {
+        orientation: Gradient.Horizontal
+        GradientStop { position: 0; color: "transparent" }
+        GradientStop { position: 0.5; color: Tui.alpha(Tui.mix(card.accent, "white", 0.35), 0.22) }
+        GradientStop { position: 1; color: "transparent" }
+      }
+    }
+    SequentialAnimation {
+      id: sweepAnim
+      PropertyAction { target: sweep; property: "opacity"; value: 1 }
+      NumberAnimation { target: sweep; property: "x"; from: -sweep.width * 2; to: card.width + sweep.width; duration: 650; easing.type: Easing.InOutCubic }
+      PropertyAction { target: sweep; property: "opacity"; value: 0 }
     }
   }
 }
