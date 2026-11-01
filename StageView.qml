@@ -77,7 +77,9 @@ Item {
     // At rest the picture steps back; the music brings it forward again.
     property real rest: view.idle === "" || view.idle === "deaf" ? 1 : 0.55
     Behavior on rest { NumberAnimation { duration: Tui.PAGE; easing.type: Easing.InOutCubic } }
-    opacity: shown * rest
+    // Qualified: an unqualified name finds a component id before this item's
+    // own property (the at-rest Column below once had this name as its id: NaN).
+    opacity: vizLoader.shown * vizLoader.rest
     sourceComponent: Viz {
       engine: view.engine
       styleName: view.styleName
@@ -440,15 +442,15 @@ Item {
       nextArtist = t ? (Array.isArray(t.artists) ? t.artists.join(", ") : (t.artist || "")) : ""
       if (!nextTitle) { clear(); return }
       // A skip while a card is up: the old one steps out first, never cut.
-      gone.stop()
+      fadeOut.stop()
       handover.duration = opacity > 0.01 ? Tui.STATE : 0
       card.restart()
     }
     function clear() {
       card.stop()
-      if (opacity > 0.01) gone.restart()
+      if (opacity > 0.01) fadeOut.restart()
     }
-    NumberAnimation { id: gone; target: titleCard; property: "opacity"; to: 0; duration: Tui.STATE; easing.type: Easing.InOutCubic }
+    NumberAnimation { id: fadeOut; target: titleCard; property: "opacity"; to: 0; duration: Tui.STATE; easing.type: Easing.InOutCubic }
 
     Column {
       id: col
@@ -579,7 +581,7 @@ Item {
   // the title and the lyrics stay where they were.
   readonly property real breath: engine && engine.time >= 0 ? 0.5 + 0.5 * Math.sin(engine.time * 1.2) : 1
   Column {
-    id: rest
+    id: restLine
     // Under the deck, centred over the machine, never across the j-card's
     // paper (which says "no tape" itself).
     readonly property var dk: view.deck && deckLoader.item && !deckLoader.item.compact ? deckLoader.item : null
