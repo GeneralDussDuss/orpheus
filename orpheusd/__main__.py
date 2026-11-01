@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 
 from aiohttp import web
 
+from .analysis import Analysis, key_of
 from .anime import PLAYER as ANI_PLAYER, Anime, AnimeError
 try:
     from .mpris import Mpris
@@ -63,11 +64,15 @@ class App:
         # /quality lasts until the daemon restarts; a saved one pinned users to
         # lossless long after they had signed in for hi-res.
         self.prefs.pop("quality", None)
+        self.config = Config()
         self.tidal = Tidal(STATE_DIR, None)
         self.youtube = YouTube()
         self.sources = {"youtube": self.youtube, "soundcloud": SoundCloud()}
         self.anime = Anime(RUNTIME_DIR)
-        self.player = Player(self.tidal, self.sources, RUNTIME_DIR, CACHE_DIR, self._changed)
+        # The drop map: each resolved TIDAL track is analysed ahead, at idle.
+        self.analysis = Analysis(CACHE_DIR, RUNTIME_DIR, self.config, self._changed)
+        self.player = Player(self.tidal, self.sources, RUNTIME_DIR, CACHE_DIR, self._changed,
+                             on_resolved=self.analysis.schedule)
         self.store = QueueStore(STATE_DIR, self.player)
         self.video = Video(RUNTIME_DIR, self._changed)
         self.player.eq = eqmod.normalize(self.prefs.get("eq"))
@@ -75,7 +80,6 @@ class App:
         self.mpris = Mpris(self, self.player) if Mpris else NoMpris()
 
         # ---- listening: endless play, history, scrobbling, remote, sleep ----
-        self.config = Config()
         self.history = History(STATE_DIR)
         self.scrobbler = Scrobbler(self.config, self.history, STATE_DIR)
         self.tracker = Tracker(self.history, self.scrobbler.now_playing, self.scrobbler.scrobble)
@@ -213,6 +217,7 @@ class App:
                 "quality": self.tidal.quality, "player": player,
                 "eq": self.player.eq_state(),
                 "video": self.video.state(),
+                "analysis": self.analysis.state(),
                 "providers": {"youtube": True, "soundcloud": True, "anime": self.anime.available,
                               "curd": self.anime.curd},
                 "likedVersion": self.tidal.liked_version,
@@ -230,6 +235,9 @@ class App:
             try:
                 p.crossfade = self.config.crossfade
                 self.tracker.tick(p, end_slack=p.crossfade)
+                nxt = p.next_pos()
+                self.analysis.retarget(key_of(p.current) if p.current else None,
+                                       key_of(p.queue[p.order[nxt]]) if 0 <= nxt < len(p.order) else None)
                 await self._endless_check()
             except Exception as e:
                 log.warning("listening loop: %s", e)
@@ -496,6 +504,22 @@ class App:
                     meta = t
                     break
             return J(await self.lyrics.get(tid, meta))
+
+        @r.get("/analysis/{id}")
+        async def analysis(req):
+            # The drop map for a track: the map itself once it is ready, else
+            # {"state": pending | none | failed}. No login needed: it is ours.
+            tid, q = req.match_info["id"], req.query
+            meta = next((t for t in ([self.player.current] if self.player.current else []) + self.player.queue
+                         if t and str(t.get("id")) == str(tid)), None)
+            provider = q.get("provider") or (meta or {}).get("provider") or "tidal"
+            try:
+                duration = float(q.get("duration") or (meta or {}).get("duration") or 0)
+            except ValueError:
+                duration = 0
+            if duration <= 0:
+                raise web.HTTPNotFound(text="unknown track")
+            return J(await self.analysis.get(tid, provider, duration))
 
         @r.get("/eq")
         async def eq_get(req):
@@ -897,6 +921,7 @@ async def shutdown(app, runner):
         app.store.save_now()
     except Exception as e:
         log.warning("couldn't save the queue: %s", e)
+    await app.analysis.close()
     await app.player.stop()
     await runner.cleanup()
 

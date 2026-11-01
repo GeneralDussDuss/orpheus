@@ -231,7 +231,7 @@ XFADE_LEAD = 15.0
 
 
 class Player:
-    def __init__(self, tidal, sources: dict, runtime_dir: Path, cache_dir: Path, on_change):
+    def __init__(self, tidal, sources: dict, runtime_dir: Path, cache_dir: Path, on_change, on_resolved=None):
         self.tidal = tidal
         # yt-dlp sources by provider name; a track without a provider is TIDAL's
         self.sources = sources
@@ -239,6 +239,11 @@ class Player:
         self.runtime_dir = runtime_dir
         self.cache_dir = cache_dir
         self.on_change = on_change
+        # (track, info, role) after each fresh resolve that is still wanted:
+        # role "current" from _load, "next" from the prefetch and the crossfade
+        # deck. The drop map schedules its analysis from here, so it costs no
+        # extra playbackinfo call. Must not block or raise (see _resolved).
+        self.on_resolved = on_resolved
 
         self.queue: list[dict] = []
         self.order: list[int] = []        # play order (indices into queue); shuffled or not
@@ -649,6 +654,14 @@ class Player:
             return await source.stream(track["id"])
         return await self.tidal.stream(track["id"], self.cache_dir)
 
+    def _resolved(self, track: dict, info: dict, role: str):
+        if not self.on_resolved:
+            return
+        try:
+            self.on_resolved(track, info, role)
+        except Exception as e:
+            log.debug("on_resolved: %s", e)
+
     async def _load(self, order_pos: int, start: float = 0, paused: bool = False, skip: bool = False):
         if not skip:
             self._failed_run = 0     # a fresh start; only skips past failures count
@@ -703,6 +716,7 @@ class Player:
         if token != self._loading:
             return  # a newer request won
         self.stream_info = self._info(info)
+        self._resolved(track, info, "current")
         if self._heap_mb() > RECYCLE_MB:
             await self._recycle()
         self._entries.clear()
@@ -794,6 +808,7 @@ class Player:
         cover = await cover
         if token != self._loading:
             return
+        self._resolved(track, info, "next")
         # Drop anything already queued in mpv after the current entry, then append.
         await self._send(["playlist-clear"])
         url, opts = _loadable(info["source"], track, cover)
@@ -1112,6 +1127,7 @@ class Player:
             return
         if xf is not self._xf:
             return
+        self._resolved(track, info, "next")
         deck = None
         try:
             deck = await self._spawn()
