@@ -69,6 +69,9 @@ class CassetteJsTest(unittest.TestCase):
         self.assertEqual([round(x, 9) for x in self.ev("drums(1000)")], [0, 0, 0])
         d = self.ev("drums(99.95)")
         self.assertTrue(9 < d[1] < 10 and 0 < d[2] < 1, d)
+        # the hundreds drum waits for the last turn below it, not for its own last tenth
+        self.assertEqual([round(x, 9) for x in self.ev("drums(95)")], [5, 9, 0])
+        self.assertEqual([round(x, 9) for x in self.ev("drums(99.5)")], [9.5, 9.5, 0.5])
 
     def test_scrub_gear(self):
         self.assertAlmostEqual(self.ev("scrubDelta(-Math.PI / 2)"), 7.5, places=9)

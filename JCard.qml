@@ -48,11 +48,15 @@ Item {
   readonly property var st: deck ? deck.st : null
   readonly property bool ours: !!deck && deck.ours
   readonly property bool online: !!engine && !!engine.api && engine.api.online === true
+  // The compact deck hides the card (no size): it then neither fetches nor
+  // decides the side, or a 2-row "tape" would flip A/B on every track.
+  readonly property bool shownCard: visible && width > 0 && height > 0
   readonly property int rows: Math.max(1, Math.min(12, Math.floor((height - 4 * headM.height - 3 * capM.height) / rowH / 2)))
   readonly property var pg: Deck.page(st ? (st.queueIndex || 0) : 0, rows, st ? (st.queueLength || 0) : 0)
-  readonly property string wantKey: (ours && online ? "o" : "x") + ":" + (st ? (st.queueRev || "") : "") + ":" + pg.first + ":" + (rows * 2)
+  readonly property string wantKey: (ours && online && shownCard ? "o" : "x") + ":" + (st ? (st.queueRev || "") : "") + ":" + pg.first + ":" + (rows * 2)
   property var shown: null              // { first, split, pages, page, tracks, context } of the last answer
   property int fetches: 0               // for tests: how many times the queue was asked for
+  property int fetchSeq: 0              // only the newest request's answer is shown
   onWantKeyChanged: fetchWait.restart()
   Component.onCompleted: fetchWait.restart()
   Timer {
@@ -61,10 +65,12 @@ Item {
     onTriggered: card.fetch()
   }
   function fetch() {
-    if (!ours || !online || typeof engine.api.queue !== "function") { shown = null; return }
+    var mine = ++fetchSeq
+    if (!ours || !online || !shownCard || typeof engine.api.queue !== "function") { shown = null; return }
     var want = pg, n = rows * 2
     fetches++
     engine.api.queue(want.first, n, function(ok, d) {
+      if (mine !== card.fetchSeq) return       // a newer page or queueRev was asked for since
       if (!ok || !d || !Array.isArray(d.tracks)) { card.shown = null; return }
       var p = Deck.page(d.index || 0, card.rows, d.length || 0)
       card.shown = { first: d.from || 0, split: Math.ceil(d.tracks.length / 2), pages: p.pages, page: Math.floor((d.from || 0) / Math.max(2, n)),
@@ -251,7 +257,7 @@ Item {
     readonly property int i: modelData.i
     readonly property bool now: i === card.playingAt
     readonly property bool past: i < card.playingAt
-    readonly property real beat: card.engine && card.engine.pulseUi && card.deck && card.deck.playing
+    readonly property real beat: row.now && card.engine && card.engine.pulseUi && card.deck && card.deck.playing
                                  ? Math.max(0, Math.min(1, card.engine.beat || 0)) : 0
     width: page.width
     height: card.rowH

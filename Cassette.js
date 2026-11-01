@@ -30,13 +30,13 @@ function supplyAngle(pos, len) {
 function revs(pos, len) { return takeAngle(pos, len) / (2 * Math.PI) }
 
 // The three counter drums, as fractional digit positions [ones, tens, hundreds]:
-// the ones drum rolls continuously, a higher drum rolls only during the last
-// tenth of the drum below it (the carry).
+// the ones drum rolls continuously, a higher drum rolls only while the ones
+// drum makes its last turn before the carry (9 -> 0 below it, 99 -> 00, ...).
 function drums(r) {
-  var v = Math.max(0, r) % 1000, out = []
-  for (var k = 0; k < 3; k++) {
-    var x = v / Math.pow(10, k), d = Math.floor(x) % 10, f = x - Math.floor(x)
-    out.push(k === 0 ? d + f : d + Math.max(0, Math.min(1, f * 10 - 9)))
+  var v = Math.max(0, r) % 1000, out = [v % 10]
+  for (var k = 1; k < 3; k++) {
+    var m = Math.pow(10, k), d = Math.floor(v / m) % 10
+    out.push(d + Math.max(0, Math.min(1, (v % m) - (m - 1))))
   }
   return out
 }

@@ -580,8 +580,12 @@ Item {
   readonly property real breath: engine && engine.time >= 0 ? 0.5 + 0.5 * Math.sin(engine.time * 1.2) : 1
   Column {
     id: rest
-    anchors.centerIn: parent
-    width: parent.width * 0.8
+    // Under the deck, centred over the machine, never across the j-card's
+    // paper (which says "no tape" itself).
+    readonly property var dk: view.deck && deckLoader.item && !deckLoader.item.compact ? deckLoader.item : null
+    width: dk ? dk.deckW * 0.9 : parent.width * 0.8
+    x: (dk ? dk.deckX + dk.deckW / 2 : parent.width / 2) - width / 2
+    y: (parent.height - height) / 2
     spacing: view.unit * 0.3
     // The deck shows two of these itself: ejected for no track, needles at rest when deaf.
     readonly property bool on: view.idle !== "" && view.idle !== "paused"

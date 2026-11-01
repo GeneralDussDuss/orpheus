@@ -133,6 +133,15 @@ Item {
       && !ejectAnim.running && !insertAnim.running && needleKick === 0
   readonly property bool live: visible && !!engine && !engine.gameMode && !!Window.window && Window.window.visible && !settled
   Connections { target: deck.engine; function onTimeChanged() { if (deck.live) deck.step(-1) } }
+  // A settled deck never steps, so a seek made elsewhere while paused (the
+  // player's h/l, MPRIS, the remote) would leave the reels and counter behind
+  // until play. Four looks a second, only while settled and on screen.
+  Timer {
+    interval: 250
+    repeat: true
+    running: deck.settled && deck.visible && deck.hasTape && !!deck.engine && !deck.engine.gameMode
+    onTriggered: if (deck.lastPos >= 0 && Math.abs(deck.songPos() - deck.lastPos) > 0.75) deck.step(-1)
+  }
 
   property bool ready: false
   Component.onCompleted: { ejectAmt = hasTape ? 0 : 1; lastTrack = trackKey; tape = hasTape ? songPos() : 0; ready = true }
@@ -586,7 +595,7 @@ Item {
       else if (dA < -Math.PI) dA += 2 * Math.PI
       grab = a
       deck.hand += dA
-      deck.scrubPos = deck.clamp(deck.scrubPos + Deck.scrubDelta(dA), 0, deck.len)
+      deck.scrubPos = deck.clamp(deck.scrubPos + Deck.scrubDelta(dA), 0, Math.max(0, deck.len - 0.5))   // as seekBy: never onto EOF
       deck.wobble = Math.min(1, Math.abs(dA) * 4)
       if (!deck.live) deck.step(-1)
     }
