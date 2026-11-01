@@ -56,7 +56,7 @@ Item {
                    ["p  P", "next / previous preset"], ["b", "bypass"], ["]  [", "preamp up / down"], ["\\", "auto headroom"],
                    ["A", "find headphones (AutoEQ)"], ["x  X", "AutoEQ on / off · clear"],
                    ["drag  scroll", "set a band"], ["middle-click", "zero a band"], ["right-click", "bypass"]]],
-    ["autoeq picker", [["type", "filter"], ["⏎", "apply"], ["↑ ↓  ctrl+j k", "move"], ["pgup pgdn", "page"],
+    ["autoeq picker", [["type", "filter"], ["⏎", "apply"], ["↑ ↓", "move"], ["pgup pgdn", "page"],
                        ["ctrl+r", "refresh the index"], ["esc", "back to the bars"]]],
     ["lyrics", [["]  [", "sync later / earlier"], ["\\", "reset the sync"], ["m", "entrance: wave, rain, plain"], ["j k  ↓ ↑", "scroll"]]],
     ["stats", [["⇥ ⇧⇥  ] [", "next / previous range"], ["l h  → ←", "the same"], ["w", "wrapped"], ["r", "reload"],

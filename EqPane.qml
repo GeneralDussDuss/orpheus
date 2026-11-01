@@ -86,10 +86,14 @@ Rectangle {
   property int aeCount: 0
   property int aeAge: 0
   property int aeSeq: 0
+  property int aeLanded: 0           // the newest search whose reply (or failure) is in
   readonly property int aeVis: 14
 
   // less headroom than the biggest boost needs
-  readonly property bool clipping: preampShown > autoPreamp() + 0.01
+  readonly property bool clipping: preampShown > autoPre + 0.01
+  // With a correction live this is a 250-point response of the whole cascade:
+  // a binding, so it is worked out once per change and not by every reader.
+  readonly property real autoPre: Eq.autoPreamp(gains, autoeq ? autoeq.filters : [], aeLive)
 
   readonly property string presetName: {
     for (var i = 0; i < presets.length; i++)
@@ -159,9 +163,7 @@ Rectangle {
   // still computes the real one; this is only what we draw. With a correction
   // live it is the measured peak of the whole cascade (Eq.js, tested against
   // eq.py), otherwise the biggest boost.
-  function autoPreamp() {
-    return Eq.autoPreamp(gains, autoeq ? autoeq.filters : [], aeLive)
-  }
+  function autoPreamp() { return autoPre }
 
   // Boosting cannot make anything louder - there is nothing above full scale -
   // so the automatic headroom pulls everything down by the largest boost. That
@@ -213,10 +215,12 @@ Rectangle {
 
   function setGainAt(i, frac) {
     var v = (1 - frac * 2) * limit                   // 0 at the top -> +limit
-    var g = gains.slice()
-    g[i] = Math.max(-limit, Math.min(limit, Math.round(v / step) * step))
-    gains = g
+    var q = Math.max(-limit, Math.min(limit, Math.round(v / step) * step))
     sel = i
+    if (Math.abs(q - gains[i]) < 1e-6) return        // a drag inside one step: nothing to redo or repaint
+    var g = gains.slice()
+    g[i] = q
+    gains = g
     presetId = ""
     if (!eqOn && !flat()) eqOn = true
     preampShown = autoPreamp()
@@ -252,6 +256,7 @@ Rectangle {
   function closePicker() {
     picking = false
     aeBusy = ""
+    aeWantApply = false
     pane.forceActiveFocus()
   }
 
@@ -261,9 +266,11 @@ Rectangle {
     var seq = ++aeSeq
     api.get("/autoeq/search?q=" + encodeURIComponent(aeInput.text) + "&limit=50", function(ok, d) {
       if (seq !== pane.aeSeq || !pane.picking) return
+      pane.aeLanded = seq
       if (!ok || !d) {
         pane.aeState = "offline"
         pane.aeMsg = "the player service didn't answer"
+        pane.aeWantApply = false             // never apply a later reply nobody confirmed
         return
       }
       pane.aeResults = d.results || []
@@ -320,18 +327,34 @@ Rectangle {
     onTriggered: pane.aeSearch()
   }
 
+  // `pick` asks for the picker once: the page object stays in the library's
+  // history, and going back to it later must not open the picker again.
+  function takePick() {
+    if (!host || !host.page || host.page.pick !== true) return false
+    host.page.pick = false
+    return true
+  }
   Component.onCompleted: {
     load()
-    if (host && host.page && host.page.pick === true) Qt.callLater(openPicker)
+    if (takePick()) Qt.callLater(openPicker)
   }
   // the palette or settings asking for the picker while the pane is already up
   Connections {
     target: pane.host
     ignoreUnknownSignals: true
-    function onPageChanged() {
-      if (pane.host.page && pane.host.page.pick === true && !pane.picking) Qt.callLater(pane.openPicker)
-    }
+    function onPageChanged() { if (pane.takePick() && !pane.picking) Qt.callLater(pane.openPicker) }
+    // A change made elsewhere (the palette's autoeq toggle or clear, another
+    // client): /status carries only a summary, so fetch the full state.
+    function onEqStateChanged() { if (pane.loaded && pane.eqDiffers()) eqFollow.restart() }
   }
+  function eqDiffers() {
+    var s = host ? host.eqState : null
+    if (!s || s.enabled === undefined) return false
+    return !!s.enabled !== eqOn || !!s.autoeqOn !== autoeqOn
+           || (s.autoeq ? s.autoeq.name : "") !== (autoeq ? autoeq.name : "")
+  }
+  // settle first: a local edit not yet pushed (or its reply) would read as a difference
+  Timer { id: eqFollow; interval: 400; onTriggered: if (!push.running && pane.eqDiffers()) pane.load() }
   // Not loaded after a few seconds: keep trying, and say so plainly.
   property bool waited: false
   Timer { interval: 3000; repeat: true; running: !pane.loaded; onTriggered: { pane.waited = true; pane.load() } }
@@ -666,13 +689,16 @@ Rectangle {
             var k = e.key, ctrl = e.modifiers & Qt.ControlModifier
             if (k === Qt.Key_Escape) { pane.closePicker(); e.accepted = true }
             else if (k === Qt.Key_Return || k === Qt.Key_Enter) {
-              // a query typed faster than the debounce: search first, then apply what it finds
+              // a query typed faster than the debounce, or one still on its way:
+              // apply what the newest search finds, not the list on screen
               if (aeDebounce.running) { aeDebounce.stop(); pane.aeCur = 0; pane.aeTop = 0; pane.aeWantApply = true; pane.aeSearch() }
+              else if (pane.aeLanded !== pane.aeSeq) pane.aeWantApply = true
               else pane.aeApply()
               e.accepted = true
             }
-            else if (k === Qt.Key_Up || (ctrl && k === Qt.Key_K)) { pane.moveCur(-1); e.accepted = true }
-            else if (k === Qt.Key_Down || (ctrl && k === Qt.Key_J)) { pane.moveCur(1); e.accepted = true }
+            // (no ctrl+j/k: the window's ctrl+k palette shortcut takes it first)
+            else if (k === Qt.Key_Up) { pane.moveCur(-1); e.accepted = true }
+            else if (k === Qt.Key_Down) { pane.moveCur(1); e.accepted = true }
             else if (k === Qt.Key_PageUp) { pane.moveCur(-pane.aeVis); e.accepted = true }
             else if (k === Qt.Key_PageDown) { pane.moveCur(pane.aeVis); e.accepted = true }
             else if (ctrl && k === Qt.Key_R) { pane.aeRefresh(); e.accepted = true }

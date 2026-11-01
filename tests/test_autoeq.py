@@ -390,6 +390,18 @@ class ServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r["state"], "ready")
         self.assertEqual(f2.calls, [])
 
+    async def test_concurrent_first_searches_share_the_disk_load(self):
+        f = Fetch({ae.INDEX_URL: big_index()})
+        s = self.svc(f)
+        await s.search("")
+        await s._task                                  # index.json now on disk
+        f2 = Fetch()
+        s2 = self.svc(f2)
+        a, b = await asyncio.gather(s2.search(""), s2.search("gen"))
+        self.assertEqual((a["state"], b["state"]), ("ready", "ready"))
+        self.assertEqual(f2.calls, [])                 # nobody asked github for what was on disk
+        self.assertEqual(s2.status()["error"], "")
+
     async def test_stale_refreshes_and_serves(self):
         d = self.cache / "autoeq"
         d.mkdir(parents=True)

@@ -208,7 +208,7 @@ class AutoEq:
         self._by_path: dict[str, list[str]] = {}
         self.fetched_at = 0.0
         self.error = ""
-        self._disk_tried = False
+        self._load_task: asyncio.Task | None = None
         self._failed_at = 0.0
         self._task: asyncio.Task | None = None
 
@@ -236,10 +236,16 @@ class AutoEq:
         return (rows, float(d.get("fetchedAt") or 0)) if rows else None
 
     async def _ensure_loaded(self) -> None:
-        # Loaded once, on the first search, never at daemon start.
-        if self.rows is not None or self._disk_tried:
+        # Loaded once, on the first search, never at daemon start. Single-flight:
+        # a second search during the ~1 MB read waits for it rather than seeing
+        # no rows and asking github for an index that is on disk.
+        if self.rows is not None:
             return
-        self._disk_tried = True
+        if self._load_task is None:
+            self._load_task = asyncio.get_running_loop().create_task(self._load_disk())
+        await asyncio.shield(self._load_task)
+
+    async def _load_disk(self) -> None:
         got = await asyncio.to_thread(self._read_index)
         if got and self.rows is None:
             self._set_rows(*got)
