@@ -440,7 +440,9 @@ class UserShaders:
             marker.write_text("1\n")
         try:
             m = json.loads((self.build / "manifest.json").read_text(encoding="utf-8"))
-            if isinstance(m, dict) and m.get("v") == 1 and isinstance(m.get("styles"), dict):
+            # A manifest from another BUILD_V describes builds this wrapper wouldn't
+            # make (v2 had no DXBC): drop it and every style compiles again.
+            if isinstance(m, dict) and m.get("v") == 1 and m.get("build") == BUILD_V and isinstance(m.get("styles"), dict):
                 self._manifest = m["styles"]
         except (OSError, ValueError):
             self._manifest = {}
@@ -632,7 +634,7 @@ class UserShaders:
 
     async def _save(self):
         self._manifest = {n: dict(s.saved(), label=s.label) for n, s in self.styles.items()}
-        data = json.dumps({"v": 1, "seeded": True, "styles": self._manifest}, indent=1).encode("utf-8")
+        data = json.dumps({"v": 1, "build": BUILD_V, "seeded": True, "styles": self._manifest}, indent=1).encode("utf-8")
         try:
             await asyncio.to_thread(system.write_atomic, self.build / "manifest.json", data)
         except OSError as e:
