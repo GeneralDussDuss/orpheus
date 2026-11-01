@@ -128,7 +128,7 @@ FloatingWindow {
     readonly property bool on: !!win.api && win.api.isLiked(kind, itemId)
     visible: itemId !== ""
     text: on ? "󰋑" : "󰋕"
-    font.family: win.family; font.pixelSize: Tui.T.lead
+    font.family: win.family; font.pixelSize: Tui.px("lead", Style.font.body)
     color: on ? win.accentText : (hm.containsMouse ? win.fg : win.dim)
     scale: hm.pressed ? 0.86 : 1
     Behavior on scale { enabled: !hm.pressed; SpringAnimation { spring: Tui.SPRING.spring; damping: Tui.SPRING.damping } }
@@ -1080,7 +1080,7 @@ FloatingWindow {
             width: win.ch * 8; height: width
             color: Tui.alpha(Color.accent, Tui.A.tint)
             // a mark until the cover arrives, then the cover fades in over it
-            Text { anchors.centerIn: parent; visible: detailArt.status !== Image.Ready; text: "╱╱╱"
+            Text { anchors.centerIn: parent; visible: !detailArt.arrived; text: "╱╱╱"
                    font.family: win.family; font.pixelSize: Style.font.body; color: win.dim }
             Image {
               id: detailArt
@@ -1089,7 +1089,11 @@ FloatingWindow {
               fillMode: Image.PreserveAspectCrop
               asynchronous: true
               sourceSize: Qt.size(width * 2, height * 2)
-              opacity: status === Image.Ready ? 1 : 0
+              // fades in when a new source arrives, not on every reload a size change causes
+              property bool arrived: false
+              onSourceChanged: arrived = false
+              onStatusChanged: if (status === Image.Ready) arrived = true
+              opacity: arrived ? 1 : 0
               Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
             }
           }
@@ -1106,14 +1110,14 @@ FloatingWindow {
               text: win.pageData ? win.pageData.title : (win.page.title || "")
               opacity: win.pageData ? 1 : 0.5
               Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
-              font.family: win.family; font.pixelSize: Tui.T.hero; font.bold: true; color: win.fg
+              font.family: win.family; font.pixelSize: Tui.px("hero", Style.font.body); font.bold: true; color: win.fg
               width: mainBox.width - win.ch * 8 - win.cw * 8
               elide: Text.ElideRight
             }
             Text {
               color: win.dim
               textFormat: Text.StyledText
-              font.family: win.family; font.pixelSize: Tui.T.body
+              font.family: win.family; font.pixelSize: Tui.px("body", Style.font.body)
               text: !win.pageData ? Tui.busy(win.clock, "loading", Tui.hex(win.accentText))
                 : win.page.kind === "album" ? Tui.esc(win.artists(win.pageData.artists)) + (win.pageData.year ? " · " + win.pageData.year : "") + " · " + (win.pageData.items || []).length + " tracks · " + win.clockText(win.pageData.duration)
                 : win.page.kind === "artist" ? (win.pageData.items || []).length + " top tracks · "
@@ -1454,8 +1458,11 @@ FloatingWindow {
 
       // A pane fades in over the list as it loads (the list steps back under
       // it). Loaders drop at once on the way out: the list fades back instead.
-      NumberAnimation { id: paneIn; property: "opacity"; from: 0; to: 1; duration: Tui.STATE; easing.type: Tui.OUT }
-      function fadeIn(item) { item.opacity = 0; paneIn.target = item; paneIn.restart() }
+      // One fade per pane, owned by the pane: two loading together (the sign-in
+      // cover and the eq page at startup) must not steal one animation and
+      // leave the first stuck at opacity 0.
+      Component { id: paneIn; NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Tui.STATE; easing.type: Tui.OUT } }
+      function fadeIn(item) { item.opacity = 0; paneIn.createObject(item, { target: item }).start() }
 
       // Equalizer cover. Above the list, below the sign-in cover: there is
       // nothing to equalize if we are not signed in.
@@ -1664,8 +1671,8 @@ FloatingWindow {
             Behavior on height { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
             clip: true
             // a mark until the cover arrives, then the cover fades in over it
-            Text { anchors.centerIn: parent; visible: !plane.showViz && planeArt.status !== Image.Ready; text: "╱╱╱"
-                   font.family: win.family; font.pixelSize: Tui.T.lead; color: win.dim }
+            Text { anchors.centerIn: parent; visible: !plane.showViz && !planeArt.arrived; text: "╱╱╱"
+                   font.family: win.family; font.pixelSize: Tui.px("lead", Style.font.body); color: win.dim }
             Image {
               id: planeArt
               anchors.fill: parent
@@ -1674,7 +1681,11 @@ FloatingWindow {
               fillMode: Image.PreserveAspectCrop
               asynchronous: true
               sourceSize: Qt.size(width * 2, height * 2)
-              opacity: status === Image.Ready ? 1 : 0
+              // fades in when a new source arrives, not on every reload a size change causes
+              property bool arrived: false
+              onSourceChanged: arrived = false
+              onStatusChanged: if (status === Image.Ready) arrived = true
+              opacity: arrived ? 1 : 0
               Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
             }
             Viz {
@@ -1749,7 +1760,7 @@ FloatingWindow {
               width: Math.round(win.ch * 7 * artIn)
               height: width
               color: Tui.alpha(Color.accent, Tui.A.tint)
-              Text { anchors.centerIn: parent; visible: tileArt.status !== Image.Ready; text: "╱╱╱"
+              Text { anchors.centerIn: parent; visible: !tileArt.arrived; text: "╱╱╱"
                      font.family: win.family; font.pixelSize: Style.font.caption; color: win.dim }
               Image {
                 id: tileArt
@@ -1758,7 +1769,11 @@ FloatingWindow {
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
                 sourceSize: Qt.size(width * 2, height * 2)
-                opacity: status === Image.Ready ? 1 : 0
+                // fades in when a new source arrives, not on every reload a size change causes
+                property bool arrived: false
+                onSourceChanged: arrived = false
+                onStatusChanged: if (status === Image.Ready) arrived = true
+                opacity: arrived ? 1 : 0
                 Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
               }
               MouseArea {
@@ -1788,7 +1803,7 @@ FloatingWindow {
                   animate: win.titleFx
                   key: win.trackKey
                   target: win.track ? win.track.title : "nothing playing"
-                  font.family: win.family; font.pixelSize: Tui.T.lead; font.bold: true; color: win.fg
+                  font.family: win.family; font.pixelSize: Tui.px("lead", Style.font.body); font.bold: true; color: win.fg
                   MouseArea { id: titleMouse; anchors.fill: parent; enabled: !!win.track; acceptedButtons: Qt.RightButton
                               onClicked: function(m) { win.trackMenu(win.track, titleMouse, m.x, m.y) } }
                 }
@@ -2061,7 +2076,7 @@ FloatingWindow {
             required property var modelData
             readonly property bool isPlay: modelData.a === "toggle"
             text: modelData.t
-            font.family: win.family; font.pixelSize: Tui.T.lead
+            font.family: win.family; font.pixelSize: Tui.px("lead", Style.font.body)
             // Play breathes toward the accent with the beat, and its halo with
             // it; hover eases a scalar on top of that.
             property real hot: tm.containsMouse ? 1 : 0
@@ -2081,7 +2096,7 @@ FloatingWindow {
           id: likeBtn
           on: !!win.track && !!win.api && win.api.isLiked("track", win.track.id)
           text: on ? "󰋑" : "󰋕"
-          font.family: win.family; font.pixelSize: Tui.T.lead
+          font.family: win.family; font.pixelSize: Tui.px("lead", Style.font.body)
           opacity: win.track ? 1 : 0.3
           onActivated: if (win.track) win.api.toggleLike("track", win.track.id)
           TuiTip { target: likeBtn.area; text: likeBtn.on ? "unlike what is playing" : "like what is playing"; key: "F" }

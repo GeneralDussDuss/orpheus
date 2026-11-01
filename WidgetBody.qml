@@ -151,7 +151,7 @@ TuiBox {
         // a placeholder mark until the cover arrives; then the cover fades in
         Text {
           anchors.centerIn: parent
-          visible: artImg.status !== Image.Ready
+          visible: !artImg.arrived
           text: "╱╱╱"
           font.family: Style.font.family; font.pixelSize: Style.font.body
           color: box.dim
@@ -163,7 +163,11 @@ TuiBox {
           fillMode: Image.PreserveAspectCrop
           asynchronous: true
           sourceSize: Qt.size(art.width * 2, art.height * 2)
-          opacity: status === Image.Ready ? 1 : 0
+          // fades in when a new source arrives, not on every reload a size change causes
+          property bool arrived: false
+          onSourceChanged: arrived = false
+          onStatusChanged: if (status === Image.Ready) arrived = true
+          opacity: arrived ? 1 : 0
           Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
         }
         MouseArea { anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: if (box.engine) box.engine.libraryOpen = true
@@ -245,7 +249,7 @@ TuiBox {
               required property var modelData
               readonly property bool isPlay: modelData.a === "toggle"
               text: modelData.g
-              font.family: Style.font.family; font.pixelSize: Tui.T.lead
+              font.family: Style.font.family; font.pixelSize: Tui.px("lead", Style.font.body)
               // hover eases a scalar; a press shrinks in-frame, springs back
               property real hot: cm.containsMouse ? 1 : 0
               Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }

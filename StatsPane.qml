@@ -279,7 +279,7 @@ Rectangle {
                     big((d.distinct || {}).artists || 0, "artists"),
                     big((s.current || 0) + " d", "streak · best " + (s.longest || 0))].join("&nbsp;&nbsp;&nbsp;")
           }
-          font.family: host.family; font.pixelSize: Tui.T.lead
+          font.family: host.family; font.pixelSize: Tui.px("lead", Style.font.body)
         }
 
         Text {
@@ -345,7 +345,7 @@ Rectangle {
           width: parent.width
           elide: Text.ElideRight
           text: (parent.w.month || "this month").toUpperCase()
-          font.family: host.family; font.pixelSize: Tui.T.display; font.bold: true; font.letterSpacing: Tui.TRACK.display
+          font.family: host.family; font.pixelSize: Tui.px("display", Style.font.body); font.bold: true; font.letterSpacing: Tui.TRACK.display
           color: host.accentText
         }
         Text {
@@ -355,7 +355,7 @@ Rectangle {
                 + (pane.d ? pane.d.plays : 0) + ' plays · ' + ((pane.d && pane.d.distinct) ? pane.d.distinct.tracks : 0) + ' different songs</font>'
           width: parent.width
           elide: Text.ElideRight
-          font.family: host.family; font.pixelSize: Tui.T.title
+          font.family: host.family; font.pixelSize: Tui.px("title", Style.font.body)
         }
         // the cards: label on the left, the answer on the right
         Text {

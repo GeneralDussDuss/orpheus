@@ -108,13 +108,13 @@ Rectangle {
       Text {
         anchors.verticalCenter: parent.verticalCenter
         text: "╱╱╱╱"
-        font.family: host.family; font.pixelSize: Tui.T.display
+        font.family: host.family; font.pixelSize: Tui.px("display", Style.font.body)
         color: host.accentText
       }
       GlowText {
         anchors.verticalCenter: parent.verticalCenter
         text: "ORPHEUS"
-        font.family: host.family; font.pixelSize: Tui.T.display; font.bold: true; font.letterSpacing: Tui.TRACK.display
+        font.family: host.family; font.pixelSize: Tui.px("display", Style.font.body); font.bold: true; font.letterSpacing: Tui.TRACK.display
         color: host.accentText
         glow: Tui.bloom(host.engine) * 0.6
         glowLive: glow > 0
@@ -122,7 +122,7 @@ Rectangle {
       Text {
         anchors.verticalCenter: parent.verticalCenter
         text: "╱╱╱╱"
-        font.family: host.family; font.pixelSize: Tui.T.display
+        font.family: host.family; font.pixelSize: Tui.px("display", Style.font.body)
         color: host.accentText
       }
     }
@@ -142,7 +142,7 @@ Rectangle {
           text: pane.api && pane.api.connecting ? "starting the player service…"
                 : pane.api && pane.api.reconnecting ? "lost the player service, reconnecting…"
                 : "the player service isn't running"
-          font.family: host.family; font.pixelSize: Tui.T.body; color: host.fg
+          font.family: host.family; font.pixelSize: Tui.px("body", Style.font.body); color: host.fg
         }
         // On Windows the app restarts the daemon itself, so there is nothing to tell
         // the user to do unless that has given up (connecting stops after 12 tries).
@@ -150,14 +150,14 @@ Rectangle {
           visible: Qt.platform.os !== "windows" || !(pane.api && (pane.api.connecting || pane.api.reconnecting))
           text: Qt.platform.os === "windows" ? "❯ quit Orpheus from the tray and open it again"
                                              : "❯ systemctl --user start orpheusd"
-          font.family: host.family; font.pixelSize: Tui.T.body; color: host.dim
+          font.family: host.family; font.pixelSize: Tui.px("body", Style.font.body); color: host.dim
         }
         // it is already trying again on its own; say so, so the page isn't a dead end
         Text {
           topPadding: host.ch * 0.4
           textFormat: Text.StyledText
           text: Tui.busy(host.clock, "reconnecting by itself", Tui.hex(host.accentText))
-          font.family: host.family; font.pixelSize: Tui.T.caption; color: host.dim
+          font.family: host.family; font.pixelSize: Tui.px("caption", Style.font.body); color: host.dim
         }
       }
 
@@ -168,11 +168,11 @@ Rectangle {
         Text {
           // masked like the rail's account line: this page ends up in screenshots too
           text: "● signed in" + (pane.login.user ? " as " + host.maskAccount(pane.login.user) : "") + (pane.login.hires ? " · hi-res unlocked" : " · lossless")
-          font.family: host.family; font.pixelSize: Tui.T.body; color: host.fg
+          font.family: host.family; font.pixelSize: Tui.px("body", Style.font.body); color: host.fg
           bottomPadding: host.ch * 0.3
         }
         HintBar {
-          pixelSize: Tui.T.body
+          pixelSize: Tui.px("body", Style.font.body)
           keyColor: host.accentText; labelColor: host.dim; hoverColor: host.accentText
           items: (pane.login.hires ? [] : [{ k: "h", l: "sign in again for hi-res (24-bit)", run: function() { pane.hiresSignIn() }, tip: "a second sign-in unlocks 24-bit" }])
                  .concat([{ k: "o", l: "sign out", run: function() { pane.signOut() }, tip: "sign out of TIDAL" },
@@ -184,7 +184,7 @@ Rectangle {
       StateColumn {
         id: signedOutCol
         on: pane.signedOutOn
-        Text { text: "sign in with your TIDAL account"; font.family: host.family; font.pixelSize: Tui.T.body; color: host.fg; bottomPadding: host.ch * 0.2 }
+        Text { text: "sign in with your TIDAL account"; font.family: host.family; font.pixelSize: Tui.px("body", Style.font.body); color: host.fg; bottomPadding: host.ch * 0.2 }
         Repeater {
           model: [{ k: "l", l: "link sign-in", d: "quickest · up to 16/44.1 lossless", run: function() { pane.linkSignIn() }, tip: "sign in through a link in the browser" },
                   { k: "h", l: "hi-res sign-in", d: "one extra step · up to 24/192", run: function() { pane.hiresSignIn() }, tip: "sign in for 24-bit" }]
@@ -194,12 +194,12 @@ Rectangle {
               width: host.cw * 22; height: optBar.height
               HintBar {
                 id: optBar
-                pixelSize: Tui.T.body
+                pixelSize: Tui.px("body", Style.font.body)
                 keyColor: host.accentText; labelColor: host.fg; hoverColor: host.accentText
                 items: [modelData]
               }
             }
-            Text { text: modelData.d; font.family: host.family; font.pixelSize: Tui.T.body; color: host.dim }
+            Text { text: modelData.d; font.family: host.family; font.pixelSize: Tui.px("body", Style.font.body); color: host.dim }
           }
         }
         Text {
@@ -207,7 +207,7 @@ Rectangle {
           width: parent.width
           wrapMode: Text.WordWrap
           text: "approve Orpheus in the browser tab that opened\nor visit " + (pane.login.url || "") + "  code " + (pane.login.code || "")
-          font.family: host.family; font.pixelSize: Tui.T.body; color: host.accentText
+          font.family: host.family; font.pixelSize: Tui.px("body", Style.font.body); color: host.accentText
           topPadding: host.ch * 0.5
         }
       }
@@ -220,7 +220,7 @@ Rectangle {
           width: parent.width
           wrapMode: Text.WordWrap
           text: "1  sign in on the TIDAL page that opened\n2  you'll land on a page that says \"Oops\". That's expected\n3  copy that page's full address (ctrl+l, ctrl+c). Orpheus picks it up by itself"
-          font.family: host.family; font.pixelSize: Tui.T.body; color: host.fg
+          font.family: host.family; font.pixelSize: Tui.px("body", Style.font.body); color: host.fg
         }
         Rectangle {
           width: parent.width
@@ -231,14 +231,14 @@ Rectangle {
           property real focusIn: paste.activeFocus ? 1 : 0
           Behavior on focusIn { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
           border.color: Tui.mix(host.dim, host.accent, focusIn)
-          Text { id: prompt; x: host.cw; anchors.verticalCenter: parent.verticalCenter; text: "❯"; font.family: host.family; font.pixelSize: Tui.T.body; color: host.accentText }
+          Text { id: prompt; x: host.cw; anchors.verticalCenter: parent.verticalCenter; text: "❯"; font.family: host.family; font.pixelSize: Tui.px("body", Style.font.body); color: host.accentText }
           TextInput {
             id: paste
             anchors.left: prompt.right; anchors.leftMargin: host.cw
             anchors.right: parent.right; anchors.rightMargin: host.cw
             anchors.verticalCenter: parent.verticalCenter
             clip: true
-            font.family: host.family; font.pixelSize: Tui.T.body
+            font.family: host.family; font.pixelSize: Tui.px("body", Style.font.body)
             color: host.fg
             selectionColor: Tui.alpha(Color.accent, Tui.A.select)
             cursorDelegate: TuiCaret { host: pane.host; visible: paste.activeFocus }
@@ -261,7 +261,7 @@ Rectangle {
           Text {
             textFormat: Text.StyledText
             text: pane.finishing ? Tui.busy(host.clock, "signing in", Tui.hex(host.accentText)) : "watching the clipboard ·"
-            font.family: host.family; font.pixelSize: Tui.T.caption; color: host.dim
+            font.family: host.family; font.pixelSize: Tui.px("caption", Style.font.body); color: host.dim
           }
           HintBar {
             visible: !pane.finishing
@@ -277,12 +277,12 @@ Rectangle {
       visible: !!pane.login.error
       width: parent.width
       spacing: host.cw
-      Text { id: errMark; text: "✕"; font.family: host.family; font.pixelSize: Tui.T.body; color: pane.urgent }
+      Text { id: errMark; text: "✕"; font.family: host.family; font.pixelSize: Tui.px("body", Style.font.body); color: pane.urgent }
       Text {
         width: parent.width - errMark.width - host.cw
         wrapMode: Text.WordWrap
         text: pane.login.error || ""
-        font.family: host.family; font.pixelSize: Tui.T.body; color: host.fg
+        font.family: host.family; font.pixelSize: Tui.px("body", Style.font.body); color: host.fg
       }
     }
   }

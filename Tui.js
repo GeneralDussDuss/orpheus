@@ -75,11 +75,33 @@ function decode(text, progress, seed) {
   return out
 }
 
+// Terminal cells in `s`: a wide glyph (CJK, fullwidth, emoji) takes two.
+function cells(s) {
+  s = String(s || "")
+  var c = 0
+  for (var i = 0; i < s.length; i++) {
+    var code = s.codePointAt(i)
+    if (code > 0xffff) i++
+    c += wide(code) ? 2 : 1
+  }
+  return c
+}
+
 // `s` cut to `n` cells with an ellipsis, so a decode never outgrows its slot.
+// Walks code points: a CJK title counts two cells a glyph, and a cut never
+// lands between the halves of a surrogate pair.
 function fit(s, n) {
   s = String(s || "")
   n = Math.max(1, Math.floor(n))
-  return s.length <= n ? s : s.slice(0, n - 1) + "…"
+  if (s.length <= n / 2 || cells(s) <= n) return s
+  var used = 0, i = 0
+  while (i < s.length) {
+    var code = s.codePointAt(i), w = wide(code) ? 2 : 1, len = code > 0xffff ? 2 : 1
+    if (used + w > n - 1) break
+    used += w
+    i += len
+  }
+  return s.slice(0, i) + "…"
 }
 
 // Braille spectrum: `levels` (0..1) drawn as `rows` lines of braille, each
@@ -209,8 +231,11 @@ var SPRING = { spring: 6, damping: 0.4 }   // the Heart's spring; a press releas
 // A toast stays long enough to read: ~40 ms a character, 1.8..6 s.
 function toastMs(text) { return Math.max(1800, Math.min(6000, 1400 + String(text || "").length * 40)) }
 
-// Type scale (px at the 13 px body). Call sites write Tui.T.title.
+// Type scale (px at the 13 px body). Call sites write Tui.px("title", Style.font.body)
+// so the steps stay relative to the user's own font size (Quickshell's Commons
+// on Linux); T is the table at 13.
 var T = { caption: 11, body: 13, lead: 15, title: 17, display: 21, hero: 26 }
+function px(step, body) { return Math.round(T[step] * (body > 0 ? body : 13) / 13) }
 var TRACK = { label: 1, brand: 2, display: 3 }
 
 // Alpha ladder for fills over a surface.

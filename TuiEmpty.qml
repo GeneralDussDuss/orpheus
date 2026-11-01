@@ -43,7 +43,7 @@ Column {
   onShownChanged: rearm()
   Component.onCompleted: rearm()
 
-  spacing: Tui.T.body * 0.45
+  spacing: Tui.px("body", Style.font.body) * 0.45
   visible: opacity > 0.01
   opacity: shown && armed ? 1 : 0
   Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
@@ -53,9 +53,11 @@ Column {
     horizontalAlignment: Text.AlignHCenter
     wrapMode: Text.WordWrap
     textFormat: Text.StyledText
-    font.family: e.family; font.pixelSize: Tui.T.body
+    font.family: e.family; font.pixelSize: Tui.px("body", Style.font.body)
     color: e.fg
-    text: e.kind === "busy"
+    // the spinner reads the clock only while it is on screen (a reload that
+    // keeps its rows has kind busy but nothing shown)
+    text: e.kind === "busy" && e.visible
           ? Tui.busy(e.clock, e.title, Tui.hex(e.accentText))
           : '<font color="' + Tui.hex(e.mark) + '">' + (e.kind === "error" ? "✕" : "╱╱") + '</font>&nbsp;&nbsp;'
             + Tui.esc(e.title)
@@ -67,7 +69,7 @@ Column {
     horizontalAlignment: Text.AlignHCenter
     wrapMode: Text.WordWrap
     text: e.reason
-    font.family: e.family; font.pixelSize: Tui.T.caption
+    font.family: e.family; font.pixelSize: Tui.px("caption", Style.font.body)
     color: e.dim
   }
   HintBar {

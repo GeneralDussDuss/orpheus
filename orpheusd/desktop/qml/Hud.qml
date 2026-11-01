@@ -95,7 +95,7 @@ Window {
           visible: cover.status !== Image.Ready
           text: "╱╱╱\n╱╱╱"
           horizontalAlignment: Text.AlignHCenter
-          font.family: Style.font.family; font.pixelSize: Tui.T.body
+          font.family: Style.font.family; font.pixelSize: Tui.px("body", Style.font.body)
           color: hud.dim
         }
         Image {
@@ -120,7 +120,7 @@ Window {
           text: hud.hasTrack ? hud.player.trackTitle : "nothing playing"
           color: Tui.ensure(hud.c1, hud.bg, 4.5)
           font.family: Style.font.family
-          font.pixelSize: Tui.T.lead
+          font.pixelSize: Tui.px("lead", Style.font.body)
           font.bold: true
           elide: Text.ElideRight
           glow: hud.shown ? hud.glow * 0.7 : 0
@@ -134,7 +134,7 @@ Window {
                 + Tui.esc(hud.hasTrack ? (hud.player.trackArtist || "") + (hud.playing ? "" : " · paused") : "pick something in the player")
           color: hud.dim
           font.family: Style.font.family
-          font.pixelSize: Tui.T.caption
+          font.pixelSize: Tui.px("caption", Style.font.body)
           elide: Text.ElideRight
         }
       }
