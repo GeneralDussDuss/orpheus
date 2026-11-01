@@ -662,6 +662,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+analysis = [
+    { name = "numpy" },
+]
 desktop = [
     { name = "numpy" },
     { name = "pyside6-essentials" },
@@ -671,11 +674,12 @@ desktop = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.10" },
     { name = "dbus-next", marker = "sys_platform == 'linux'", specifier = ">=0.2.3" },
+    { name = "numpy", marker = "extra == 'analysis'", specifier = ">=2.5.4" },
     { name = "numpy", marker = "extra == 'desktop'", specifier = ">=2.5.4" },
     { name = "pyside6-essentials", marker = "extra == 'desktop'", specifier = ">=6.8" },
     { name = "tidalapi", specifier = ">=0.8.11" },
 ]
-provides-extras = ["desktop"]
+provides-extras = ["desktop", "analysis"]
 
 [[package]]
 name = "propcache"
