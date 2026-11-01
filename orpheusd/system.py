@@ -62,6 +62,31 @@ def mpv_path() -> str:
     return "mpv"
 
 
+def ffmpeg_path() -> str | None:
+    """ffmpeg on PATH, or where winget's yt-dlp dependency leaves it (yt-dlp.FFmpeg
+    lands under WinGet\\Packages, not WinGet\\Links). ORPHEUS_FFMPEG overrides.
+    None = missing: the drop map reports it as a health state, never a crash."""
+    found = os.environ.get("ORPHEUS_FFMPEG") or shutil.which("ffmpeg")
+    if found or not WINDOWS:
+        return found
+    env = lambda v: os.environ.get(v, "")
+    for pattern in (rf"{env('LOCALAPPDATA')}\Microsoft\WinGet\Links\ffmpeg.exe",
+                    rf"{env('LOCALAPPDATA')}\Microsoft\WinGet\Packages\*FFmpeg*\**\bin\ffmpeg.exe",
+                    rf"{env('ProgramFiles')}\ffmpeg\bin\ffmpeg.exe",
+                    rf"{env('USERPROFILE')}\scoop\shims\ffmpeg.exe",
+                    rf"{env('ProgramData')}\chocolatey\bin\ffmpeg.exe"):
+        hits = glob.glob(pattern, recursive=True)
+        if hits:
+            return hits[0]
+    return None
+
+
+def numpy_available() -> bool:
+    """The drop map's worker needs numpy (the desktop or analysis extra); the daemon never imports it."""
+    import importlib.util
+    return importlib.util.find_spec("numpy") is not None
+
+
 def curd_path() -> str | None:
     """Curd on PATH, or where its Windows installer puts it (per user, never on PATH)."""
     found = shutil.which("curd")

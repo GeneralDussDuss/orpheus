@@ -77,7 +77,11 @@ def find_tools():
                        rf"{env('ProgramFiles', '')}\cava\cava.exe",
                        rf"{env('LOCALAPPDATA', '')}\Programs\cava\cava.exe"],
               "yt-dlp": [rf"{env('LOCALAPPDATA', '')}\Microsoft\WinGet\Links\yt-dlp.exe",
-                         rf"{env('LOCALAPPDATA', '')}\Microsoft\WinGet\Packages\*yt-dlp*\**\yt-dlp.exe"]}
+                         rf"{env('LOCALAPPDATA', '')}\Microsoft\WinGet\Packages\*yt-dlp*\**\yt-dlp.exe"],
+              # the drop map's decoder: winget's yt-dlp pulls yt-dlp.FFmpeg, which is not linked
+              "ffmpeg": [rf"{env('LOCALAPPDATA', '')}\Microsoft\WinGet\Packages\*FFmpeg*\**\bin\ffmpeg.exe",
+                         rf"{env('LOCALAPPDATA', '')}\Microsoft\WinGet\Links\ffmpeg.exe"],
+              "qsb": [rf"{env('LOCALAPPDATA', '')}\Orpheus\tools\qsb\qsb.exe"]}   # your shaders' compiler (optional)
     for tool, patterns in places.items():
         if shutil.which(tool):
             continue
@@ -506,12 +510,16 @@ def main():
     ap.add_argument("--write-icon", metavar="PATH", help="write the app icon (.ico/.png) and quit")
     ap.add_argument("--no-daemon", action="store_true", help="do not start orpheusd")
     ap.add_argument("--style", help="visual style to switch to first (prism is slow to render off-screen)")
+    ap.add_argument("--scene", help="stage scene to switch to first (viz|cassette)")
     args = ap.parse_args()
 
     qt_argv = sys.argv[:1] + (["-platform", "offscreen"] if args.shot else [])
     if args.shot and "ORPHEUS_HOME" not in os.environ:
         import tempfile
         os.environ["ORPHEUS_HOME"] = tempfile.mkdtemp(prefix="orpheus-shot-")
+    if args.shot:
+        # never the real shaders folder: a shot runs on a sandboxed home
+        os.environ.setdefault("ORPHEUS_SHADERS", os.path.join(os.environ["ORPHEUS_HOME"], "shaders"))
     pythonw = sys.stderr is None or "pythonw" in Path(sys.executable).name.lower()
     if pythonw:
         from .applog import prepare_qt_env
@@ -598,6 +606,7 @@ def main():
     hotkeys = None
     if args.shot:
         QTimer.singleShot(1500, lambda: (args.style and call("orpheus", "style", args.style),
+                                         args.scene and call("orpheus", "scene", args.scene),
                                          args.open != "none" and call("orpheus", args.open)))
         QTimer.singleShot(6000, lambda: (shoot(app, Path(args.shot), engine), app.quit()))
     else:

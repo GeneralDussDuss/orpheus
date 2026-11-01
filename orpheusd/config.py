@@ -29,6 +29,8 @@ DEFAULTS = {
     "lastfmKey": "",
     "lastfmSecret": "",
     "lastfmUrl": "",         # "" = https://ws.audioscrobbler.com/2.0/
+    "dropMap": True,         # analyse tracks ahead for the visualizer's drop map (needs ffmpeg)
+    "shadertoyKey": "",      # shadertoy.com/myapps app key: lets a pasted link fetch the shader (official API)
 }
 
 

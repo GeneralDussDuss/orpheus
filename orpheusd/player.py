@@ -353,6 +353,7 @@ class Player:
             "stream": self.stream_info,
             "queueIndex": self.pos,
             "queueLength": len(self.order),
+            "queueRev": self.queue_rev(),
             "upNext": upcoming,
             "error": self.error,
             # The desktop's audio capture listens to this process tree only.
@@ -838,6 +839,31 @@ class Player:
         return (id(self.queue), len(self.queue), id(self.order), len(self.order), self.pos,
                 id(self.context), self.shuffle, self.repeat)
 
+    # What a tracklist view gets per row: never the art or the stream source.
+    QUEUE_FIELDS = ("id", "title", "artists", "album", "duration", "kind", "explicit", "radio")
+
+    def queue_rev(self) -> str:
+        """Changes when the queue's contents or order change (not on a skip):
+        the cassette deck's j-card refetches GET /queue only when this moves.
+        A 32-bit collision costs one missed refresh, nothing more."""
+        return "%08x" % (hash((id(self.queue), len(self.queue), id(self.order), len(self.order),
+                               id(self.context), self.shuffle)) & 0xFFFFFFFF)
+
+    def queue_window(self, start: int, count: int) -> dict:
+        """A slice of the play order for a tracklist view (the cassette deck's
+        j-card). Pure: no await, no I/O. Rows carry no art and no stream source."""
+        n = len(self.order)
+        start = max(0, min(int(start), n))
+        count = max(0, min(int(count), 100))
+        rows = []
+        for i in range(start, min(n, start + count)):
+            t = self.queue[self.order[i]]
+            row = {k: t[k] for k in self.QUEUE_FIELDS if k in t}
+            row["i"] = i
+            rows.append(row)
+        return {"index": self.pos, "length": n, "from": start, "queueRev": self.queue_rev(),
+                "context": self.context or {}, "tracks": rows}
+
     def place(self) -> dict:
         """Where in the queue we are: small, so it can be saved every few seconds."""
         cur = self.current
@@ -972,12 +998,19 @@ class Player:
         self.eq = eqmod.normalize(state)
         await self._apply_eq()
         self.on_change()
-        return self.eq_state()
+        return self.eq_state(full=True)
 
-    def eq_state(self) -> dict:
+    def eq_state(self, full: bool = False) -> dict:
         s = dict(self.eq)
         s["preampEffective"] = eqmod.effective_preamp(self.eq)
         s["active"] = bool(self._eq_chain)
+        s["autoeqActive"] = eqmod.autoeq_live(self.eq) and bool(self._eq_chain)
+        # /status is long-polled: carry a summary of the correction there, not
+        # its filters (~120 bytes instead of ~800). /eq replies are full.
+        if not full and s.get("autoeq"):
+            a = s["autoeq"]
+            s["autoeq"] = {"name": a["name"], "source": a["source"], "rig": a["rig"],
+                           "count": len(a["filters"])}
         return s
 
     async def set_volume(self, vol: float):
