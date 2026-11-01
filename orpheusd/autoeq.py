@@ -388,7 +388,9 @@ class AutoEq:
 
         if time.time() - self.fetched_at > INDEX_TTL:
             self.kick()                              # stale: refresh, keep answering
-        out = {"state": "ready", "count": len(self.rows), "age": self._age(), "error": ""}
+        # `refreshing` lets the picker poll until a background refresh lands
+        out = {"state": "ready", "count": len(self.rows), "age": self._age(), "error": "",
+               "refreshing": self.refreshing}
         if not q:
             out["results"] = self.recent()
             return out
