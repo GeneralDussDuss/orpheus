@@ -66,9 +66,10 @@ opens the player when it is done. Run the same line again to update.
 | **A** | 05 | [boot sequence](#05--boot-sequence--install) | install, update, uninstall |
 | **B** | 06 | [sign-in](#06--sign-in) | standard and hi-res |
 | **B** | 07 | [keybinds and usage](#07--keybinds-and-usage) | keys, CLI, widget |
-| **B** | 08 | [equalizer](#08--equalizer) | ten bands, headphone corrections |
+| **B** | 08 | [equalizer](#08--equalizer) | ten bands, AutoEQ headphone corrections |
 | **B** | 09 | [lyrics](#09--lyrics) | synced, cached, never bundled |
 | **B** | 10 | [configuration](#10--configuration) | where things live |
+| **B** | 11 | [your own shaders](#11--your-own-shaders) | shadertoy-style .frag, hot reload |
 | `//WIN` | | [liner notes](#-liner-notes--orpheuswin) | what the Windows edition adds |
 | B-sides | | [troubleshooting](#-b-sides--troubleshooting) · [status and known issues](#-b-sides--status-and-known-issues) | the honest list |
 | | | [credits and licence](#-credits--licence) | |
@@ -117,11 +118,15 @@ Colours come from the active Omarchy theme, so it changes when your desktop does
 |---|---|
 | **The player** | A TUI window with your mixes, playlists, albums, tracks and artists, a search, a queue, and a visualizer in the right-hand rail. `Super+Shift+M`. |
 | **The stage** | The same engine fullscreen, with a mini-player. `Super+Ctrl+M`. |
+| **Cassette deck** | Press `t` in the visualizer: reels at tape speed, vu needles, the queue as a j-card, all in the theme. Drag a reel to scrub. No album art. |
 | **The widget** | A desktop widget that cycles styles inline — no popout. Five layer modes: `top`, `reserve`, `desktop`, `tile`, `float`. |
 | **The bar** | A tiny always-on spectrum in the Omarchy bar. Click for the stage, scroll for the next style. |
-| **Eight styles** | Prism, Skyline, Horizon, Orb, Tunnel, Halo, Scope and Nova — plus `mini` for bar-sized surfaces, and a GPU spectrum-history pass that Prism and Horizon build terrain from. |
+| **Twelve styles** | Prism, Skyline, Horizon, Orb, Tunnel, Halo, Scope, Nova, Ridge, Ink, Abyss and Aurora — plus `mini` for bar-sized surfaces, and a GPU spectrum-history pass that Prism and Horizon build terrain from. |
 | **Hi-res** | Up to FLAC hi-res through the PKCE sign-in, lossless otherwise. The player shows which you got. |
 | **More than TIDAL** | Section `8` searches YouTube and SoundCloud through `yt-dlp`, and anime through `ani-cli` (on Windows, `c` opens Curd). Videos play in their own window; YouTube and SoundCloud also play as audio through the same queue, equalizer and visualizer. None of it needs a TIDAL sign-in. |
+| **Your own shaders** | drop a Shadertoy-style .frag in your shader folder, or paste a shadertoy link in the Ctrl+K palette; it compiles on save, hot-reloads while you edit, and joins the style list. |
+| **Drop map** | Each TIDAL track is analysed ahead of time so builds, drops and beats land exactly: the picture winds up over the last bars, blacks out on the last beat and bursts on the drop; drop marks on the seek bar. Needs ffmpeg. |
+| **AutoEQ** | Press `A` on the equalizer page and type your headphones: AutoEq's measured correction is fetched on request and stacked under the ten bands, with its curve drawn beneath them. |
 | **Desktop integration** | MPRIS, so your bar, your media keys and the rest of the desktop see the track. Favourites from anywhere in the UI. The queue and position survive a service restart. |
 
 ![the desktop widget](docs/media/widget.png)
@@ -182,8 +187,12 @@ breakbeat locking to half-time.
   with AniList sync.
 - Optional: a paid TIDAL subscription, for the music library. Everything else works
   without one.
-- To rebuild shaders only: `qsb` from Qt 6 shader tools. The compiled `shaders/*.qsb`
-  files are committed, so a normal install does not need it.
+- Optional: `ffmpeg` and numpy for the drop map (on Windows, winget's `yt-dlp` already
+  brings ffmpeg and the desktop extra brings numpy). Without them every track plays on the
+  live beat grid.
+- To rebuild shaders, or for your own shaders: `qsb` from Qt 6 shader tools
+  (`qt6-shadertools`). The compiled `shaders/*.qsb` files are committed, so a normal
+  install does not need it.
 
 Orpheus has been run on very few machines so far (Arch-based Omarchy, Hyprland 0.56). If
 you get it working somewhere else, or it breaks, an issue is genuinely useful.
@@ -309,6 +318,11 @@ In the player: `v` cycles the visualizer plane, `V` opens the stage, `1`–`9` s
 (home, search, mixes, playlists, albums, tracks, artists, video, stats), `↵` plays, `space` pauses,
 `f` favourites, `/` searches, `,` opens settings, `Ctrl+K` the command palette, `?` the key sheet, `q` closes.
 
+`t` toggles the cassette deck. In the visualizer window `t` swaps the visualizer and the deck; under the deck
+`←`/`→` shuttle ± 10 s, `e` ejects (and closes), and a reel drags to scrub (one turn is 30 s).
+
+A tape-deck key is yours to bind, e.g. `o.bind("SUPER + CTRL + T", "Music tape deck", "omarchy-shell -q orpheus cassette")`, or `orpheus tape`.
+
 **Sharing.** `y` copies a TIDAL link to the clipboard — for the row under the cursor,
 not necessarily what is playing, since what you want to send is usually what you are
 looking at. `Y` copies a [song.link](https://song.link) instead, which opens on whatever
@@ -337,7 +351,7 @@ That is what makes it safe for a `.desktop` entry, which a launcher may fire twi
 | `style` | `compact` · `full` |
 | `corner` | `top-left` · `top-right` · `bottom-left` · `bottom-right` |
 | `layer` | `top` · `reserve` · `desktop` · `tile` · `float` |
-| `viz` | `prism` · `skyline` · `horizon` · `tunnel` · `orb` · `halo` · `scope` · `nova` |
+| `viz` | `prism` · `skyline` · `horizon` · `tunnel` · `orb` · `halo` · `scope` · `nova` · `ridge` · `ink` · `abyss` · `aurora` |
 | `monitor` | a monitor name, or empty for wherever it lands |
 
 `layer` is the one that decides how it behaves: `desktop` pins it behind your windows like
@@ -348,8 +362,10 @@ this player does not do popout menus.
 
 Or call the shell directly — `omarchy-shell orpheus <method>` — with methods
 `status toggle show hide library login eq lyrics style railViz nextRailViz nextStyle miniPlayer
-placement widget`. Note the widget's visualizer is `widget viz <style>`; there is no
-`widgetViz`.
+placement scene cassette dropMap importShader widget`. Note the widget's visualizer is `widget viz <style>`; there is no
+`widgetViz`. `scene viz|cassette|next` sets the stage's scene; `cassette` toggles the deck
+(opening the stage on it if closed). `dropMap on|off|toggle` flips the drop map;
+`importShader <text>` imports a shadertoy link or GLSL as a style.
 
 ### 08 · equalizer
 
@@ -385,7 +401,8 @@ Six tone presets ship with it: Flat, Bass Lift, Vocal, Loudness, Tame Treble and
 Open it with `e` in the player, or `omarchy-shell orpheus eq` to open the window straight
 onto it. Inside: `h`/`l` pick a band, `j`/`k` move it by half a decibel, `J`/`K` coarse,
 `0` zeroes a band, `z` zeroes all, `p` cycles presets, `b` bypasses, `esc` goes back.
-`[` and `]` set the preamp, `\` returns it to automatic. The bands also take the mouse:
+`[` and `]` set the preamp, `\` returns it to automatic. `A` finds your headphones,
+`x` switches their correction on and off, `X` forgets it. The bands also take the mouse:
 click or drag to set one, scroll to nudge, middle click to zero, right click to bypass.
 
 The transport bar carries a small readout beside the volume — eight block glyphs
@@ -401,6 +418,38 @@ not its data — the measurements come from oratory1990, Rtings, Super Review an
 of whom have granted redistribution, and the maintainer confirms the distinction in AutoEq
 issue [#790](https://github.com/jaakkopasanen/AutoEq/issues/790). So Orpheus ships the
 importer instead, and the numbers stay on your machine.
+
+The quick way is the picker. On the equalizer page press **`A`**, type a model — `hd600`,
+`sundara`, `moondrop aria` — and press **⏎**. Orpheus looks it up in AutoEq's public index,
+downloads that one headphone's `ParametricEQ.txt` from AutoEq's repository to your machine,
+and plays through it. Rows name the measurement source and rig (oratory1990, crinacle on
+711, Rtings…), oratory1990 first where there is a choice, as AutoEq itself recommends; the
+`●` marks the one in use. Everything is credited to the named source and fetched only when you
+ask; none of it ships with Orpheus.
+
+The correction is **stacked**, not swapped: it runs first, in the same mpv filter graph, and
+your ten bands sit on top of it, so the bars now mean "on top of my headphones". Its curve is
+drawn beneath the bars on the same scale, with the combined response dashed over it. With a
+correction live, the automatic preamp is measured from the combined response — the top of the
+whole cascade, rounded up to half a decibel — so it is exactly enough headroom and no more.
+`x` switches the correction off without forgetting it, `X` forgets it, and presets (`p`) leave
+it alone.
+
+The index (about 9,000 headphones) is fetched on the first search and refreshed in the
+background once a month (`ctrl+r` in the picker refreshes it now); devices are fetched once.
+Both live in `%LOCALAPPDATA%\Orpheus\cache\autoeq` on Windows and `~/.cache/orpheus/autoeq` on
+Linux. The chosen correction is stored with the EQ state, so it keeps playing after a restart
+with the network unplugged. Offline with no index, the picker lists the headphones you have
+used before.
+
+```sh
+curl -s '127.0.0.1:47837/autoeq/search?q=hd%20600'
+curl -X POST 127.0.0.1:47837/autoeq/apply -d '{"path":"oratory1990/over-ear/Sennheiser HD 600"}'
+curl -X POST 127.0.0.1:47837/eq -d '{"autoeqOn":false}'      # off, kept
+curl -X POST 127.0.0.1:47837/autoeq/clear                    # forgotten
+```
+
+The manual route below still works, for a fixed-band file you already have.
 
 Find your headphones in AutoEq's results, take the **`FixedBandEQ.txt`** (not
 `ParametricEQ.txt` or `GraphicEQ.txt` — the fixed-band file is already fitted to these exact
@@ -447,10 +496,50 @@ Little is configurable, and most of it is by hand.
   Imported headphone corrections live beside it in `eq-presets.json`.
 - **Port.** The daemon defaults to `47837`, settable with `--port` or `ORPHEUS_PORT`.
   `Api.qml` hardcodes `47837`, so changing the daemon's port also means editing the QML.
+- **Daemon routes** added with the deck, the drop map, your shaders and AutoEQ: `GET /queue?from=&count=`
+  (a window of the play order), `GET /analysis/{id}` (a track's drop map), `GET /shaders`,
+  `POST /shaders/import`, `POST /shaders/reload`, `GET /autoeq/search?q=`, `POST /autoeq/apply`,
+  `POST /autoeq/clear`, `POST /autoeq/refresh`. All loopback-only behind the same guard.
 - **State**: `~/.local/state/orpheus/` (session, prefs, `resume.json` — the queue and
   position are restored on start). **Cache**: `~/.cache/orpheus/`. **mpv socket**:
   `$XDG_RUNTIME_DIR/orpheus/mpv.sock`.
+- **Stage scene**: `scene` in `~/.config/orpheus/config.json`, `"viz"` (default) or `"cassette"`;
+  set it from settings ▸ visuals ▸ stage scene, `t`, or IPC.
+- **Drop map**: `dropMap` (default on; daemon and player) and `dropMapLeadMs` (player, default 30)
+  in `~/.config/orpheus/config.json`. The daemon needs `ffmpeg` on PATH (`ORPHEUS_FFMPEG`
+  overrides) and numpy (`uv sync --extra analysis`, or `--extra desktop`). Maps are cached in
+  `~/.cache/orpheus/analysis/`; `orpheus dropMap on|off|toggle` flips it.
+- **Your shaders**: `shadertoyKey` in `config.json` (your shadertoy.com app key, for pasted
+  links); `ORPHEUS_SHADERS` moves the shader folder, `ORPHEUS_QSB` points at the compiler
+  (set but empty = none).
+- **AutoEQ**: no config key; the chosen correction is daemon state, stored with the EQ in
+  `daemon.json`. Index and device files are cached in `~/.cache/orpheus/autoeq/`.
 - **Colours and font** follow the Omarchy theme and font. There is nothing to set.
+
+### 11 · your own shaders
+
+Any Shadertoy-style `.frag` in your shader folder becomes a style called `@<file name>`:
+
+| | |
+|---|---|
+| Windows | `%LOCALAPPDATA%\Orpheus\shaders` |
+| Linux | `~/.config/orpheus/shaders` (`$XDG_CONFIG_HOME`) |
+| either | `ORPHEUS_SHADERS` overrides it |
+
+Save a file there and it compiles in a second or two (qsb, one at a time, idle priority); edit it while it's on
+screen and it rebuilds in place. A broken save keeps the last good picture and says which line, in a toast, a tick
+on the stage, settings ▸ visuals ▸ your shaders and `.build/<name>.log`. Other ways in: paste a shadertoy link or an
+Image shader's code into Ctrl+K (it offers "import shader · …" first), or drop a `.frag` on the visualizer card
+(on Linux that depends on the compositor; the palette always works).
+
+`mainImage`, `iTime`, `iResolution`, `iMouse` (xy, hover), `iFrame`, `iTimeDelta` work; `iChannel0` is the audio
+(512x2: spectrum row, plus a wave synthesised from the 32 bands — Orpheus never sees samples), `iChannel1` the
+spectrum history. Every Orpheus uniform is in scope too — `band(x)`, `kick`, `beatPhase`, `build`, `drop`, `pal(x)` —
+and the folder's `README.txt` lists them. Pragmas: `//! name:`, `//! scale:` (default 0.8), `//! time: flow`,
+`//! transition:`. A line `//#common` makes it an Orpheus-native shader. Only Image + Common passes; multipass
+shaders get a clear no. Shadertoy links need your own app key (settings ▸ integrations ▸ shadertoy) and a shader
+published as Public + API; imports keep the author and link at the top of the file (Shadertoy's default licence is
+CC BY-NC-SA 3.0). No album art ever reaches a shader.
 
 ---
 
@@ -463,14 +552,16 @@ supplies stand-ins for the Quickshell and Omarchy pieces. The pressing:
 | # | track | what it adds |
 |:-:|---|---|
 | 01 | **Themes** | 8 originals (acid-rave, aurora, chrome-heart, lyre, styx, sub-bass, underworld, vinyl) and 19 [Omarchy](https://omarchy.org) palettes, in the tray's Theme menu. A **theme builder** turns three colours (background, text, accent) into a whole palette, with a dice roll, and saves it to `~/.config/orpheus/themes`. **From Album Art** pulls a palette from the cover of whatever is playing. |
-| 02 | **Eight shader visualizers** | Prism, Skyline, Horizon, Orb, Tunnel, Halo, Scope, Nova. Feedback **trails** (off / subtle / full) and **bloom** (off / subtle / full) are settings. A **director** reads the song's structure (intro, build, drop, breakdown, steady): style changes land on the **downbeat** with a transition, and it can switch style when a drop lands. |
+| 02 | **Twelve shader visualizers** | Prism, Skyline, Horizon, Orb, Tunnel, Halo, Scope, Nova, Ridge, Ink, Abyss, Aurora. Feedback **trails** (off / subtle / full) and **bloom** (off / subtle / full) are settings. A **director** reads the song's structure (intro, build, drop, breakdown, steady): style changes land on the **downbeat** with a transition, and it can switch style when a drop lands. |
 | 03 | **The show** | A fullscreen **show**, a **wallpaper mode** that sits behind your desktop icons, and **kinetic lyrics** over the stage (entrance: wave, rain or plain). |
 | 04 | **Only Orpheus** | The visualizers capture the app's own audio through **WASAPI process loopback** (Windows 10 2004 and later), so a game or a call in the background does not drive them. Where that is missing, they fall back to `cava` on the whole output. |
-| 05 | **Controls** | Settings (`,`), a **Ctrl+K command palette**, a `?` key sheet, and **rebindable global hotkeys**: `Win+Alt+M` player, `Win+Alt+V` visualizer, `Win+Alt+P` mini player, `Win+Alt+Space` play / pause, `Win+Alt+←` / `→` previous / next, `Win+Alt+N` the HUD, and more (the `?` sheet lists the ones your run registered). |
+| 05 | **Controls** | Settings (`,`), a **Ctrl+K command palette**, a `?` key sheet, and **rebindable global hotkeys**: `Win+Alt+M` player, `Win+Alt+V` visualizer, `Win+Alt+P` mini player, `Win+Alt+Space` play / pause, `Win+Alt+←` / `→` previous / next, `Win+Alt+N` the HUD, `Win+Alt+Q` the cassette deck, and more (the `?` sheet lists the ones your run registered). |
 | 06 | **Windows shell** | Taskbar **thumbnail buttons** (previous, play / pause, next), **toasts** on track change, a **jump list**, and a frameless window drawn entirely by the TUI. |
 | 07 | **Game mode** | Notices a fullscreen game, stands the widget, stage and toasts down, and brings them back afterwards. An **in-game HUD** (cover, title, a mini spectrum) slides in on track changes, click-through and never taking focus. **Discord Rich Presence** with your own application ID. |
 | 08 | **Listening** | **Endless radio** when the queue runs out, **crossfade** (2 to 12 s, or gapless), **listening stats** (week, month, year, all time, wrapped; key `9`), **scrobbling** to ListenBrainz and Last.fm, a **sleep timer**, and a **LAN phone remote** behind a pairing token (QR code in settings; off by default). The queue survives restarts. |
 | 09 | **Locked door** | The daemon refuses cross-site and DNS-rebinding requests to its loopback API, so a web page you visit cannot drive it. |
+| 10 | **Cassette deck** | `t` in the stage (or `Win+Alt+Q` anywhere) swaps the visualizer for a tape deck drawn in the theme: area-exact packs that turn at real tape speed, a take-up counter, LO/HI vu needles, the queue as a j-card you can click, piano transport keys and eject. Pausing coasts into a brake kiss; seeks shuttle with blurred spokes. |
+| 11 | **Your shaders** | put qsb.exe + Qt6ShaderTools.dll in %LOCALAPPDATA%\Orpheus\tools\qsb (or set ORPHEUS_QSB); drop a .frag on the visualizer card or paste a shadertoy link in Ctrl+K. |
 
 The developer guide is [docs/windows.md](docs/windows.md).
 
@@ -505,6 +596,10 @@ The developer guide is [docs/windows.md](docs/windows.md).
 - **Visualizer is a black rectangle after a shader edit.** Rebuild with
   `./build-shaders.sh` and restart the shell. A uniform-block mismatch between
   `_common.glsl` and `Viz.qml` is the usual cause.
+- **A user shader is black, or unchanged after an edit.** See settings ▸ visuals ▸ your
+  shaders, or `.build/<name>.log` in the shader folder: a broken save keeps the last good build.
+- **The drop map never kicks in.** Settings ▸ visuals shows "no decoder" under the toggle when
+  the daemon cannot find `ffmpeg`; `curl -s 127.0.0.1:47837/status | jq .analysis` says why.
 - **Restarting `orpheusd` interrupts playback** for about a second; resume brings it back.
 
 ---
