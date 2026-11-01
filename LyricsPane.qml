@@ -137,8 +137,9 @@ Rectangle {
     // and a page that quietly means something different by a key is worse than
     // no shortcut at all
     else if (t === "m") { style = (style + 1) % 3; e.accepted = true }
-    else if (k === Qt.Key_Down || t === "j") { (list.visible ? list : plainFlick).flick(0, -600); e.accepted = true }
-    else if (k === Qt.Key_Up || t === "k") { (list.visible ? list : plainFlick).flick(0, 600); e.accepted = true }
+    // three lines a step, eased by each view's contentY Behavior
+    else if (k === Qt.Key_Down || t === "j") { var f = list.visible ? list : plainFlick; Tui.scrollTo(f, f.contentY + (host ? host.ch * 3 : 48)); e.accepted = true }
+    else if (k === Qt.Key_Up || t === "k") { var g = list.visible ? list : plainFlick; Tui.scrollTo(g, g.contentY - (host ? host.ch * 3 : 48)); e.accepted = true }
     else e.accepted = host.handleKey(e)
   }
 
@@ -207,7 +208,8 @@ Rectangle {
     // positionViewAtIndex sets contentY outright; the Behavior turns that jump
     // into a glide. Using preferredHighlightBegin/End as well would be a second
     // mechanism aiming at the same thing, and the two fight.
-    Behavior on contentY { NumberAnimation { duration: 420; easing.type: Easing.InOutCubic } }
+    Behavior on contentY { NumberAnimation { duration: Tui.PAGE; easing.type: Tui.EASE } }
+    flickDeceleration: Tui.FLICK.decel; maximumFlickVelocity: Tui.FLICK.vmax
 
     delegate: Item {
       id: row
@@ -336,6 +338,8 @@ Rectangle {
     anchors.rightMargin: host ? host.cw * 3 : 12
     contentHeight: body.height
     clip: true
+    flickDeceleration: Tui.FLICK.decel; maximumFlickVelocity: Tui.FLICK.vmax
+    Behavior on contentY { enabled: !plainFlick.moving; NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
     Text {
       id: body
       width: parent.width

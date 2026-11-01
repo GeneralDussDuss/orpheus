@@ -28,11 +28,6 @@ Rectangle {
 
   MouseArea { anchors.fill: parent; onPressed: function(m) { pane.forceActiveFocus(); m.accepted = false } }
 
-  // the shared motion: a cursor step, a change of state, a page
-  readonly property int tFast: 120
-  readonly property int tMid: 180
-  readonly property int tSlow: 420
-
   // Desktop-only pieces: Omarchy's own Color has no theme list, and the global
   // hotkeys there are Hyprland binds, so both sections say so instead.
   readonly property bool hasThemes: typeof Color.themeList !== "undefined" && Color.themeList !== null
@@ -482,16 +477,16 @@ Rectangle {
     if (r.id === "builder") { Color.openBuilder(); return }
     if (r.id === "eq") { host.showEq(); return }
     if (r.id === "hudShow") { OrpheusGame.showHud(); host.say("HUD ╱╱ shown on the screen in front"); return }
-    if (r.id === "remoteReset") { api.post("/remote/pair/reset", {}, function(ok, d) { if (ok && d) pane.pair = d; host.say(ok ? "new pairing code · scan it again" : "couldn't reset the code") }); return }
+    if (r.id === "remoteReset") { api.post("/remote/pair/reset", {}, function(ok, d) { if (ok && d) pane.pair = d; host.say(ok ? "new pairing code · scan it again" : "couldn't reset the code", ok ? "ok" : "error") }); return }
     if (r.id === "lastfmConnect")
       return api.post("/lastfm/auth/start", {}, function(ok, d) {
         if (ok && d && d.url) { Qt.openUrlExternally(d.url); host.say("approve Orpheus on last.fm, then ⏎ finish here") }
-        else host.say("last.fm · " + host.errText(d, "couldn't start the sign-in"))
+        else host.say("last.fm · " + host.errText(d, "couldn't start the sign-in"), "error")
         pane.refreshDaemon()
       })
     if (r.id === "lastfmFinish")
       return api.post("/lastfm/auth/finish", {}, function(ok, d) {
-        host.say(ok && d ? "last.fm ╱╱ scrobbling as " + d.user : "last.fm · " + host.errText(d, "not approved yet"))
+        host.say(ok && d ? "last.fm ╱╱ scrobbling as " + d.user : "last.fm · " + host.errText(d, "not approved yet"), ok && d ? "ok" : "error")
         pane.refreshDaemon()
       })
     if (r.id === "lastfmDisconnect") { api.post("/lastfm/disconnect", {}, function() { pane.refreshDaemon() }); host.say("last.fm disconnected"); return }
@@ -530,7 +525,7 @@ Rectangle {
     if (r.kind === "hotkey") {
       if (!text) { setHotkey(r.id, undefined); host.say("back to the default"); return }
       var err = keys.check(text)
-      if (err) { host.say("can't use " + text + " · " + err); return }
+      if (err) { host.say("can't use " + text + " · " + err, "error"); return }
       var combo = keys.normalize(text)
       setHotkey(r.id, combo)
       host.say("bound " + combo + " · registering…")
@@ -539,13 +534,13 @@ Rectangle {
     if (r.kind === "number") {
       if (!text) { resetValue(r); return }
       var n = Number(text)
-      if (!isFinite(n)) { host.say(r.label + " · a number, " + r.min + " to " + r.max); return }
+      if (!isFinite(n)) { host.say(r.label + " · a number, " + r.min + " to " + r.max, "error"); return }
       n = Math.max(r.min, Math.min(r.max, Math.round(n)))
       engine.updateConfig(function(c) { c[r.id] = n })
       host.say(r.label + " · " + show(r, n))
       return
     }
-    if (r.id === "discordClientId" && text && !/^\d+$/.test(text)) { host.say("an application id is all digits"); return }
+    if (r.id === "discordClientId" && text && !/^\d+$/.test(text)) { host.say("an application id is all digits", "error"); return }
     engine.updateConfig(function(c) { if (text) c[r.id] = text; else delete c[r.id] })
     host.say(r.label + (text ? " · saved" : " · cleared"))
     Qt.callLater(refreshDaemon)
@@ -652,7 +647,7 @@ Rectangle {
           color: host.fg
           clip: true
           selectionColor: Tui.alpha(Color.accent, 0.35)
-          cursorDelegate: Rectangle { width: pane.cw; color: host.accent; opacity: 0.7; visible: search.activeFocus }
+          cursorDelegate: TuiCaret { host: pane.host; visible: search.activeFocus }
           text: pane.query
           onTextEdited: { pane.query = text; pane.cursor = pane.firstRow() }
           Keys.onPressed: function(e) {
@@ -679,7 +674,7 @@ Rectangle {
     Row {
       spacing: pane.cw * 2
       opacity: pane.searching ? 0.45 : 1
-      Behavior on opacity { NumberAnimation { duration: pane.tMid; easing.type: Easing.InOutCubic } }
+      Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
       Repeater {
         model: pane.sections
         Text {
@@ -689,8 +684,18 @@ Rectangle {
           readonly property bool on: index === pane.section && !pane.searching
           text: (on ? "▰ " : "▱ ") + modelData.label
           font.family: host.family; font.pixelSize: Style.font.body; font.bold: on
-          color: on || tabArea.containsMouse ? host.accentText : host.dim
-          Behavior on color { ColorAnimation { duration: pane.tMid; easing.type: Easing.InOutCubic } }
+          // hover eases a 0..1 scalar (theme colours glide on their own); a
+          // press fills at once
+          property real hot: on || tabArea.containsMouse ? 1 : 0
+          Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+          color: Tui.mix(host.dim, host.accentText, hot)
+          Rectangle {
+            z: -1
+            anchors.fill: parent; anchors.margins: -pane.cw * 0.3
+            color: Tui.alpha(Color.accent, tabArea.pressed ? Tui.A.press : Tui.A.hover)
+            opacity: tabArea.pressed || (tabArea.containsMouse && !tab.on) ? 1 : 0
+            Behavior on opacity { enabled: !tabArea.pressed; NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+          }
           MouseArea { id: tabArea; anchors.fill: parent; anchors.margins: -3; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                       onClicked: pane.goSection(tab.index) }
         }
@@ -708,6 +713,7 @@ Rectangle {
     clip: true
     model: pane.rows.length
     boundsBehavior: Flickable.StopAtBounds
+    flickDeceleration: Tui.FLICK.decel; maximumFlickVelocity: Tui.FLICK.vmax
     highlightFollowsCurrentItem: false
     highlightMoveDuration: 0
     onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
@@ -718,7 +724,7 @@ Rectangle {
       y: list.currentItem ? list.currentItem.y : 0
       visible: !!list.currentItem && pane.selectable(pane.rows[pane.cursor])
       color: host.cursorFill
-      Behavior on y { NumberAnimation { duration: pane.tFast; easing.type: Easing.InOutCubic } }
+      Behavior on y { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
       Rectangle { width: Math.max(2, pane.cw * 0.3); height: parent.height; color: host.accent }
     }
 
@@ -833,7 +839,11 @@ Rectangle {
             visible: valueRow.stepper
             text: "◂ "
             font.family: host.family; font.pixelSize: Style.font.body
-            color: leftArrow.containsMouse ? host.accentText : valueRow.arrow
+            property real hot: leftArrow.containsMouse ? 1 : 0
+            Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+            color: Tui.mix(valueRow.arrow, host.accentText, hot)
+            scale: leftArrow.pressed ? 0.86 : 1
+            Behavior on scale { enabled: !leftArrow.pressed; SpringAnimation { spring: Tui.SPRING.spring; damping: Tui.SPRING.damping } }
             MouseArea { id: leftArrow; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                         onClicked: { pane.forceActiveFocus(); pane.cursor = rowItem.index; pane.change(-1) } }
           }
@@ -861,13 +871,17 @@ Rectangle {
             font.bold: rowItem.isCursor && valueRow.stepper && !rowItem.dimmed
             color: rowItem.dimmed ? host.dim
                  : rowItem.r.kind === "toggle" && pane.value(rowItem.r) ? host.accentText : host.fg
-            Behavior on color { ColorAnimation { duration: pane.tMid; easing.type: Easing.InOutCubic } }
+            Behavior on color { ColorAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
           }
           Text {
             visible: valueRow.stepper
             text: " ▸"
             font.family: host.family; font.pixelSize: Style.font.body
-            color: rightArrow.containsMouse ? host.accentText : valueRow.arrow
+            property real hot: rightArrow.containsMouse ? 1 : 0
+            Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+            color: Tui.mix(valueRow.arrow, host.accentText, hot)
+            scale: rightArrow.pressed ? 0.86 : 1
+            Behavior on scale { enabled: !rightArrow.pressed; SpringAnimation { spring: Tui.SPRING.spring; damping: Tui.SPRING.damping } }
             MouseArea { id: rightArrow; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                         onClicked: { pane.forceActiveFocus(); pane.cursor = rowItem.index; pane.change(1) } }
           }
@@ -900,7 +914,7 @@ Rectangle {
             echoMode: rowItem.r.secret ? TextInput.Password : TextInput.Normal
             inputMethodHints: rowItem.r.kind === "number" ? Qt.ImhDigitsOnly : Qt.ImhNone
             selectionColor: Tui.alpha(Color.accent, 0.35)
-            cursorDelegate: Rectangle { width: pane.cw; color: host.accent; opacity: 0.7 }
+            cursorDelegate: TuiCaret { host: pane.host }
             Keys.onPressed: function(e) {
               if (e.key === Qt.Key_Return || e.key === Qt.Key_Enter) { pane.commitEdit(text); e.accepted = true; return }
               if (e.key === Qt.Key_Escape) { pane.cancelEdit(); e.accepted = true; return }
@@ -942,7 +956,7 @@ Rectangle {
         width: parent.width; height: rowItem.rowH
         opacity: rowMouse.containsMouse && !rowItem.isCursor ? 1 : 0
         color: Tui.alpha(Color.accent, 0.07)
-        Behavior on opacity { NumberAnimation { duration: pane.tFast; easing.type: Easing.InOutCubic } }
+        Behavior on opacity { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
       }
       // A click selects and does the obvious thing: steps a choice, flips a
       // toggle, runs an action, applies a theme. Right-click steps back; a
@@ -995,7 +1009,7 @@ Rectangle {
     color: host.fg
     opacity: 1
     onTextChanged: { opacity = 0.35; fadeIn.restart() }
-    NumberAnimation { id: fadeIn; target: descLine; property: "opacity"; to: 1; duration: pane.tMid; easing.type: Easing.InOutCubic }
+    NumberAnimation { id: fadeIn; target: descLine; property: "opacity"; to: 1; duration: Tui.STATE; easing.type: Tui.EASE }
   }
 
   // the keys for the row under the cursor, each one a button too
