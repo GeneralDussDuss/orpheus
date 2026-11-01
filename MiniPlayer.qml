@@ -41,7 +41,7 @@ Item {
 
   // The title decodes in whenever the track changes.
   property real decodeProgress: 1
-  NumberAnimation on decodeProgress { id: decodeAnim; from: 0; to: 1; duration: 350; running: false }
+  NumberAnimation on decodeProgress { id: decodeAnim; from: 0; to: 1; duration: Math.round(Tui.DECODE * 0.67); running: false }
   onTitleChanged: decodeAnim.restart()
 
   // The player window's global key (on Windows as the hotkeys actually bound it).
@@ -70,7 +70,7 @@ Item {
     color: Tui.alpha(Color.accent, 0.12)
     border.width: 1
     border.color: root.playing ? Tui.mix(root.line, root.accent, 0.35 + 0.4 * root.breath) : root.line
-    Behavior on border.color { ColorAnimation { duration: Tui.STATE; easing.type: Easing.InOutCubic } }
+    Behavior on border.color { ColorAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
     Text {
       anchors.centerIn: parent
       visible: artImage.status !== Image.Ready
@@ -175,9 +175,15 @@ Item {
           font.pixelSize: Style.font.body
           // Play breathes with the beat while music runs; hover lights any key.
           readonly property bool isPlay: modelData.action === "toggle"
-          color: hover.containsMouse ? root.accentText
-                 : (isPlay && root.playing ? Tui.mix(root.fg, root.accentText, 0.45 + 0.55 * root.beat) : root.fg)
-          Behavior on color { ColorAnimation { duration: 120 } }
+          // hover eases a 0..1 scalar, never the colour (the beat moves it every
+          // frame, and a ColorAnimation would trail it); a press shrinks the key
+          // in-frame and springs back on release
+          property real hot: hover.containsMouse ? 1 : 0
+          Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+          color: Tui.mix(isPlay && root.playing ? Tui.mix(root.fg, root.accentText, 0.45 + 0.55 * root.beat) : root.fg,
+                         root.accentText, hot)
+          scale: hover.pressed ? 0.86 : 1
+          Behavior on scale { enabled: !hover.pressed; SpringAnimation { spring: Tui.SPRING.spring; damping: Tui.SPRING.damping } }
           // ... and its halo pulses with the same beat.
           glowLive: isPlay && root.playing && root.bloom > 0
           glow: glowLive ? root.bloom * (0.3 + 0.7 * root.beat) : 0

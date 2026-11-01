@@ -147,13 +147,24 @@ TuiBox {
         id: art
         width: box.ch * 4.4
         height: width
-        color: Tui.alpha(Color.accent, 0.12)
+        color: Tui.alpha(Color.accent, Tui.A.tint)
+        // a placeholder mark until the cover arrives; then the cover fades in
+        Text {
+          anchors.centerIn: parent
+          visible: artImg.status !== Image.Ready
+          text: "╱╱╱"
+          font.family: Style.font.family; font.pixelSize: Style.font.body
+          color: box.dim
+        }
         Image {
+          id: artImg
           anchors.fill: parent
           source: box.player && box.player.trackArtUrl ? box.player.trackArtUrl : ""
           fillMode: Image.PreserveAspectCrop
           asynchronous: true
           sourceSize: Qt.size(art.width * 2, art.height * 2)
+          opacity: status === Image.Ready ? 1 : 0
+          Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
         }
         MouseArea { anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: if (box.engine) box.engine.libraryOpen = true
                     TuiTip { text: "open the player" } }
@@ -177,7 +188,7 @@ TuiBox {
           textFormat: Text.PlainText
           animate: box.titleFx
           key: box.trackKey
-          duration: 600
+          duration: Tui.DECODE
           target: box.player ? (box.player.trackArtist || "") : "pick something in the player" + (box.libraryKey ? " \u00b7 " + box.libraryKey : "")
           font.family: Style.font.family; font.pixelSize: Style.font.body; color: box.dim
         }
@@ -234,9 +245,14 @@ TuiBox {
               required property var modelData
               readonly property bool isPlay: modelData.a === "toggle"
               text: modelData.g
-              font.family: Style.font.family; font.pixelSize: Style.font.body + 3
-              color: (modelData.a === "like" && box.liked) || cm.containsMouse ? Color.accent
-                     : isPlay && box.playing ? Tui.mix(box.fg, Color.accent, 0.45 + 0.55 * box.beat) : box.fg
+              font.family: Style.font.family; font.pixelSize: Tui.T.lead
+              // hover eases a scalar; a press shrinks in-frame, springs back
+              property real hot: cm.containsMouse ? 1 : 0
+              Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+              color: modelData.a === "like" && box.liked ? Color.accent
+                     : Tui.mix(isPlay && box.playing ? Tui.mix(box.fg, Color.accent, 0.45 + 0.55 * box.beat) : box.fg, Color.accent, hot)
+              scale: cm.pressed ? 0.86 : 1
+              Behavior on scale { enabled: !cm.pressed; SpringAnimation { spring: Tui.SPRING.spring; damping: Tui.SPRING.damping } }
               glowLive: box.bloom > 0 && ((isPlay && box.playing) || (modelData.a === "like" && box.liked))
               glow: !glowLive ? 0 : isPlay ? box.bloom * (0.3 + 0.7 * box.beat) : box.bloom * 0.4
               visible: modelData.a !== "like" || box.orpheusTrack !== null
