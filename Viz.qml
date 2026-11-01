@@ -116,6 +116,8 @@ ShaderEffect {
       downbeat: fx.downbeat
       beatPhase: fx.beatPhase
       snap: fx.snap
+      anticipate: fx.anticipate
+      mapped: fx.mapped
     }
   }
 
@@ -167,6 +169,8 @@ ShaderEffect {
   property real build: engine ? engine.build : 0
   property real drop: engine ? engine.drop : 0
   property real section: engine ? engine.sectionCode : 4
+  property real anticipate: engine ? (engine.anticipate || 0) : 0   // drop map wind-up (fbshow, via VizPost)
+  property real mapped: engine ? (engine.dropMapped || 0) : 0
   // Shadertoy imports (orpheusd/shaders.py): iMouse, iFrame, iTimeDelta. Builtins ignore them.
   // The mouse is in item pixels, bottom-up, like `res` and fragCoord; the click
   // (zw) stays 0, since a click on the stage already switches style.
@@ -377,6 +381,9 @@ ShaderEffect {
     }
     if (styleName === shownStyle) { downbeatWait.stop(); pendingStyle = ""; return }
     pendingStyle = styleName
+    // A mapped drop is on its way (Stage pre-arms 1.5 s ahead): stretch the
+    // transition so it completes on the drop frame itself.
+    if (engine && engine.mapLocked && engine.dropIn > 0.3 && engine.dropIn < 3) { beginTransition(Math.round(1000 * engine.dropIn)); return }
     // Just past a downbeat already (a drop switches style the instant it is
     // heard, ~0.1 bar after the downbeat it re-anchored): go now, not a bar later.
     if (beatConfidence > 0.35 && barPhase > 0.12) downbeatWait.restart()
@@ -389,7 +396,7 @@ ShaderEffect {
   }
   Timer { id: downbeatWait; interval: 2500; onTriggered: fx.beginTransition() }
 
-  function beginTransition() {
+  function beginTransition(durationMs) {
     downbeatWait.stop()
     if (pendingStyle === "" || pendingStyle === shownStyle) { pendingStyle = ""; return }
     endTransition()
@@ -402,7 +409,7 @@ ShaderEffect {
           : (um && um.transition >= 0 ? um.transition : Math.floor(Math.random() * 4))
     tseed = Math.floor(Math.random() * 1000)
     tprog = 0
-    transAnim.duration = Math.round(1000 * Math.max(0.8, Math.min(1.5, 1 / Math.max(0.3, tempo))))
+    transAnim.duration = durationMs > 0 ? durationMs : Math.round(1000 * Math.max(0.8, Math.min(1.5, 1 / Math.max(0.3, tempo))))
     transitioning = true
     transAnim.restart()
   }
@@ -470,6 +477,8 @@ ShaderEffect {
     property real build: fx.build
     property real drop: fx.drop
     property real section: fx.section
+    property real anticipate: fx.anticipate
+    property real mapped: fx.mapped
     property vector4d mouse: fx.mouse
     property real frame: fx.frame
     property real dt: fx.dt

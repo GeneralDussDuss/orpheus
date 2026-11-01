@@ -130,8 +130,11 @@ Item {
         property bool scrubbing: false
         property real scrubFrac: 0
         readonly property real frac: scrubbing ? scrubFrac : Math.max(0, Math.min(1, root.position / Math.max(1, root.length)))
+        readonly property var markDrops: root.ours && root.engine.map && String(root.engine.map.id) === String(root.engine.api.track ? root.engine.api.track.id : "")
+                                         ? root.engine.map.drops.filter(function(d) { return d.strength >= 0.5 }) : []
+        readonly property var marks: markDrops.map(function(d) { return d.t / Math.max(1, root.length) })
         textFormat: Text.StyledText
-        text: Tui.meterRich(frac, cells, root.accent, Tui.mix(root.dim, root.bg, 0.4))
+        text: Tui.meterMarks(frac, cells, root.accent, Tui.mix(root.dim, root.bg, 0.4), marks, Tui.ensure(root.engine ? root.engine.c2 : root.accent, root.bg, 3))
         font.family: Style.font.family; font.pixelSize: Style.font.body
         MouseArea {
           id: meterMouse
@@ -153,7 +156,10 @@ Item {
             follow: true
             force: meter.scrubbing
             at: Math.max(0, Math.min(meterMouse.width, meterMouse.mouseX))
-            text: root.length > 0 ? root.clock((meter.scrubbing ? meter.scrubFrac : meterMouse.fracAt(meterMouse.mouseX)) * root.length) : ""
+            readonly property string lbl: meter.markDrops.length ? Tui.markLabel(meter.markDrops, root.length, meter.cells,
+                                          Math.round(meterMouse.fracAt(meterMouse.mouseX) * (meter.cells - 1)), root.clock) : ""
+            text: root.length > 0 ? root.clock((meter.scrubbing ? meter.scrubFrac : meterMouse.fracAt(meterMouse.mouseX)) * root.length)
+                                    + (lbl && !meter.scrubbing ? " · " + lbl : "") : ""
           }
         }
       }

@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import Quickshell.Io
 import qs.Commons
 import "Tui.js" as Tui
@@ -138,9 +139,22 @@ Item {
         (function(s) {
           add("viz.rail." + s, "visuals", "set rail · " + (s === "off" ? "album art" : e.styleLabels[s].toLowerCase()), "", e.railViz === s ? "● now" : "", function() { e.setRailViz(s) })
         })(rails[ri])
+      add("viz.shader.import", "visuals", "import shader · from clipboard", "", "", function() {
+        e.importShader(Quickshell.clipboardText, function(ok, msg) { h.say(msg, ok ? "info" : "error") }) })
+      add("viz.shader.folder", "visuals", "open shaders folder", "", e.userStyles ? e.userStyles.length + " styles" : "", function() {
+        if (e.shaderDir) Qt.openUrlExternally("file:///" + String(e.shaderDir).replace(/\\/g, "/").replace(/^\/+/, ""))
+        else h.say("the shaders folder isn't known yet · is orpheusd running?") })
+      add("viz.shader.rebuild", "visuals", "recompile your shaders", "", "", function() {
+        a.post("/shaders/reload", {}, function(ok) { h.say(ok ? "shaders rescanned" : "couldn't rescan", ok ? "info" : "error") }) })
       var places = e.placements || ["overlay", "desktop"], placeNames = { overlay: "window on top", desktop: "wallpaper", fullscreen: "fullscreen show" }
       for (var pl = 0; pl < places.length; pl++)
         (function(p) { add("viz.as." + p, "visuals", "set visualizer as · " + (placeNames[p] || p), "", e.placement === p ? "● now" : "", function() { e.setPlacement(p) }) })(places[pl])
+      if (e.scenes) {
+        add("viz.scene.toggle", "visuals", "toggle cassette deck", "t", e.scene === "cassette" && e.open ? "on" : "off", function() { e.toggleCassette() })
+        var sceneNames = { viz: "visualizer", cassette: "cassette deck" }
+        for (var sc = 0; sc < e.scenes.length; sc++)
+          (function(s) { add("viz.scene." + s, "visuals", "set stage scene · " + (sceneNames[s] || s), "", e.scene === s ? "● now" : "", function() { e.setScene(s) }) })(e.scenes[sc])
+      }
       var levels = ["off", "subtle", "full"]
       for (var b = 0; b < levels.length; b++)
         (function(lv) {
@@ -163,7 +177,8 @@ Item {
           add("viz." + fl[0], "visuals", fl[1], "", onOff(e[fl[0]]), function() { var v = !e[fl[0]]; e.updateConfig(function(c) { c[fl[0]] = v }) })
         })(looks[lk])
       var flags = [["trackTitle", "toggle title card"], ["lyricsOverViz", "toggle lyrics over visualizer"],
-                   ["director", "toggle song structure"], ["beatLock", "toggle beat lock"], ["autoStyle", "toggle style switch on drops"]]
+                   ["director", "toggle song structure"], ["beatLock", "toggle beat lock"], ["autoStyle", "toggle style switch on drops"],
+                   ["dropMap", "toggle drop map"]]
       for (var g = 0; g < flags.length; g++)
         (function(fl) {
           if (typeof e[fl[0]] !== "boolean") return
@@ -181,6 +196,13 @@ Item {
             })
           })(qs[q])
         add("sound.eq", "sound", "toggle equalizer", "", h.eqActive ? "on" : "bypassed", function() { a.post("/eq", { enabled: !h.eqActive }, function() {}) })
+        add("sound.autoeq.pick", "sound", "pick autoeq headphone", "A", h.eqState.autoeq ? h.eqState.autoeq.name : "",
+            function() { h.go({ type: "eq", title: "equalizer", pick: true }) })
+        if (h.eqState.autoeq)
+          add("sound.autoeq", "sound", "toggle autoeq · " + h.eqState.autoeq.name, "", h.eqState.autoeqActive ? "on" : "off",
+              function() { a.post("/eq", h.eqState.autoeqOn ? { autoeqOn: false } : { autoeqOn: true, enabled: true }, function() {}) })
+        if (h.eqState.autoeq)
+          add("sound.autoeq.clear", "sound", "clear autoeq headphone", "", "", function() { a.post("/autoeq/clear", {}, function() {}) })
       }
       var endless = e.config.endless !== false
       add("sound.endless", "sound", "toggle endless play", "", onOff(endless), cfgSet("endless", !endless))
@@ -280,6 +302,7 @@ Item {
     return total - s.length * 0.01
   }
   function filter() {
+    all = all.filter(function(x) { return x.id !== "viz.shader.paste" })
     var q = input.text.trim().toLowerCase(), out = [], hd = []
     if (!q) {
       // recent first, then everything else by group (nothing listed twice)
@@ -309,6 +332,16 @@ Item {
       }
       sc.sort(function(a, b) { return b.s - a.s || a.i - b.i })
       for (var n = 0; n < sc.length; n++) { out.push(sc[n].i); hd.push("") }
+      // A shadertoy link, a bare id nothing else matched, or pasted GLSL: offer to import it, first.
+      var raw = input.text.trim()
+      if (host && host.engine && host.engine.importShader
+          && (/shadertoy\.com\/(view|embed)\/[A-Za-z0-9]{6}/.test(raw) || raw.indexOf("mainImage(") >= 0
+              || (/^[A-Za-z0-9]{6}$/.test(raw) && sc.length === 0))) {
+        var eng = host.engine, hh = host
+        all.push({ id: "viz.shader.paste", group: "visuals", label: "import shader · " + raw.replace(/\s+/g, " ").slice(0, 48),
+                   key: "", now: "⏎", run: function() { eng.importShader(raw, function(ok, msg) { hh.say(msg, ok ? "info" : "error") }) } })
+        out.unshift(all.length - 1); hd.unshift("")
+      }
     }
     hits = out
     heads = hd

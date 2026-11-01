@@ -140,6 +140,27 @@ function meterRich(value, n, on, off) {
   }
   return '<font color="' + hex(on) + '">' + filled + '</font><font color="' + hex(off) + '">' + rest + '</font>'
 }
+// meterRich with marks: fractions drawn as ╋ on the played side and ┼ ahead, in `mark`; the playhead cell wins.
+function meterMarks(value, n, on, off, marks, mark) {
+  value = Math.max(0, Math.min(1, value || 0))
+  var at = Math.round(value * (n - 1)), set = {}
+  for (var m = 0; m < (marks ? marks.length : 0); m++) set[Math.round(Math.max(0, Math.min(1, marks[m])) * (n - 1))] = true
+  var out = "", cur = null, run = ""
+  function flush() { if (run) out += '<font color="' + hex(cur) + '">' + run + '</font>'; run = "" }
+  for (var i = 0; i < n; i++) {
+    var c = i <= at ? on : off, g = i < at ? "━" : i === at ? "╸" : "─"
+    if (set[i] && i !== at) { c = mark; g = i < at ? "╋" : "┼" }
+    if (c !== cur) { flush(); cur = c }
+    run += g
+  }
+  flush(); return out
+}
+// "drop · 1:15 · 85 %" for the marker under cell `cell` (0..n-1), else "".
+function markLabel(drops, dur, n, cell, clock) {
+  for (var i = 0; i < (drops ? drops.length : 0); i++)
+    if (Math.round(drops[i].t / Math.max(1, dur) * (n - 1)) === cell) return "drop · " + clock(drops[i].t) + " · " + Math.round(drops[i].strength * 100) + " %"
+  return ""
+}
 
 // A tiny animated level meter for the playing row: ▁▃▅ that moves with time.
 var EQ = "▁▂▃▄▅▆▇"

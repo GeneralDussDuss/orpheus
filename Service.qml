@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Hyprland
 import Quickshell.Services.Mpris
 import qs.Commons
+import "Tui.js" as Tui
 
 // Orpheus: music visualizers that look like the rest of Omarchy.
 //
@@ -73,8 +74,8 @@ Item {
                                      showMonitor: "", autoStyle: false, trackTitle: true, lyricsOverViz: false,
                                      autoQuality: true, showFps: false, bloom: "subtle",
                                      endless: true, crossfade: 0, remote: "off",
-                                     director: true, beatLock: true, lookaheadMs: 85, feedback: "subtle",
-                                     ambient: "subtle", dropFx: true, titleFx: true, pulseUi: true, bootScreen: true,
+                                     director: true, beatLock: true, lookaheadMs: 85, feedback: "subtle", dropMap: true, dropMapLeadMs: 30,
+                                     ambient: "subtle", dropFx: true, titleFx: true, pulseUi: true, bootScreen: true, scene: "viz",
                                      widget: { enabled: true, style: "full", corner: "bottom-right", monitor: "", viz: "prism", layer: "top" } })
 
   // ---- Config ------------------------------------------------------------
@@ -85,6 +86,11 @@ Item {
   // the icons, full monitor); fullscreen: the show, full-bleed on showMonitor.
   readonly property var placements: ["overlay", "desktop", "fullscreen"]
   readonly property string placement: placements.indexOf(config.placement) >= 0 ? config.placement : "overlay"
+  // The stage's scene, orthogonal to placement: the visualizer, or the cassette
+  // deck (Cassette.qml). A switch crossfades inside the open window (StageView's
+  // two Loaders); unlike a placement change, nothing is rebuilt.
+  readonly property var scenes: ["viz", "cassette"]
+  readonly property string scene: scenes.indexOf(config.scene) >= 0 ? config.scene : "viz"
   readonly property string showMonitor: typeof config.showMonitor === "string" ? config.showMonitor : ""  // "" = focused
   readonly property bool autoStyle: config.autoStyle === true          // switch style on big drops
   readonly property bool trackTitle: config.trackTitle !== false       // title card when the track changes
@@ -199,12 +205,15 @@ Item {
   property color fg: Color.foreground
   readonly property bool lightTheme: (0.2126 * Color.background.r + 0.7152 * Color.background.g + 0.0722 * Color.background.b) > 0.5
 
-  // Locked to the shell's 420 ms wallpaper reveal; retargets mid-flight.
-  Behavior on c1 { ColorAnimation { duration: 420; easing.type: Easing.InOutCubic } }
-  Behavior on c2 { ColorAnimation { duration: 420; easing.type: Easing.InOutCubic } }
-  Behavior on c3 { ColorAnimation { duration: 420; easing.type: Easing.InOutCubic } }
-  Behavior on bg { ColorAnimation { duration: 420; easing.type: Easing.InOutCubic } }
-  Behavior on fg { ColorAnimation { duration: 420; easing.type: Easing.InOutCubic } }
+  // Linux: locked to the shell's 420 ms wallpaper reveal (Tui.PAGE); retargets
+  // mid-flight. Windows: shims.py already glides Color.* in OKLab over
+  // Tui.GLIDE (650 ms, eased), so a second ease here would trail the UI's
+  // palette by a frame or more: the visualizer takes the glide as it comes.
+  Behavior on c1 { enabled: !root.windows; ColorAnimation { duration: Tui.PAGE; easing.type: Tui.EASE } }
+  Behavior on c2 { enabled: !root.windows; ColorAnimation { duration: Tui.PAGE; easing.type: Tui.EASE } }
+  Behavior on c3 { enabled: !root.windows; ColorAnimation { duration: Tui.PAGE; easing.type: Tui.EASE } }
+  Behavior on bg { enabled: !root.windows; ColorAnimation { duration: Tui.PAGE; easing.type: Tui.EASE } }
+  Behavior on fg { enabled: !root.windows; ColorAnimation { duration: Tui.PAGE; easing.type: Tui.EASE } }
 
   // Fallback palette for themes whose accent/border don't give three colours.
   FileView {
@@ -272,6 +281,11 @@ Item {
   // ---- Player service (orpheusd) -----------------------------------------
   Api { id: apiClient; active: root.libraryOpen || root.open || root.widgetShown }
   readonly property var api: apiClient
+  // The drop map: the daemon's analysis of the playing track (beats, bars,
+  // builds, drops), fetched once per track and handed to the Director.
+  DropMapSource { id: dropMapSrc; api: apiClient; track: apiClient.track; enabled: root.dropMap && root.director }
+  readonly property var map: dropMapSrc.map              // seek bars draw its drops
+  readonly property string mapState: dropMapSrc.state    // "" | pending | ready | none | failed
 
   // ---- your shaders ------------------------------------------------------
   //
@@ -713,6 +727,11 @@ Item {
   // capture buffer ~10, presentation one to two frames (~25). config
   // `lookaheadMs` overrides: raise it if flashes land late, lower if early.
   readonly property real lookahead: Math.max(0, Math.min(400, typeof config.lookaheadMs === "number" ? config.lookaheadMs : 85)) / 1000
+  // The drop map (config `dropMap`, default on) and its own presentation lead:
+  // the timeline is exact, so only the last stretch to the screen is left to
+  // cover. `dropMapLeadMs` (-200..400, default 30) tunes it.
+  readonly property bool dropMap: config.dropMap !== false
+  readonly property real mapLead: Math.max(-200, Math.min(400, typeof config.dropMapLeadMs === "number" ? config.dropMapLeadMs : 30)) / 1000
   // A test harness drives the analysis on a fake clock (ms); -1 = the wall clock.
   property real clockMs: -1
   function nowMs() { return clockMs >= 0 ? clockMs : Date.now() }
@@ -722,6 +741,11 @@ Item {
     enabled: root.director
     beatLock: root.beatLock
     lookahead: root.lookahead
+    map: root.dropMap ? dropMapSrc.map : null
+    songBase: apiClient.posBase
+    songAt: apiClient.posAt
+    playing: apiClient.player.playing === true
+    mapLead: root.mapLead
   }
   readonly property var directorState: directorCore
   readonly property real beatPhase: directorCore.beatPhase          // 0..1 within the beat, 0 = on it
@@ -733,6 +757,12 @@ Item {
   readonly property int sectionCode: directorCore.sectionCode       // 0 intro 1 build 2 drop 3 breakdown 4 steady
   readonly property string section: directorCore.section
   readonly property int drops: directorCore.drops                   // bumps on each drop (autoStyle watches it)
+  readonly property real anticipate: directorCore.anticipate        // 0..1 wind-up over the last 8 beats before a mapped drop
+  readonly property real dropIn: directorCore.dropIn                // s to the next mapped drop, -1 = none
+  readonly property real mapWeight: directorCore.mapWeight          // 0..1 trust in the drop map
+  readonly property bool mapLocked: directorCore.mapOn              // the phases come from the map
+  readonly property real armedDrop: directorCore.armedDrop          // song time of the drop 1.5 s ahead, -1 = none (Stage pre-arms on it)
+  readonly property real dropMapped: directorCore.dropMapped        // 1 while the drop pulse came from the map
 
   // `beat` is the onset envelope, or with beatLock and a confident grid, a
   // pulse fired by the grid's predicted phase: it peaks on the beat instead of
@@ -772,8 +802,10 @@ Item {
   property real flow: 1
   // Confidence-weighted BPM: a doubtful estimate falls back toward restBpm.
   readonly property real paceBpm: root.restBpm + (root.tempo > 0 ? root.tempo - root.restBpm : 0) * root.tempoConfidence
+  // A mapped drop: the world slows to ~45 % through the wind-up and leaps on the drop.
   readonly property real flowTarget: Math.max(0.55, Math.min(1.7,
       Math.pow(root.paceBpm / root.restBpm, 0.45))) * (0.85 + root.energy * 0.5)
+      * (1 - 0.55 * directorCore.anticipate * directorCore.anticipate) * (1 + 1.6 * Math.pow(directorCore.drop, 6))
   // Distance travelled. The shaders read this instead of multiplying time by a
   // speed, so a tempo change bends the motion instead of teleporting the world.
   property real travel: 0
@@ -877,13 +909,30 @@ Item {
     updateConfig(function(c) { c.placement = where })
     return statusText()
   }
+  // "next" steps through scenes. Every caller (t, palette, settings, IPC, the
+  // hotkey, --scene) goes through here.
+  function setScene(name) {
+    if (name === "next") name = scenes[(scenes.indexOf(scene) + 1) % scenes.length]
+    if (scenes.indexOf(name) < 0) return "unknown scene: " + name + " (" + scenes.join("|") + "|next)"
+    updateConfig(function(c) { c.scene = name })
+    return statusText()
+  }
+  function cycleScene() { return setScene("next") }
+  // `t` in the player, Win+Alt+Q, IPC `cassette`: closed -> open on the deck;
+  // open on the visualizer -> the deck; open on the deck -> close.
+  function toggleCassette() {
+    if (!open) { if (scene !== "cassette") setScene("cassette"); open = true }
+    else if (scene !== "cassette") setScene("cassette")
+    else open = false
+    return statusText()
+  }
   function setShowMonitor(name) {
     updateConfig(function(c) { c.showMonitor = name || "" })
     return statusText()
   }
   // The stage's on/off switches: autoStyle, trackTitle, lyricsOverViz, autoQuality, showFps.
   function setStageFlag(key, on) {
-    var keys = ["autoStyle", "trackTitle", "lyricsOverViz", "autoQuality", "showFps", "director", "beatLock"]
+    var keys = ["autoStyle", "trackTitle", "lyricsOverViz", "autoQuality", "showFps", "director", "beatLock", "dropMap"]
     if (keys.indexOf(key) < 0) return "unknown setting: " + key + " (" + keys.join("|") + ")"
     var v = on === "toggle" ? !root[key] : (on === true || on === "on" || on === "true" || on === "1")
     updateConfig(function(c) { c[key] = v })
@@ -954,7 +1003,7 @@ Item {
   }
 
   function statusText() {
-    return JSON.stringify({ open: open, library: libraryOpen, widget: widget, style: style, railViz: railViz, miniPlayer: miniPlayer, placement: placement, bloom: bloom,
+    return JSON.stringify({ open: open, library: libraryOpen, widget: widget, style: style, railViz: railViz, miniPlayer: miniPlayer, placement: placement, scene: scene, bloom: bloom,
                             cava: hasCava, listening: listening,
                             energy: Math.round(energy * 1000) / 1000, bass: Math.round(bass * 1000) / 1000,
                             beat: Math.round(beat * 1000) / 1000, kick: Math.round(kick * 1000) / 1000,
@@ -966,6 +1015,7 @@ Item {
                             director: director, beatLock: beatLock, section: section,
                             beatConfidence: Math.round(beatConfidence * 100) / 100, build: Math.round(build * 100) / 100,
                             flowTarget: Math.round(flowTarget * 100) / 100, flow: Math.round(flow * 100) / 100,
+                            map: mapState, mapWeight: Math.round(mapWeight * 100) / 100,
                             player: player ? (player.identity || "") : "" })
   }
 
@@ -987,6 +1037,8 @@ Item {
     function nextStyle(): string { return root.nextStyle(1) }
     function miniPlayer(on: string): string { return root.setMiniPlayer(on) }
     function placement(where: string): string { return root.setPlacement(where) }
+    function scene(name: string): string { return root.setScene(name) }
+    function cassette(): string { return root.toggleCassette() }
     function showMonitor(name: string): string { return root.setShowMonitor(name) }
     function autoStyle(on: string): string { return root.setStageFlag("autoStyle", on) }
     function trackTitle(on: string): string { return root.setStageFlag("trackTitle", on) }
@@ -997,6 +1049,7 @@ Item {
     function feedback(level: string): string { return root.setFeedback(level) }
     function director(on: string): string { return root.setStageFlag("director", on) }
     function beatLock(on: string): string { return root.setStageFlag("beatLock", on) }
+    function dropMap(on: string): string { return root.setStageFlag("dropMap", on) }
     function widget(key: string, value: string): string { return root.setWidget(key, value) }
     function importShader(text: string): string { root.importShader(text); return root.statusText() }
   }

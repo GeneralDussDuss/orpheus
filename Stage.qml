@@ -112,6 +112,10 @@ PanelWindow {
     target: win.engine
     ignoreUnknownSignals: true
     function onDropsChanged() { if (win.engine.autoStyle && win.engine.director) win.switchOnDrop() }
+    // A drop the map sees coming: switch 1.5 s early so the transition lands on it
+    // (Viz stretches the blend to dropIn); the drop's own onDropsChanged then
+    // falls inside the 20 s cooldown.
+    function onArmedDropChanged() { var e = win.engine; if (e.armedDrop >= 0 && e.autoStyle && e.director) win.switchOnDrop() }
   }
   function switchOnDrop() {
     var now = Date.now()
@@ -231,6 +235,33 @@ PanelWindow {
   // brings both back.
   property bool awake: true
   function wake() { awake = true; sleepTimer.restart() }
+  // A .frag (or a shadertoy link as text) dropped on the stage becomes a style
+  // (orpheusd/shaders.py). Only an import from here picks the style: a file
+  // saved by hand in the folder never hijacks the stage.
+  property string pendingImport: ""
+  function importDrop(drop) {
+    var text = ""
+    if (drop.hasUrls && drop.urls.length) text = String(drop.urls[0])
+    else if (drop.hasText) text = drop.text
+    if (!text || !win.engine || !win.engine.importShader) return
+    var m = text.match(/([^\/\\]+)\.(frag|glsl|fs|txt)$/i)
+    pendingImport = m ? m[1].toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") : ""
+    picked("compiling " + (pendingImport || "shader") + "…")
+    win.engine.importShader(text, function(ok, msg) { if (!ok) { picked(msg); win.pendingImport = "" } })
+    drop.accept()
+  }
+  Connections {
+    target: win.engine
+    ignoreUnknownSignals: true
+    function onShaderEvent(kind, name, text) {
+      if (win.pendingImport === "" || name !== win.pendingImport) return
+      win.pendingImport = ""
+      if (kind === "ready" || kind === "reloaded") {
+        if (win.deck && win.engine.setScene) win.engine.setScene("viz")     // plan decision 12
+        win.picked(win.engine.styleLabels["@" + name] || name)
+      } else if (kind === "error") win.picked("✕ " + name)
+    }
+  }
   // (Not while the pointer rests on the key strip itself: it would vanish under the click.)
   Timer { id: sleepTimer; interval: 2000; running: win.show; onTriggered: if (hintHover.hovered) restart(); else win.awake = false }
   // Show-unit type: the same scale StageView uses, so a 3440 px wall reads.
@@ -284,6 +315,8 @@ PanelWindow {
       onWheel: function(w) { win.wake(); var n = Tui.notches(showMouse, w.angleDelta.y); if (n) win.stepStyle(-n) }
       Timer { id: clickWait; interval: Qt.styleHints.mouseDoubleClickInterval; onTriggered: win.stepStyle(1) }
     }
+    // drop a .frag here to import it (drops only; the MouseArea keeps the clicks)
+    DropArea { anchors.fill: parent; keys: ["text/uri-list", "text/plain"]; onDropped: function(d) { win.importDrop(d) } }
     VizLabel {
       id: showLabel
       anchors.fill: parent
@@ -467,6 +500,7 @@ PanelWindow {
             onWheel: function(w) { var n = Tui.notches(cardMouse, w.angleDelta.y); if (n) win.stepStyle(-n) }
             TuiTip { text: "click: next style · right-click: back · scroll"; key: "← →"; delay: 900 }
           }
+          DropArea { anchors.fill: parent; keys: ["text/uri-list", "text/plain"]; onDropped: function(d) { win.importDrop(d) } }
           VizLabel { id: cardLabel; anchors.fill: parent }
           Connections { target: win; function onPicked(name) { cardLabel.flash(name) } }
         }

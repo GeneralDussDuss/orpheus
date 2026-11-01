@@ -516,9 +516,54 @@ Item {
 
   // ---- readouts ----------------------------------------------------------------
 
+  // Your shaders: a tick where the fps sits when one is rebuilt, breaks, or
+  // fails on the GPU, and the fps itself for 4 s after a rebuild of the shown
+  // style, so a heavy shader announces its cost.
+  property bool fpsPeek: false
+  Timer { id: fpsPeekOff; interval: 4000; onTriggered: view.fpsPeek = false }
   Text {
-    visible: !!view.engine && view.engine.showFps
+    id: tick
+    property string msg: ""
+    property bool bad: false
+    visible: opacity > 0.01
+    opacity: 0
     anchors { top: parent.top; right: parent.right; margins: Math.max(6, view.unit * 0.4) }
+    text: msg
+    font.family: view.family
+    font.pixelSize: Math.max(Style.font.caption, view.unit * 0.45)
+    color: bad ? view.accentText : view.dim
+    style: Text.Outline
+    styleColor: Qt.rgba(view.bg.r, view.bg.g, view.bg.b, 0.7)
+    function show(m, isBad) {
+      msg = m; bad = isBad
+      tickAnim.stop()
+      tickHold.duration = isBad ? 3000 : 1400
+      tickAnim.start()
+    }
+    SequentialAnimation {
+      id: tickAnim
+      NumberAnimation { target: tick; property: "opacity"; to: 1; duration: Tui.HOVER; easing.type: Easing.OutCubic }
+      PauseAnimation { id: tickHold; duration: 1400 }
+      NumberAnimation { target: tick; property: "opacity"; to: 0; duration: Tui.STATE; easing.type: Easing.InCubic }
+    }
+  }
+  Connections {
+    target: view.engine
+    ignoreUnknownSignals: true
+    function onShaderEvent(kind, name, text) {
+      var mine = name === String(view.styleName || "").replace(/^@/, "")
+      if (kind === "gpu" && mine) tick.show(text, true)
+      else if (!mine) return
+      else if (kind === "reloaded") { tick.show("reloaded · " + text, false); view.fpsPeek = true; fpsPeekOff.restart() }
+      else if (kind === "ready") { view.fpsPeek = true; fpsPeekOff.restart() }
+      else if (kind === "error") tick.show("✕ " + String(text).slice(0, 60), true)
+    }
+  }
+
+  Text {
+    visible: !!view.engine && (view.engine.showFps || view.fpsPeek)
+    anchors { top: tick.visible ? tick.bottom : parent.top; right: parent.right
+              topMargin: tick.visible ? 2 : Math.max(6, view.unit * 0.4); rightMargin: Math.max(6, view.unit * 0.4) }
     text: Math.round(view.fps) + " fps" + (view.scale_ < 1 ? " · " + Math.round(view.scale_ * 100) + "%" : "")
     font.family: view.family
     font.pixelSize: Math.max(Style.font.caption, view.unit * 0.45)

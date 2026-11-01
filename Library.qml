@@ -399,6 +399,18 @@ FloatingWindow {
     target: win.api
     function onSignedInChanged() { if (win.api.signedIn) win.load() }
   }
+  // Your shaders (orpheusd/shaders.py): ready, rebuilt, broken, removed, or failed on the GPU.
+  Connections {
+    target: win.engine
+    ignoreUnknownSignals: true
+    function onShaderEvent(kind, name, text) {
+      var msg = kind === "ready" ? "shader ╱╱ " + name
+              : kind === "reloaded" ? "shader ╱╱ " + name + " · rebuilt in " + text
+              : kind === "removed" ? "shader · " + name + " removed"
+              : "shader ✕ " + (name ? name + " · " : "") + text
+      win.say(msg, kind === "error" || kind === "gpu" ? "error" : "info")
+    }
+  }
 
   function section(title, items) {
     var out = []
@@ -805,6 +817,7 @@ FloatingWindow {
     if (t === "r") { api.control("repeat"); return true }
     if (t === "v") { engine.cycleRailViz(1); return true }
     if (t === "V") { engine.open = !engine.open; return true }
+    if (t === "t") { engine.toggleCassette(); return true }
     if (t === "P") { playPage(false); return true }
     if (t === "S") { playPage(true); return true }
     if (t === "a") { queueItem(cursorItem(), true); return true }
@@ -2105,8 +2118,12 @@ FloatingWindow {
           readonly property real dur: win.st.duration || 0
           readonly property real frac: scrubbing ? scrubFrac
                                      : Math.max(0, Math.min(1, (win.api ? win.api.position : 0) / Math.max(1, dur || 1)))
+          // Drop-map markers: drops that hit hard enough to mark (strength >= 0.5), this track's map only.
+          readonly property var markDrops: win.engine && win.engine.map && win.track && String(win.engine.map.id) === String(win.track.id)
+                                           ? win.engine.map.drops.filter(function(d) { return d.strength >= 0.5 }) : []
+          readonly property var marks: markDrops.map(function(d) { return d.t / Math.max(1, seekMeter.dur) })
           textFormat: Text.StyledText
-          text: Tui.meterRich(frac, cells, win.accent, Tui.mix(win.dim, win.bg, 0.4))
+          text: Tui.meterMarks(frac, cells, win.accent, Tui.mix(win.dim, win.bg, 0.4), marks, Tui.ensure(win.engine ? win.engine.c2 : win.accent, win.bg, 3))
           font.family: win.family; font.pixelSize: Style.font.body
           // The playhead carries a halo: the one cell of the bar that is "now".
           TextMetrics { id: seekCell; font: seekMeter.font; text: "━" }
@@ -2142,7 +2159,10 @@ FloatingWindow {
               follow: true
               force: seekMeter.scrubbing
               at: Math.max(0, Math.min(seekMouse.width, seekMouse.mouseX))
-              text: seekMeter.dur > 0 ? win.clockText((seekMeter.scrubbing ? seekMeter.scrubFrac : seekMouse.fracAt(seekMouse.mouseX)) * seekMeter.dur) : ""
+              readonly property string lbl: seekMeter.markDrops.length ? Tui.markLabel(seekMeter.markDrops, seekMeter.dur, seekMeter.cells,
+                                            Math.round(seekMouse.fracAt(seekMouse.mouseX) * (seekMeter.cells - 1)), win.clockText) : ""
+              text: seekMeter.dur > 0 ? win.clockText((seekMeter.scrubbing ? seekMeter.scrubFrac : seekMouse.fracAt(seekMouse.mouseX)) * seekMeter.dur)
+                                        + (lbl && !seekMeter.scrubbing ? " · " + lbl : "") : ""
             }
           }
         }
