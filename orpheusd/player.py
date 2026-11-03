@@ -40,10 +40,11 @@ MPV_ARGS = [
     "--demuxer-max-bytes=48MiB", "--demuxer-max-back-bytes=16MiB",
     "--replaygain=track", "--replaygain-clip=no", "--keep-open=no",
     "--audio-client-name=Orpheus", "--load-scripts=no",
-    # On Linux the daemon is the MPRIS player, so mpv's own must stay off. Windows
-    # has no MPRIS: there mpv's media controls are how the keyboard's media keys
-    # and the system media overlay reach Orpheus.
-    f"--media-controls={'yes' if WINDOWS else 'no'}",
+    # On Linux the daemon is the MPRIS player, so mpv's own must stay off (and
+    # --media-controls is mpv 0.39+: Ubuntu 24.04 ships 0.37, which refuses the
+    # flag and exits). Windows has no MPRIS: there mpv's media controls are how
+    # the keyboard's media keys and the system media overlay reach Orpheus.
+    *(["--media-controls=yes"] if WINDOWS else []),
 ]
 
 
@@ -382,7 +383,10 @@ class Player:
             log.warning("mpv will outlive a killed daemon: %s", e)
         try:
             reader, writer = await ipc_connect(address)
-        except Exception:
+        except Exception as e:
+            if proc.returncode is not None:     # mpv died before opening its socket
+                raise RuntimeError(f"mpv exited with {proc.returncode} before its IPC came up "
+                                   f"({address}): {e}") from e
             proc.kill()
             raise
         deck = _Deck(proc, reader, writer, address)

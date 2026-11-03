@@ -47,7 +47,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - name: mpv
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq mpv >/dev/null
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq mpv >/dev/null && mpv --version | head -1
       - name: python environment
         run: uv sync --frozen
       - name: daemon answers, signed out, with mpv on a socket
