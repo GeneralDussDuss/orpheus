@@ -42,8 +42,9 @@ TOGGLE_ID = 0x4F02
 
 WM_COMMAND, WM_NCDESTROY = 0x0111, 0x0082
 SUBCLASS_ID = 0x4F00
-SUBCLASSPROC = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, wintypes.HWND, c_uint, wintypes.WPARAM, wintypes.LPARAM,
-                                  ctypes.c_size_t, ctypes.c_size_t)
+# WINFUNCTYPE only exists on Windows; the module must still import on Linux (install() returns None there).
+SUBCLASSPROC = (ctypes.WINFUNCTYPE(ctypes.c_ssize_t, wintypes.HWND, c_uint, wintypes.WPARAM, wintypes.LPARAM,
+                                   ctypes.c_size_t, ctypes.c_size_t) if WINDOWS else None)
 THBN_CLICKED = 0x1800
 THB_ICON, THB_TOOLTIP, THB_FLAGS = 0x2, 0x4, 0x8
 TBPF_NOPROGRESS, TBPF_NORMAL, TBPF_PAUSED = 0x0, 0x2, 0x8

@@ -1734,10 +1734,10 @@ FloatingWindow {
               elide: Text.ElideRight
               text: win.lpad(String(upRow.index + 1), 2) + "  " + upRow.modelData.title + "  · " + win.artists(upRow.modelData.artists)
               font.family: win.family; font.pixelSize: Style.font.caption
-              color: qm.pressed ? win.accentText : qm.containsMouse ? win.fg : win.dim
-              Rectangle { z: -1; anchors.fill: parent; anchors.leftMargin: -win.cw * 0.5; color: win.pressFill; visible: qm.pressed }
+              color: upm.pressed ? win.accentText : upm.containsMouse ? win.fg : win.dim
+              Rectangle { z: -1; anchors.fill: parent; anchors.leftMargin: -win.cw * 0.5; color: win.pressFill; visible: upm.pressed }
               MouseArea {
-                id: qm
+                id: upm
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor

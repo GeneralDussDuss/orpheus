@@ -1,0 +1,97 @@
+# Linux twin of windows.yml. Omarchy is Arch, but the checks here are
+# distro-neutral: the daemon answers with mpv on a socket, the test suite
+# passes, and the player + stage render off-screen through the PySide6 host.
+name: linux
+
+on:
+  push:
+    paths: ["orpheusd/**", "*.qml", "*.js", "shaders/**", "install.sh", "bin/**", "pyproject.toml", "uv.lock", ".github/workflows/linux.yml"]
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: qt runtime libraries for the offscreen platform
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libegl1 libgl1 libxkbcommon0 libfontconfig1 libglib2.0-0 libdbus-1-3 >/dev/null
+      - name: python environment with the desktop extra
+        run: uv sync --frozen --extra desktop
+      - name: pytest
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: uv run --with pytest pytest -q --no-header -p no:cacheprovider
+      - name: every desktop module imports on Linux
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          uv run python - <<'PY'
+          import importlib, pkgutil, sys
+          import orpheusd.desktop as d
+          skip = {"audiocap"}   # WASAPI loopback: Windows-only by design, never imported here
+          bad = []
+          for m in pkgutil.iter_modules(d.__path__):
+              if m.name in skip or m.name.startswith("__"): continue
+              try: importlib.import_module(f"orpheusd.desktop.{m.name}")
+              except Exception as e: bad.append(f"{m.name}: {e!r}")
+          print("\n".join(bad) or "all desktop modules import")
+          sys.exit(1 if bad else 0)
+          PY
+
+  daemon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: mpv
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq mpv >/dev/null
+      - name: python environment
+        run: uv sync --frozen
+      - name: daemon answers, signed out, with mpv on a socket
+        run: |
+          .venv/bin/orpheusd --port 47999 -v >out.log 2>err.log &
+          d=$!
+          s=""
+          for i in $(seq 1 60); do
+            s=$(curl -fsS --max-time 2 http://127.0.0.1:47999/status 2>/dev/null) && break
+            sleep 1
+          done
+          kill $d 2>/dev/null || true
+          tail -n 40 err.log
+          [ -n "$s" ] || { echo "orpheusd never answered"; exit 1; }
+          echo "$s" | python3 -c '
+          import json, sys
+          s = json.load(sys.stdin)
+          print(json.dumps(s, indent=1)[:1500])
+          assert s["login"]["state"] == "signed-out", s["login"]
+          assert not s["player"].get("error"), s["player"]
+          '
+
+  desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: qt runtime libraries for the offscreen platform
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libegl1 libgl1 libxkbcommon0 libfontconfig1 libglib2.0-0 libdbus-1-3 fonts-dejavu-core >/dev/null
+      - name: python environment with the desktop extra
+        run: uv sync --frozen --extra desktop
+      - name: the player and the stage render off-screen
+        env:
+          QT_QPA_PLATFORM: offscreen
+          ORPHEUS_HOME: ${{ github.workspace }}/home   # never the runner's real config
+        run: |
+          mkdir -p home shots
+          uv run python -m orpheusd.desktop --shot shots --no-daemon
+          uv run python -m orpheusd.desktop --shot shots --no-daemon --open toggle --style orb
+          ls -la shots
+          ls shots/*Orpheus*.png >/dev/null || { echo "the player window did not render"; exit 1; }
+          ls shots/*Stage*.png   >/dev/null || { echo "the stage did not render"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-shots
+          path: shots/*.png
