@@ -10,11 +10,11 @@ on:
 
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
       - name: qt runtime libraries for the offscreen platform
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libegl1 libgl1 libxkbcommon0 libfontconfig1 libglib2.0-0 libdbus-1-3 >/dev/null
       - name: python environment with the desktop extra
@@ -41,11 +41,11 @@ jobs:
           PY
 
   daemon:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
       - name: mpv
         run: sudo apt-get update -qq && sudo apt-get install -y -qq mpv >/dev/null && mpv --version | head -1
       - name: python environment
@@ -71,11 +71,11 @@ jobs:
           '
 
   desktop:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
       - name: qt runtime libraries for the offscreen platform
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libegl1 libgl1 libxkbcommon0 libfontconfig1 libglib2.0-0 libdbus-1-3 fonts-dejavu-core >/dev/null
       - name: python environment with the desktop extra
@@ -91,7 +91,7 @@ jobs:
           ls -la shots
           ls shots/*Orpheus*.png >/dev/null || { echo "the player window did not render"; exit 1; }
           ls shots/*Stage*.png   >/dev/null || { echo "the stage did not render"; exit 1; }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-shots
           path: shots/*.png

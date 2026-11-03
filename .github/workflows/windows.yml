@@ -12,8 +12,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
       - name: mpv
         run: choco install mpv --no-progress -y
       - name: where mpv landed
@@ -46,8 +46,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
       - name: python environment with the desktop extra
         run: uv sync --frozen --extra desktop
       - name: the player and the stage render off-screen
@@ -60,7 +60,7 @@ jobs:
           if (-not (Test-Path shots\*Orpheus*.png)) { throw "the player window did not render" }
           if (-not (Test-Path shots\*Stage*.png)) { throw "the stage did not render" }
           if ("$lib $stage" -match "qml:") { throw "QML warnings on Windows" }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: windows-shots
@@ -70,7 +70,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: install.ps1 under Windows PowerShell 5.1, from this checkout
         shell: powershell
         env:
