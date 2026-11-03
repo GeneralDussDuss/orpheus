@@ -232,7 +232,7 @@ XFADE_LEAD = 15.0
 
 
 class Player:
-    def __init__(self, tidal, sources: dict, runtime_dir: Path, cache_dir: Path, on_change):
+    def __init__(self, tidal, sources: dict, runtime_dir: Path, cache_dir: Path, on_change, on_resolved=None):
         self.tidal = tidal
         # yt-dlp sources by provider name; a track without a provider is TIDAL's
         self.sources = sources
@@ -240,6 +240,11 @@ class Player:
         self.runtime_dir = runtime_dir
         self.cache_dir = cache_dir
         self.on_change = on_change
+        # (track, info, role) after each fresh resolve that is still wanted:
+        # role "current" from _load, "next" from the prefetch and the crossfade
+        # deck. The drop map schedules its analysis from here, so it costs no
+        # extra playbackinfo call. Must not block or raise (see _resolved).
+        self.on_resolved = on_resolved
 
         self.queue: list[dict] = []
         self.order: list[int] = []        # play order (indices into queue); shuffled or not
@@ -349,6 +354,7 @@ class Player:
             "stream": self.stream_info,
             "queueIndex": self.pos,
             "queueLength": len(self.order),
+            "queueRev": self.queue_rev(),
             "upNext": upcoming,
             "error": self.error,
             # The desktop's audio capture listens to this process tree only.
@@ -653,6 +659,14 @@ class Player:
             return await source.stream(track["id"])
         return await self.tidal.stream(track["id"], self.cache_dir)
 
+    def _resolved(self, track: dict, info: dict, role: str):
+        if not self.on_resolved:
+            return
+        try:
+            self.on_resolved(track, info, role)
+        except Exception as e:
+            log.debug("on_resolved: %s", e)
+
     async def _load(self, order_pos: int, start: float = 0, paused: bool = False, skip: bool = False):
         if not skip:
             self._failed_run = 0     # a fresh start; only skips past failures count
@@ -707,6 +721,7 @@ class Player:
         if token != self._loading:
             return  # a newer request won
         self.stream_info = self._info(info)
+        self._resolved(track, info, "current")
         if self._heap_mb() > RECYCLE_MB:
             await self._recycle()
         self._entries.clear()
@@ -798,6 +813,7 @@ class Player:
         cover = await cover
         if token != self._loading:
             return
+        self._resolved(track, info, "next")
         # Drop anything already queued in mpv after the current entry, then append.
         await self._send(["playlist-clear"])
         url, opts = _loadable(info["source"], track, cover)
@@ -826,6 +842,31 @@ class Player:
         resized on every edit, and the rest is plain state."""
         return (id(self.queue), len(self.queue), id(self.order), len(self.order), self.pos,
                 id(self.context), self.shuffle, self.repeat)
+
+    # What a tracklist view gets per row: never the art or the stream source.
+    QUEUE_FIELDS = ("id", "title", "artists", "album", "duration", "kind", "explicit", "radio")
+
+    def queue_rev(self) -> str:
+        """Changes when the queue's contents or order change (not on a skip):
+        the cassette deck's j-card refetches GET /queue only when this moves.
+        A 32-bit collision costs one missed refresh, nothing more."""
+        return "%08x" % (hash((id(self.queue), len(self.queue), id(self.order), len(self.order),
+                               id(self.context), self.shuffle)) & 0xFFFFFFFF)
+
+    def queue_window(self, start: int, count: int) -> dict:
+        """A slice of the play order for a tracklist view (the cassette deck's
+        j-card). Pure: no await, no I/O. Rows carry no art and no stream source."""
+        n = len(self.order)
+        start = max(0, min(int(start), n))
+        count = max(0, min(int(count), 100))
+        rows = []
+        for i in range(start, min(n, start + count)):
+            t = self.queue[self.order[i]]
+            row = {k: t[k] for k in self.QUEUE_FIELDS if k in t}
+            row["i"] = i
+            rows.append(row)
+        return {"index": self.pos, "length": n, "from": start, "queueRev": self.queue_rev(),
+                "context": self.context or {}, "tracks": rows}
 
     def place(self) -> dict:
         """Where in the queue we are: small, so it can be saved every few seconds."""
@@ -961,12 +1002,19 @@ class Player:
         self.eq = eqmod.normalize(state)
         await self._apply_eq()
         self.on_change()
-        return self.eq_state()
+        return self.eq_state(full=True)
 
-    def eq_state(self) -> dict:
+    def eq_state(self, full: bool = False) -> dict:
         s = dict(self.eq)
         s["preampEffective"] = eqmod.effective_preamp(self.eq)
         s["active"] = bool(self._eq_chain)
+        s["autoeqActive"] = eqmod.autoeq_live(self.eq) and bool(self._eq_chain)
+        # /status is long-polled: carry a summary of the correction there, not
+        # its filters (~120 bytes instead of ~800). /eq replies are full.
+        if not full and s.get("autoeq"):
+            a = s["autoeq"]
+            s["autoeq"] = {"name": a["name"], "source": a["source"], "rig": a["rig"],
+                           "count": len(a["filters"])}
         return s
 
     async def set_volume(self, vol: float):
@@ -1116,6 +1164,7 @@ class Player:
             return
         if xf is not self._xf:
             return
+        self._resolved(track, info, "next")
         deck = None
         try:
             deck = await self._spawn()

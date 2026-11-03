@@ -36,10 +36,25 @@ Item {
 
   // Title decode when the box is born (~0.35 s), and again when the title changes.
   // Runs on the animation driver, so it always settles even if nothing else moves.
+  // The noise churns at ~22 Hz off the progress, like ScrambleText.
   property real decodeProgress: 0
-  readonly property real bornAt: 7
-  NumberAnimation on decodeProgress { id: decodeAnim; from: 0; to: 1; duration: 350; running: true }
+  property int bornAt: 7
+  readonly property int churn: Math.floor(decodeProgress * decodeAnim.duration / 45)
+  NumberAnimation on decodeProgress { id: decodeAnim; from: 0; to: 1; duration: Math.round(Tui.DECODE * 0.67); running: true }
   onTitleChanged: decodeAnim.restart()
+  // Decode the title again (the boot screen hands over to a page that's already
+  // settled: replaying makes the reveal land on something moving).
+  function replay() { bornAt = (bornAt + 1) % 97; decodeAnim.restart() }
+
+  // The title fits between the corner and the hints: the target is cut to the
+  // cells that are free BEFORE decoding, so the fixed-width decode holds.
+  // (Counted in the title's own cell: `cw` measures the default font, wider.)
+  TextMetrics { id: titleCell; font.family: Style.font.family; font.pixelSize: Style.font.body; font.bold: true; text: "MMMMMMMMMM" }
+  readonly property real titleCellW: titleCell.advanceWidth > 0 ? titleCell.advanceWidth / 10 : cw
+  readonly property real rightUsed: (hintItems.length > 0 ? hintBar.implicitWidth + hintPad.advanceWidth * 2
+                                     : keyHint !== "" ? keyText.implicitWidth : 0)
+                                    + (titleExtra !== null ? titleExtraBox.width : 0)
+  readonly property int titleCells: Math.max(4, Math.floor((width - cw * 2 - rightUsed) / Math.max(1, titleCellW)) - 3)
 
   // Focused: a soft bloom around the border, breathing with it. The halo is a
   // fixed accent ring blurred once; only its opacity follows the breath, so
@@ -84,10 +99,11 @@ Item {
     x: box.cw
     height: box.ch
     width: titleText.implicitWidth
+    clip: true
     color: box.background
     Text {
       id: titleText
-      text: " " + Tui.decode(box.title, box.decodeProgress, box.bornAt) + " "
+      text: " " + Tui.decode(Tui.fit(box.title, box.titleCells), box.decodeProgress, box.bornAt + box.churn) + " "
       font.family: Style.font.family
       font.pixelSize: Style.font.body
       font.bold: box.focused

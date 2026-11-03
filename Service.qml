@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Hyprland
 import Quickshell.Services.Mpris
 import qs.Commons
+import "Tui.js" as Tui
 
 // Orpheus: music visualizers that look like the rest of Omarchy.
 //
@@ -29,9 +30,45 @@ Item {
   readonly property string cavaConfigPath: stateDir + "/cava.conf"
   readonly property string themeRoot: home + "/.local/state/omarchy/current"
 
-  readonly property var styles: ["prism", "skyline", "horizon", "orb", "tunnel", "halo", "scope", "nova"]
-  readonly property var styleLabels: ({ prism: "Prism", skyline: "Skyline", horizon: "Horizon", orb: "Orb", tunnel: "Tunnel",
-                                       halo: "Halo", scope: "Scope", nova: "Nova" })
+  readonly property var builtinStyles: ["prism", "skyline", "horizon", "orb", "tunnel", "halo", "scope", "nova", "ridge", "ink", "abyss", "aurora"]
+  readonly property var builtinLabels: ({ prism: "Prism", skyline: "Skyline", horizon: "Horizon", orb: "Orb", tunnel: "Tunnel",
+                                         halo: "Halo", scope: "Scope", nova: "Nova",
+                                         ridge: "Ridge", ink: "Ink", abyss: "Abyss", aurora: "Aurora" })
+  // Your own shaders, compiled by orpheusd (orpheusd/shaders.py) and listed by
+  // GET /shaders. A user style is "@" + its file name, so it can never collide
+  // with a builtin. Only styles with a build join the list: one that has never
+  // compiled shows up in settings with its error instead.
+  property var userStyles: []                 // replaced only when the daemon's shaders.version moves
+  property string shaderDir: ""
+  property var shaderCompiler: null           // { path, version } or null
+  readonly property var styles: {
+    var s = builtinStyles.slice()
+    for (var i = 0; i < userStyles.length; i++) if (userStyles[i].url) s.push("@" + userStyles[i].name)
+    return s
+  }
+  readonly property var styleLabels: {
+    var l = {}
+    for (var k in builtinLabels) l[k] = builtinLabels[k]
+    for (var i = 0; i < userStyles.length; i++) l["@" + userStyles[i].name] = userStyles[i].label || userStyles[i].name
+    return l
+  }
+  readonly property var userStyleUrls: {
+    var u = {}
+    for (var i = 0; i < userStyles.length; i++) u["@" + userStyles[i].name] = userStyles[i].url
+    return u
+  }
+  function isUserStyle(name) { return typeof name === "string" && name.charAt(0) === "@" }
+  function userStyle(name) {
+    if (!isUserStyle(name)) return null
+    for (var i = 0; i < userStyles.length; i++) if ("@" + userStyles[i].name === name) return userStyles[i]
+    return null
+  }
+  // Where a style's .qsb lives: builtins beside this file, user styles wherever
+  // the daemon built them. Reads userStyleUrls, so a binding on it re-evaluates
+  // when a rebuild changes the URL (the file is named by a hash of its content).
+  function styleUrl(name) {
+    return isUserStyle(name) ? (userStyleUrls[name] || Qt.resolvedUrl("shaders/prism.frag.qsb")) : Qt.resolvedUrl("shaders/" + name + ".frag.qsb")
+  }
   // railViz: the visualizer plane inside the player window. "off" shows album
   // art there instead. Prism is the default because it measured as the cheapest
   // style by a wide margin (+0.7% shell CPU, against +13 to +20 for the others).
@@ -39,17 +76,29 @@ Item {
                                      showMonitor: "", autoStyle: false, trackTitle: true, lyricsOverViz: false,
                                      autoQuality: true, showFps: false, bloom: "subtle",
                                      endless: true, crossfade: 0, remote: "off",
-                                     director: true, beatLock: true, lookaheadMs: 85, feedback: "subtle",
+                                     director: true, beatLock: true, lookaheadMs: 85, feedback: "subtle", dropMap: true, dropMapLeadMs: 30,
+                                     ambient: "subtle", dropFx: true, titleFx: true, pulseUi: true, bootScreen: true, scene: "viz", deckLook: "shell",
                                      widget: { enabled: true, style: "full", corner: "bottom-right", monitor: "", viz: "prism", layer: "top" } })
 
   // ---- Config ------------------------------------------------------------
   property var config: defaults
-  readonly property string style: styles.indexOf(config.style) >= 0 ? config.style : "prism"
+  readonly property string style: knownStyle(config.style)
+  // A saved style, or prism. Before the first GET /shaders lands (or with the
+  // daemon down) a user style is kept: styleUrl draws prism under its name
+  // until the list arrives, and the swap is then in place, no transition.
+  function knownStyle(name) {
+    return styles.indexOf(name) >= 0 || (shadersVersion < 0 && isUserStyle(name) && name.length > 1) ? name : "prism"
+  }
   readonly property bool miniPlayer: config.miniPlayer !== false
   // overlay: a card over everything; desktop: on the wallpaper (on Windows, behind
   // the icons, full monitor); fullscreen: the show, full-bleed on showMonitor.
   readonly property var placements: ["overlay", "desktop", "fullscreen"]
   readonly property string placement: placements.indexOf(config.placement) >= 0 ? config.placement : "overlay"
+  // The stage's scene, orthogonal to placement: the visualizer, or the cassette
+  // deck (Cassette.qml). A switch crossfades inside the open window (StageView's
+  // two Loaders); unlike a placement change, nothing is rebuilt.
+  readonly property var scenes: ["viz", "cassette"]
+  readonly property string scene: scenes.indexOf(config.scene) >= 0 ? config.scene : "viz"
   readonly property string showMonitor: typeof config.showMonitor === "string" ? config.showMonitor : ""  // "" = focused
   readonly property bool autoStyle: config.autoStyle === true          // switch style on big drops
   readonly property bool trackTitle: config.trackTitle !== false       // title card when the track changes
@@ -63,6 +112,16 @@ Item {
   // MilkDrop-style trails under every visualizer (VizPost.qml).
   readonly property var feedbacks: ["off", "subtle", "full"]
   readonly property string feedback: feedbacks.indexOf(config.feedback) >= 0 ? config.feedback : "subtle"
+  // A dim, blurred visualizer behind the player window's text.
+  readonly property var ambients: ["off", "subtle", "vivid"]
+  readonly property string ambient: ambients.indexOf(config.ambient) >= 0 ? config.ambient : "subtle"
+  readonly property bool dropFx: config.dropFx !== false    // chroma burst, grain and vignette on drops (VizPost.qml)
+  readonly property bool titleFx: config.titleFx !== false  // titles decode in on a track change
+  readonly property bool pulseUi: config.pulseUi !== false  // UI accents breathe with the kick
+  readonly property bool bootScreen: config.bootScreen !== false  // Boot.qml over the player window, once per run
+  // The cassette deck's look: "shell" a lit clear-shell machine, "light" the deck drawn in light.
+  readonly property var deckLooks: ["shell", "light"]
+  readonly property string deckLook: deckLooks.indexOf(config.deckLook) >= 0 ? config.deckLook : "shell"
   readonly property var widget: {
     var w = {}
     for (var k in defaults.widget) w[k] = defaults.widget[k]
@@ -73,9 +132,9 @@ Item {
   // With syncViz on (the default) the widget shows whatever the visualizer shows,
   // and choosing a style from either one changes both.
   readonly property bool syncViz: config.syncViz !== false
-  readonly property string widgetViz: syncViz ? style : (styles.indexOf(widget.viz) >= 0 ? widget.viz : "prism")
+  readonly property string widgetViz: syncViz ? style : knownStyle(widget.viz)
   readonly property string railViz: config.railViz === "off" ? "off"
-                                    : (styles.indexOf(config.railViz) >= 0 ? config.railViz : "prism")
+                                    : knownStyle(config.railViz)
 
   function applyConfig(raw) {
     var parsed = {}
@@ -151,16 +210,21 @@ Item {
   property color c1: liveC1
   property color c2: liveC2
   property color c3: liveC3
-  property color bg: Color.background
+  // Solid under glass mode too (Color.background then carries the window tint's
+  // alpha), or the visualizers would turn see-through.
+  property color bg: Color.glass === true ? Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 1) : Color.background
   property color fg: Color.foreground
   readonly property bool lightTheme: (0.2126 * Color.background.r + 0.7152 * Color.background.g + 0.0722 * Color.background.b) > 0.5
 
-  // Locked to the shell's 420 ms wallpaper reveal; retargets mid-flight.
-  Behavior on c1 { ColorAnimation { duration: 420; easing.type: Easing.InOutCubic } }
-  Behavior on c2 { ColorAnimation { duration: 420; easing.type: Easing.InOutCubic } }
-  Behavior on c3 { ColorAnimation { duration: 420; easing.type: Easing.InOutCubic } }
-  Behavior on bg { ColorAnimation { duration: 420; easing.type: Easing.InOutCubic } }
-  Behavior on fg { ColorAnimation { duration: 420; easing.type: Easing.InOutCubic } }
+  // Linux: locked to the shell's 420 ms wallpaper reveal (Tui.PAGE); retargets
+  // mid-flight. Windows: shims.py already glides Color.* in OKLab over
+  // Tui.GLIDE (650 ms, eased), so a second ease here would trail the UI's
+  // palette by a frame or more: the visualizer takes the glide as it comes.
+  Behavior on c1 { enabled: !root.windows; ColorAnimation { duration: Tui.PAGE; easing.type: Tui.EASE } }
+  Behavior on c2 { enabled: !root.windows; ColorAnimation { duration: Tui.PAGE; easing.type: Tui.EASE } }
+  Behavior on c3 { enabled: !root.windows; ColorAnimation { duration: Tui.PAGE; easing.type: Tui.EASE } }
+  Behavior on bg { enabled: !root.windows; ColorAnimation { duration: Tui.PAGE; easing.type: Tui.EASE } }
+  Behavior on fg { enabled: !root.windows; ColorAnimation { duration: Tui.PAGE; easing.type: Tui.EASE } }
 
   // Fallback palette for themes whose accent/border don't give three colours.
   FileView {
@@ -205,6 +269,7 @@ Item {
   // ---- Visibility --------------------------------------------------------
   property bool open: false
   property bool libraryOpen: false
+  property bool bootShown: false     // the boot screen has played this run (Library.qml mounts it)
   property int loginRequests: 0      // bumps to send the open library to the sign-in page
   property int eqRequests: 0         // ... and the same for the equalizer
   property int eqHandled: 0
@@ -227,6 +292,73 @@ Item {
   // ---- Player service (orpheusd) -----------------------------------------
   Api { id: apiClient; active: root.libraryOpen || root.open || root.widgetShown }
   readonly property var api: apiClient
+  // The drop map: the daemon's analysis of the playing track (beats, bars,
+  // builds, drops), fetched once per track and handed to the Director.
+  DropMapSource { id: dropMapSrc; api: apiClient; track: apiClient.track; enabled: root.dropMap && root.director }
+  readonly property var map: dropMapSrc.map              // seek bars draw its drops
+  readonly property string mapState: dropMapSrc.state    // "" | pending | ready | none | failed
+
+  // ---- your shaders ------------------------------------------------------
+  //
+  // /status carries shaders.version; the list itself is fetched only when it
+  // moves (the likedVersion pattern), so styles/styleLabels are rebuilt on a
+  // real change and never on every long-poll return. The events drive the
+  // toast, the stage's tick and its fps peek.
+  property int shadersVersion: -1
+  readonly property int serverShadersVersion: apiClient.status && apiClient.status.shaders ? apiClient.status.shaders.version : -1
+  onServerShadersVersionChanged: if (serverShadersVersion >= 0 && serverShadersVersion !== shadersVersion) refreshShaders()
+  signal shaderEvent(string kind, string name, string text)     // ready | reloaded | error | removed | gpu
+  function refreshShaders(then) {
+    apiClient.get("/shaders", function(ok, d) {
+      if (!ok || !d || !d.styles) { if (then) then(); return }
+      var before = {}, first = shadersVersion < 0
+      for (var i = 0; i < userStyles.length; i++) before[userStyles[i].name] = userStyles[i]
+      shadersVersion = d.version
+      shaderDir = d.dir || ""
+      shaderCompiler = d.compiler || null
+      userStyles = d.styles
+      if (then) then()
+      if (first) return          // what was already there at startup is not news
+      var seen = {}
+      for (var j = 0; j < d.styles.length; j++) {
+        var s = d.styles[j], b = before[s.name]
+        seen[s.name] = true
+        if (!b) { if (s.ok) shaderEvent("ready", s.name, s.label); else if (s.error) shaderEvent("error", s.name, s.error) }
+        else if (s.ok && (!b.ok || b.built !== s.built)) shaderEvent("reloaded", s.name, (s.ms / 1000).toFixed(2) + " s")
+        else if (!s.ok && s.error && s.error !== b.error) shaderEvent("error", s.name, s.error)
+      }
+      for (var n in before) if (!seen[n]) shaderEvent("removed", n, "")
+    })
+  }
+  // A shadertoy link or id, GLSL with mainImage (or //#common), or a file URL
+  // (the stage's drop). done(ok, message, name) gets a line fit for a toast
+  // and the daemon's style name (it may have added -2 to the file's).
+  function importShader(text, done) {
+    var t = String(text || "").trim()
+    var body = /mainImage\s*\(|\/\/#common/.test(t) ? { source: t } : t ? { url: t } : null
+    if (!body) { if (done) done(false, "the clipboard has neither a shadertoy link nor glsl with mainImage"); return }
+    apiClient.post("/shaders/import", body, function(ok, d, code) {
+      if (!ok || !d || !d.style) {
+        var m = typeof d === "string" && d ? d : code === 0 ? "orpheusd isn't running" : "import failed"
+        if (done) done(false, "shader ✕ " + m); else shaderEvent("error", "", m)
+        return
+      }
+      var s = d.style
+      var line = s.ok ? "shader ╱╱ " + s.label + " · on the stage" : "shader ✕ " + s.name + " · " + s.error
+      if (!s.url) { if (done) done(!!s.ok, line, s.name); return }
+      // The list has to know the new style before setStyle will take it: the
+      // /status shaders.version that would refetch it may not have moved yet.
+      refreshShaders(function() {
+        var msg = setStyle("@" + s.name)
+        if (done) done(!!s.ok, String(msg).indexOf("unknown style") === 0 ? "shader ✕ " + s.name + " · not in the list yet" : line, s.name)
+      })
+    })
+  }
+  // Viz saw ShaderEffect.Error: a D3D11/GL-side failure that qsb could not see.
+  function reportShaderRuntime(name, log) {
+    console.warn("orpheus: shader", name, "failed on the gpu:", String(log || "").split("\n")[0])
+    shaderEvent("gpu", String(name).replace(/^@/, ""), "failed on the gpu · see desktop.log")
+  }
 
   // ---- Audio (cava) ------------------------------------------------------
   // On Windows cava hears the whole default output: a game, Discord, a video.
@@ -614,6 +746,11 @@ Item {
   // capture buffer ~10, presentation one to two frames (~25). config
   // `lookaheadMs` overrides: raise it if flashes land late, lower if early.
   readonly property real lookahead: Math.max(0, Math.min(400, typeof config.lookaheadMs === "number" ? config.lookaheadMs : 85)) / 1000
+  // The drop map (config `dropMap`, default on) and its own presentation lead:
+  // the timeline is exact, so only the last stretch to the screen is left to
+  // cover. `dropMapLeadMs` (-200..400, default 30) tunes it.
+  readonly property bool dropMap: config.dropMap !== false
+  readonly property real mapLead: Math.max(-200, Math.min(400, typeof config.dropMapLeadMs === "number" ? config.dropMapLeadMs : 30)) / 1000
   // A test harness drives the analysis on a fake clock (ms); -1 = the wall clock.
   property real clockMs: -1
   function nowMs() { return clockMs >= 0 ? clockMs : Date.now() }
@@ -623,6 +760,11 @@ Item {
     enabled: root.director
     beatLock: root.beatLock
     lookahead: root.lookahead
+    map: root.dropMap ? dropMapSrc.map : null
+    songBase: apiClient.posBase
+    songAt: apiClient.posAt
+    playing: apiClient.player.playing === true
+    mapLead: root.mapLead
   }
   readonly property var directorState: directorCore
   readonly property real beatPhase: directorCore.beatPhase          // 0..1 within the beat, 0 = on it
@@ -634,6 +776,12 @@ Item {
   readonly property int sectionCode: directorCore.sectionCode       // 0 intro 1 build 2 drop 3 breakdown 4 steady
   readonly property string section: directorCore.section
   readonly property int drops: directorCore.drops                   // bumps on each drop (autoStyle watches it)
+  readonly property real anticipate: directorCore.anticipate        // 0..1 wind-up over the last 8 beats before a mapped drop
+  readonly property real dropIn: directorCore.dropIn                // s to the next mapped drop, -1 = none
+  readonly property real mapWeight: directorCore.mapWeight          // 0..1 trust in the drop map
+  readonly property bool mapLocked: directorCore.mapOn              // the phases come from the map
+  readonly property real armedDrop: directorCore.armedDrop          // song time of the drop 1.5 s ahead, -1 = none (Stage pre-arms on it)
+  readonly property real dropMapped: directorCore.dropMapped        // 1 while the drop pulse came from the map
 
   // `beat` is the onset envelope, or with beatLock and a confident grid, a
   // pulse fired by the grid's predicted phase: it peaks on the beat instead of
@@ -673,8 +821,10 @@ Item {
   property real flow: 1
   // Confidence-weighted BPM: a doubtful estimate falls back toward restBpm.
   readonly property real paceBpm: root.restBpm + (root.tempo > 0 ? root.tempo - root.restBpm : 0) * root.tempoConfidence
+  // A mapped drop: the world slows to ~45 % through the wind-up and leaps on the drop.
   readonly property real flowTarget: Math.max(0.55, Math.min(1.7,
       Math.pow(root.paceBpm / root.restBpm, 0.45))) * (0.85 + root.energy * 0.5)
+      * (1 - 0.55 * directorCore.anticipate * directorCore.anticipate) * (1 + 1.6 * Math.pow(directorCore.drop, 6))
   // Distance travelled. The shaders read this instead of multiplying time by a
   // speed, so a tempo change bends the motion instead of teleporting the world.
   property real travel: 0
@@ -778,13 +928,30 @@ Item {
     updateConfig(function(c) { c.placement = where })
     return statusText()
   }
+  // "next" steps through scenes. Every caller (t, palette, settings, IPC, the
+  // hotkey, --scene) goes through here.
+  function setScene(name) {
+    if (name === "next") name = scenes[(scenes.indexOf(scene) + 1) % scenes.length]
+    if (scenes.indexOf(name) < 0) return "unknown scene: " + name + " (" + scenes.join("|") + "|next)"
+    updateConfig(function(c) { c.scene = name })
+    return statusText()
+  }
+  function cycleScene() { return setScene("next") }
+  // `t` in the player, Win+Alt+Q, IPC `cassette`: closed -> open on the deck;
+  // open on the visualizer -> the deck; open on the deck -> close.
+  function toggleCassette() {
+    if (!open) { if (scene !== "cassette") setScene("cassette"); open = true }
+    else if (scene !== "cassette") setScene("cassette")
+    else open = false
+    return statusText()
+  }
   function setShowMonitor(name) {
     updateConfig(function(c) { c.showMonitor = name || "" })
     return statusText()
   }
   // The stage's on/off switches: autoStyle, trackTitle, lyricsOverViz, autoQuality, showFps.
   function setStageFlag(key, on) {
-    var keys = ["autoStyle", "trackTitle", "lyricsOverViz", "autoQuality", "showFps", "director", "beatLock"]
+    var keys = ["autoStyle", "trackTitle", "lyricsOverViz", "autoQuality", "showFps", "director", "beatLock", "dropMap"]
     if (keys.indexOf(key) < 0) return "unknown setting: " + key + " (" + keys.join("|") + ")"
     var v = on === "toggle" ? !root[key] : (on === true || on === "on" || on === "true" || on === "1")
     updateConfig(function(c) { c[key] = v })
@@ -855,7 +1022,7 @@ Item {
   }
 
   function statusText() {
-    return JSON.stringify({ open: open, library: libraryOpen, widget: widget, style: style, railViz: railViz, miniPlayer: miniPlayer, placement: placement, bloom: bloom,
+    return JSON.stringify({ open: open, library: libraryOpen, widget: widget, style: style, railViz: railViz, miniPlayer: miniPlayer, placement: placement, scene: scene, bloom: bloom,
                             cava: hasCava, listening: listening,
                             energy: Math.round(energy * 1000) / 1000, bass: Math.round(bass * 1000) / 1000,
                             beat: Math.round(beat * 1000) / 1000, kick: Math.round(kick * 1000) / 1000,
@@ -867,6 +1034,7 @@ Item {
                             director: director, beatLock: beatLock, section: section,
                             beatConfidence: Math.round(beatConfidence * 100) / 100, build: Math.round(build * 100) / 100,
                             flowTarget: Math.round(flowTarget * 100) / 100, flow: Math.round(flow * 100) / 100,
+                            map: mapState, mapWeight: Math.round(mapWeight * 100) / 100,
                             player: player ? (player.identity || "") : "" })
   }
 
@@ -888,6 +1056,8 @@ Item {
     function nextStyle(): string { return root.nextStyle(1) }
     function miniPlayer(on: string): string { return root.setMiniPlayer(on) }
     function placement(where: string): string { return root.setPlacement(where) }
+    function scene(name: string): string { return root.setScene(name) }
+    function cassette(): string { return root.toggleCassette() }
     function showMonitor(name: string): string { return root.setShowMonitor(name) }
     function autoStyle(on: string): string { return root.setStageFlag("autoStyle", on) }
     function trackTitle(on: string): string { return root.setStageFlag("trackTitle", on) }
@@ -898,7 +1068,9 @@ Item {
     function feedback(level: string): string { return root.setFeedback(level) }
     function director(on: string): string { return root.setStageFlag("director", on) }
     function beatLock(on: string): string { return root.setStageFlag("beatLock", on) }
+    function dropMap(on: string): string { return root.setStageFlag("dropMap", on) }
     function widget(key: string, value: string): string { return root.setWidget(key, value) }
+    function importShader(text: string): string { root.importShader(text); return root.statusText() }
   }
 
   // Nothing tears this plugin down for us. Disabling it at runtime left the

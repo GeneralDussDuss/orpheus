@@ -16,8 +16,22 @@ ShaderEffect {
   // The style on screen: it trails styleName while a change waits for the
   // downbeat (see "style transitions" below).
   property string shownStyle: ""
-  fragmentShader: Qt.resolvedUrl("shaders/" + (shownStyle || styleName) + ".frag.qsb")
+  // A user style ("@name", orpheusd/shaders.py) lives wherever the daemon built
+  // it; a rebuild changes the URL (content hash) with styleName unchanged, so
+  // Qt loads the new package in place, no transition: the live-edit feel. The
+  // fallback keeps engines without styleUrl (dev tools' fakes) working.
+  fragmentShader: engine && engine.styleUrl ? engine.styleUrl(shownStyle || styleName)
+                                            : Qt.resolvedUrl("shaders/" + (shownStyle || styleName) + ".frag.qsb")
   blending: true
+
+  // What the daemon knows about a user style (uses, scale, transition); null for builtins.
+  readonly property var userMeta: engine && engine.userStyle ? engine.userStyle(shownStyle || styleName) : null
+  readonly property var oldMeta: engine && engine.userStyle && transitioning ? engine.userStyle(oldStyle) : null
+  function uses(m, w) { return !!m && !!m.uses && m.uses.indexOf(w) >= 0 }
+  // qsb can't see a D3D11/GL-side failure; the item would keep its previous
+  // material and show the old picture with no word. Say so instead.
+  onStatusChanged: if (status === ShaderEffect.Error && engine && engine.isUserStyle && engine.reportShaderRuntime
+                       && engine.isUserStyle(shownStyle || styleName)) engine.reportShaderRuntime(shownStyle || styleName, log)
 
   // Fraction of full resolution to shade at (the stage's auto quality sets it).
   // Below 1 the effect renders into a smaller layer that is scaled back up, so
@@ -25,11 +39,19 @@ ShaderEffect {
   // qt_TexCoord0 and `res`, so nothing in them changes.
   property real renderScale: 1
   readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
-  readonly property bool postOn: bloomOn || feedbackOn || transitioning
-  layer.enabled: renderScale < 0.999 || postOn
+  // A user style shades at its own scale on top of that (0.8 unless its
+  // `//! scale:` says otherwise): Shadertoy shaders commonly cost 5-20x an
+  // Orpheus style. Bloom and trails still key off renderScale alone.
+  readonly property real userScale: userMeta && userMeta.scale > 0 ? userMeta.scale : 1
+  readonly property real effScale: renderScale * userScale
+  // Drop effects ride in VizPost too, so with them on the chain stays built even
+  // with bloom and trails off (no layer toggle, and so no hitch, on the drop).
+  readonly property bool dropFxOn: !!engine && engine.dropFx === true && styleName !== "mini" && Math.min(width, height) >= 48
+  readonly property bool postOn: bloomOn || feedbackOn || transitioning || dropFxOn
+  layer.enabled: effScale < 0.999 || postOn
   layer.smooth: true
-  layer.textureSize: Qt.size(Math.max(1, Math.round(width * dpr * renderScale)),
-                             Math.max(1, Math.round(height * dpr * renderScale)))
+  layer.textureSize: Qt.size(Math.max(1, Math.round(width * dpr * effScale)),
+                             Math.max(1, Math.round(height * dpr * effScale)))
   // Bloom and feedback read the layer in half float, so light the shaders push
   // past 1.0 still counts as hot instead of being clipped first.
   layer.format: postOn ? ShaderEffectSource.RGBA16F : ShaderEffectSource.RGBA8
@@ -88,6 +110,14 @@ ShaderEffect {
       c2: fx.c2
       c3: fx.c3
       light: fx.light
+      dropFx: !!fx.engine && fx.engine.dropFx === true && fx.styleName !== "mini"
+      drop: fx.drop
+      build: fx.build
+      downbeat: fx.downbeat
+      beatPhase: fx.beatPhase
+      snap: fx.snap
+      anticipate: fx.anticipate
+      mapped: fx.mapped
     }
   }
 
@@ -139,11 +169,75 @@ ShaderEffect {
   property real build: engine ? engine.build : 0
   property real drop: engine ? engine.drop : 0
   property real section: engine ? engine.sectionCode : 4
+  property real anticipate: engine ? (engine.anticipate || 0) : 0   // drop map wind-up (fbshow, via VizPost)
+  property real mapped: engine ? (engine.dropMapped || 0) : 0
+  // Shadertoy imports (orpheusd/shaders.py): iMouse, iFrame, iTimeDelta. Builtins ignore them.
+  // The mouse is in item pixels, bottom-up, like `res` and fragCoord; the click
+  // (zw) stays 0, since a click on the stage already switches style.
+  property vector4d mouse: hov.hovered && uses(userMeta, "iMouse")
+                           ? Qt.vector4d(hov.point.position.x, height - hov.point.position.y, 0, 0) : zero
+  property real frame: 0
+  onTimeChanged: if (userMeta || oldMeta) frame = (frame + 1) % 16777216   // builtins never read it
+  property real dt: 1 / Math.max(10, fps)
+  // passive, and only on for a style that reads iMouse: the stage's MouseAreas still get every click
+  HoverHandler { id: hov; enabled: fx.uses(fx.userMeta, "iMouse") }
+
+  // ---- Shadertoy channels -------------------------------------------------------
+  //
+  // Samplers bind by name: iChannel0/2/3 are a 512x2 audio texture in
+  // Shadertoy's layout (row 0 the spectrum, row 1 a wave the bands drive),
+  // iChannel1 the spectrum history below. No builtin declares them, so for
+  // those the properties are ignored and the audio pass never runs.
+  readonly property var audioTex: audioPass.item ? audioPass.item.tex : null
+  property var iChannel0: audioTex
+  property var iChannel1: histSource
+  property var iChannel2: audioTex
+  property var iChannel3: audioTex
+  function usesAudio(m) { return uses(m, "iChannel0") || uses(m, "iChannel2") || uses(m, "iChannel3") }
+  readonly property bool wantsAudio: usesAudio(userMeta) || usesAudio(oldMeta)
+
+  // Built only for a style that samples it: otherwise its eleven bindings would
+  // dirty a hidden 512x2 pass every frame on every Viz (stage, rail, widget, mini).
+  Loader {
+    id: audioPass
+    active: fx.wantsAudio
+    sourceComponent: Item {
+      property alias tex: audioSource
+      ShaderEffect {
+        id: audioFx
+        width: 512
+        height: 2
+        fragmentShader: Qt.resolvedUrl("shaders/audiotex.frag.qsb")
+        property vector4d b0: fx.b0
+        property vector4d b1: fx.b1
+        property vector4d b2: fx.b2
+        property vector4d b3: fx.b3
+        property vector4d b4: fx.b4
+        property vector4d b5: fx.b5
+        property vector4d b6: fx.b6
+        property vector4d b7: fx.b7
+        property real time: fx.time
+        property real energy: fx.energy
+        property real kick: fx.kick
+      }
+
+      ShaderEffectSource {
+        id: audioSource
+        sourceItem: audioFx
+        hideSource: true
+        live: fx.wantsAudio && fx.visible && !!fx.engine && fx.engine.energy > 0.001
+        smooth: true
+        format: ShaderEffectSource.RGBA8
+        textureSize: Qt.size(512, 2)   // fixed, and not recursive: nothing here ever resizes in place
+      }
+    }
+  }
 
   // Spectrum history for Prism, Horizon, Scope and Skyline, kept on the GPU: histFx renders a 32x40 target
   // from its own previous frame (rows shift back one step, row 0 = now).
-  function usesHistory(s) { return s === "prism" || s === "horizon" || s === "scope" || s === "skyline" }
+  function usesHistory(s) { return s === "prism" || s === "horizon" || s === "scope" || s === "skyline" || s === "ridge" }
   readonly property bool wantsHistory: usesHistory(shownStyle || styleName) || (transitioning && usesHistory(oldStyle))
+                                       || uses(userMeta, "iChannel1") || uses(oldMeta, "iChannel1")
   property var hist: histSource
 
   ShaderEffect {
@@ -163,16 +257,113 @@ ShaderEffect {
     property real rows: 40
   }
 
+  // Ridge draws each history row as its own line, so it wants seconds of song,
+  // not frames: its history steps at a fixed rate (40 rows at 30 Hz = 1.3 s,
+  // the same at any fps). The others shift every frame, as they were tuned.
+  readonly property int histHz: (shownStyle || styleName) === "ridge" ? 30 : 0
+  Timer {
+    interval: fx.histHz > 0 ? Math.round(1000 / fx.histHz) : 1000
+    repeat: true
+    running: fx.histHz > 0 && fx.wantsHistory && fx.visible && !!fx.engine && fx.engine.energy > 0.001
+    onTriggered: histSource.scheduleUpdate()
+  }
+
   ShaderEffectSource {
     id: histSource
     sourceItem: histFx
     hideSource: true
     recursive: true
     // Only advance while there's sound to remember; otherwise hold still.
-    live: fx.wantsHistory && !!fx.engine && fx.engine.energy > 0.001
+    live: fx.wantsHistory && fx.histHz === 0 && !!fx.engine && fx.engine.energy > 0.001
     smooth: true   // linear filtering: ridges and rows interpolate instead of stair-stepping
     format: ShaderEffectSource.RGBA8
     textureSize: Qt.size(32, 40)
+  }
+
+  // ---- ink: the water ---------------------------------------------------------
+  //
+  // Ink's dye lives in a persistent half-float buffer at ~0.4 of the view
+  // (capped at 1280 wide), advected every frame by inkstate.frag along an
+  // analytic curl-noise flow and fed by the music; ink.frag then shades it.
+  // Like the history it renders from its own previous frame, and only while
+  // ink is on screen (or leaving it in a transition). Each time it goes live
+  // the water is cleared for a few frames, then the emitters let out a cloud.
+  readonly property bool wantsInk: (shownStyle || styleName) === "ink" || (transitioning && oldStyle === "ink")
+  property var inkState: inkLoader.item ? inkLoader.item.src : null
+  readonly property real inkScale: Math.min(0.4, 1280 / Math.max(1, width * dpr))
+  property real inkFresh: 1
+  property real inkIntro: 0
+  // Checked a beat later: starting a transition flips wantsInk off and on
+  // again within one update, and that must not wipe the water.
+  property bool inkWasLive: false
+  onWantsInkChanged: Qt.callLater(inkWake)
+  function inkWake() {
+    if (wantsInk && !inkWasLive) { inkFresh = 1; inkIntroAnim.stop(); inkWarm.restart() }
+    inkWasLive = wantsInk
+  }
+  Timer { id: inkWarm; interval: 60; onTriggered: { fx.inkFresh = 0; inkIntroAnim.restart() } }
+  NumberAnimation { id: inkIntroAnim; target: fx; property: "inkIntro"; from: 1; to: 0; duration: 1400; easing.type: Easing.OutQuad }
+
+  // A recursive source must never change size in place (Qt swaps its texture
+  // out from under the bound shader and the NVIDIA driver crashes on it; see
+  // VizPost.qml's feedback buffer). The water follows the view's size, so a
+  // resize tears it down and builds it fresh once the size holds still.
+  readonly property size inkWant: Qt.size(Math.max(16, Math.round(width * dpr * inkScale)),
+                                          Math.max(16, Math.round(height * dpr * inkScale)))
+  property size inkSize
+  property bool inkReady: false
+  onInkWantChanged: {
+    if (!inkReady && !inkRebuild.running) return   // not built yet: Component.onCompleted does it
+    if (inkWant.width === inkSize.width && inkWant.height === inkSize.height) return
+    inkReady = false
+    inkRebuild.restart()
+  }
+  Timer { id: inkRebuild; interval: 150; onTriggered: { fx.inkSize = fx.inkWant; fx.inkReady = true } }
+
+  Loader {
+    id: inkLoader
+    active: fx.inkReady
+    // fresh texture, so fresh water
+    onLoaded: { fx.inkWasLive = false; fx.inkWake() }
+    sourceComponent: Item {
+      readonly property alias src: inkSource
+      ShaderEffect {
+        id: inkFx
+        width: fx.inkSize.width
+        height: fx.inkSize.height
+        fragmentShader: Qt.resolvedUrl("shaders/inkstate.frag.qsb")
+        property var prev: inkSource
+        property real time: fx.time
+        property real asp: fx.width / Math.max(1, fx.height)
+        property real dt: 1 / Math.max(10, fx.fps)
+        property vector2d texel: Qt.vector2d(1 / fx.inkSize.width, 1 / fx.inkSize.height)
+        property color c1: fx.c1
+        property color c2: fx.c2
+        property color c3: fx.c3
+        property real bass: fx.bass
+        property real energy: fx.energy
+        property real swell: fx.swell
+        property real snap: fx.snap
+        property real build: fx.build
+        property real drop: fx.drop
+        property real kicks: fx.kicks
+        property vector4d kickAge: fx.kickAge
+        property real fresh: fx.inkFresh
+        property real intro: fx.inkIntro
+      }
+
+      ShaderEffectSource {
+        id: inkSource
+        sourceItem: inkFx
+        hideSource: true
+        recursive: true
+        live: fx.wantsInk
+        smooth: true
+        format: ShaderEffectSource.RGBA16F
+        // set once: a resize rebuilds the whole Loader (see inkWant)
+        Component.onCompleted: textureSize = fx.inkSize
+      }
+    }
   }
 
   // ---- style transitions ------------------------------------------------------
@@ -189,9 +380,9 @@ ShaderEffect {
   property int tkind: 0
   property real tseed: 0
   property real lastBar: 0
-  readonly property var kinds: ({ prism: 0, skyline: 0, horizon: 3, orb: 2, tunnel: 1, halo: 2, scope: 3, nova: 1 })
+  readonly property var kinds: ({ prism: 0, skyline: 0, horizon: 3, orb: 2, tunnel: 1, halo: 2, scope: 3, nova: 1, ridge: 0, ink: 4, abyss: 1, aurora: 4 })
 
-  Component.onCompleted: shownStyle = styleName
+  Component.onCompleted: { shownStyle = styleName; inkSize = inkWant; inkReady = true; inkWake() }
   onStyleNameChanged: requestStyle()
   function requestStyle() {
     if (shownStyle === "") return
@@ -200,6 +391,9 @@ ShaderEffect {
     }
     if (styleName === shownStyle) { downbeatWait.stop(); pendingStyle = ""; return }
     pendingStyle = styleName
+    // A mapped drop is on its way (Stage pre-arms 1.5 s ahead): stretch the
+    // transition so it completes on the drop frame itself.
+    if (engine && engine.mapLocked && engine.dropIn > 0.3 && engine.dropIn < 3) { beginTransition(Math.round(1000 * engine.dropIn)); return }
     // Just past a downbeat already (a drop switches style the instant it is
     // heard, ~0.1 bar after the downbeat it re-anchored): go now, not a bar later.
     if (beatConfidence > 0.35 && barPhase > 0.12) downbeatWait.restart()
@@ -212,17 +406,20 @@ ShaderEffect {
   }
   Timer { id: downbeatWait; interval: 2500; onTriggered: fx.beginTransition() }
 
-  function beginTransition() {
+  function beginTransition(durationMs) {
     downbeatWait.stop()
     if (pendingStyle === "" || pendingStyle === shownStyle) { pendingStyle = ""; return }
     endTransition()
     oldStyle = shownStyle
     shownStyle = pendingStyle
     pendingStyle = ""
-    tkind = kinds[shownStyle] !== undefined ? kinds[shownStyle] : Math.floor(Math.random() * 4)
+    // A user style may name its own way in (`//! transition:`); otherwise a random one.
+    var um = engine && engine.userStyle ? engine.userStyle(shownStyle) : null
+    tkind = kinds[shownStyle] !== undefined ? kinds[shownStyle]
+          : (um && um.transition >= 0 ? um.transition : Math.floor(Math.random() * 4))
     tseed = Math.floor(Math.random() * 1000)
     tprog = 0
-    transAnim.duration = Math.round(1000 * Math.max(0.8, Math.min(1.5, 1 / Math.max(0.3, tempo))))
+    transAnim.duration = durationMs > 0 ? durationMs : Math.round(1000 * Math.max(0.8, Math.min(1.5, 1 / Math.max(0.3, tempo))))
     transitioning = true
     transAnim.restart()
   }
@@ -243,8 +440,11 @@ ShaderEffect {
     width: fx.width; height: fx.height
     visible: fx.transitioning && fx.oldStyle !== ""
     blending: true
-    fragmentShader: fx.oldStyle !== "" ? Qt.resolvedUrl("shaders/" + fx.oldStyle + ".frag.qsb") : ""
+    fragmentShader: fx.oldStyle === "" ? ""
+                    : fx.engine && fx.engine.styleUrl ? fx.engine.styleUrl(fx.oldStyle)
+                    : Qt.resolvedUrl("shaders/" + fx.oldStyle + ".frag.qsb")
     property var hist: fx.hist
+    property var inkState: fx.inkState
     property real time: fx.time
     property vector2d res: fx.res
     property vector4d b0: fx.b0
@@ -287,6 +487,15 @@ ShaderEffect {
     property real build: fx.build
     property real drop: fx.drop
     property real section: fx.section
+    property real anticipate: fx.anticipate
+    property real mapped: fx.mapped
+    property vector4d mouse: fx.mouse
+    property real frame: fx.frame
+    property real dt: fx.dt
+    property var iChannel0: fx.iChannel0
+    property var iChannel1: fx.iChannel1
+    property var iChannel2: fx.iChannel2
+    property var iChannel3: fx.iChannel3
   }
   ShaderEffectSource {
     id: oldSrc

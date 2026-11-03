@@ -11,6 +11,7 @@ import asyncio
 import glob
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -19,17 +20,22 @@ from pathlib import Path
 WINDOWS = sys.platform == "win32"
 
 
-def _dirs() -> tuple[Path, Path, Path]:
+def _dirs() -> tuple[Path, Path, Path, Path]:
     if WINDOWS:
         base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "Orpheus"
-        return base / "state", base / "cache", Path(tempfile.gettempdir()) / "orpheus"
+        return base / "state", base / "cache", Path(tempfile.gettempdir()) / "orpheus", base / "shaders"
     home = Path.home()
     return (Path(os.environ.get("XDG_STATE_HOME", home / ".local/state")) / "orpheus",
             Path(os.environ.get("XDG_CACHE_HOME", home / ".cache")) / "orpheus",
-            Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "orpheus")
+            Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "orpheus",
+            Path(os.environ.get("XDG_CONFIG_HOME", home / ".config")) / "orpheus" / "shaders")
 
 
-STATE_DIR, CACHE_DIR, RUNTIME_DIR = _dirs()
+STATE_DIR, CACHE_DIR, RUNTIME_DIR, _SHADER_DEFAULT = _dirs()
+# The user's own visualizer styles (orpheusd/shaders.py). ORPHEUS_SHADERS moves it on both OSes.
+SHADER_DIR = Path(os.environ["ORPHEUS_SHADERS"]) if os.environ.get("ORPHEUS_SHADERS") else _SHADER_DEFAULT
+
+IDLE_FLAGS = (0x40 | 0x08000000) if WINDOWS else 0   # IDLE_PRIORITY_CLASS | CREATE_NO_WINDOW
 
 
 def mpv_path() -> str:
@@ -56,6 +62,31 @@ def mpv_path() -> str:
     return "mpv"
 
 
+def ffmpeg_path() -> str | None:
+    """ffmpeg on PATH, or where winget's yt-dlp dependency leaves it (yt-dlp.FFmpeg
+    lands under WinGet\\Packages, not WinGet\\Links). ORPHEUS_FFMPEG overrides.
+    None = missing: the drop map reports it as a health state, never a crash."""
+    found = os.environ.get("ORPHEUS_FFMPEG") or shutil.which("ffmpeg")
+    if found or not WINDOWS:
+        return found
+    env = lambda v: os.environ.get(v, "")
+    for pattern in (rf"{env('LOCALAPPDATA')}\Microsoft\WinGet\Links\ffmpeg.exe",
+                    rf"{env('LOCALAPPDATA')}\Microsoft\WinGet\Packages\*FFmpeg*\**\bin\ffmpeg.exe",
+                    rf"{env('ProgramFiles')}\ffmpeg\bin\ffmpeg.exe",
+                    rf"{env('USERPROFILE')}\scoop\shims\ffmpeg.exe",
+                    rf"{env('ProgramData')}\chocolatey\bin\ffmpeg.exe"):
+        hits = glob.glob(pattern, recursive=True)
+        if hits:
+            return hits[0]
+    return None
+
+
+def numpy_available() -> bool:
+    """The drop map's worker needs numpy (the desktop or analysis extra); the daemon never imports it."""
+    import importlib.util
+    return importlib.util.find_spec("numpy") is not None
+
+
 def curd_path() -> str | None:
     """Curd on PATH, or where its Windows installer puts it (per user, never on PATH)."""
     found = shutil.which("curd")
@@ -63,6 +94,72 @@ def curd_path() -> str | None:
         return found
     exe = Path(os.environ.get("APPDATA", "")) / "Curd" / "curd.exe"
     return str(exe) if exe.is_file() else None
+
+
+def qsb_path() -> str | None:
+    """The Qt Shader Baker, or None (never a bare "qsb": the UI must be able to
+    say "missing"). Looked up on every compile pass, so dropping qsb in while the
+    daemon runs is picked up by a rescan."""
+    env = lambda v: os.environ.get(v, "")
+    if "ORPHEUS_QSB" in os.environ:          # set, even empty: the only answer (tests use "")
+        q = env("ORPHEUS_QSB")
+        return q if q and Path(q).is_file() else None
+    cands = []
+    if WINDOWS:
+        cands.append(rf"{env('LOCALAPPDATA')}\Orpheus\tools\qsb\qsb.exe")   # the documented drop-in spot
+    cands.append(shutil.which("qsb"))
+    try:
+        import PySide6
+        p = Path(PySide6.__file__).parent
+        cands += [str(p / ("qsb.exe" if WINDOWS else "qsb")), str(p / "Qt" / "libexec" / "qsb")]
+    except ImportError:
+        pass
+    if not WINDOWS:
+        cands += ["/usr/lib/qt6/bin/qsb", "/usr/lib/qt6/libexec/qsb", "/usr/lib/x86_64-linux-gnu/qt6/bin/qsb",
+                  "/usr/lib64/qt6/bin/qsb", "/usr/libexec/qt6/qsb"]
+    return next((c for c in cands if c and Path(c).is_file()), None)
+
+
+def qsb_env() -> dict:
+    """qsb.exe needs Qt6Core/Qt6Gui beside Qt6ShaderTools.dll: on Windows the
+    venv's PySide6 dir goes first on PATH. Everywhere: single-threaded BLAS/OMP,
+    as every helper here."""
+    e = dict(os.environ, OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", MKL_NUM_THREADS="1")
+    if WINDOWS:
+        try:
+            import PySide6
+            e["PATH"] = str(Path(PySide6.__file__).parent) + os.pathsep + e.get("PATH", "")
+        except ImportError:
+            pass
+    return e
+
+
+def run_quiet(argv: list[str], *, env: dict | None = None, timeout: float = 30.0) -> tuple[int, str]:
+    """A short helper process that must never show a window, take focus or compete
+    with a game: idle priority, no console, stdin closed, killed on timeout.
+    Blocking; call it through asyncio.to_thread. Returns (rc, stdout+stderr text)."""
+    kw: dict = dict(stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    env=env or qsb_env())
+    if WINDOWS:
+        kw["creationflags"] = IDLE_FLAGS
+    else:
+        kw["preexec_fn"] = lambda: os.nice(10)
+    try:
+        p = subprocess.Popen(argv, **kw)
+    except OSError as e:
+        return 127, str(e)
+    if WINDOWS:
+        try:
+            tie_to_daemon(p.pid)
+        except OSError:
+            pass
+    try:
+        out, _ = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        out, _ = p.communicate()
+        return 124, (out or b"").decode("utf-8", "replace") + "\n(timed out)"
+    return p.returncode, (out or b"").decode("utf-8", "replace")
 
 
 def ipc_address(runtime_dir: Path, name: str) -> str:

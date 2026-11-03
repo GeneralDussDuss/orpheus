@@ -41,7 +41,7 @@ Item {
 
   // The title decodes in whenever the track changes.
   property real decodeProgress: 1
-  NumberAnimation on decodeProgress { id: decodeAnim; from: 0; to: 1; duration: 350; running: false }
+  NumberAnimation on decodeProgress { id: decodeAnim; from: 0; to: 1; duration: Math.round(Tui.DECODE * 0.67); running: false }
   onTitleChanged: decodeAnim.restart()
 
   // The player window's global key (on Windows as the hotkeys actually bound it).
@@ -70,7 +70,7 @@ Item {
     color: Tui.alpha(Color.accent, 0.12)
     border.width: 1
     border.color: root.playing ? Tui.mix(root.line, root.accent, 0.35 + 0.4 * root.breath) : root.line
-    Behavior on border.color { ColorAnimation { duration: Tui.STATE; easing.type: Easing.InOutCubic } }
+    Behavior on border.color { ColorAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
     Text {
       anchors.centerIn: parent
       visible: artImage.status !== Image.Ready
@@ -130,8 +130,11 @@ Item {
         property bool scrubbing: false
         property real scrubFrac: 0
         readonly property real frac: scrubbing ? scrubFrac : Math.max(0, Math.min(1, root.position / Math.max(1, root.length)))
+        readonly property var markDrops: root.ours && root.engine.map && String(root.engine.map.id) === String(root.engine.api.track ? root.engine.api.track.id : "")
+                                         ? root.engine.map.drops.filter(function(d) { return d.strength >= 0.5 }) : []
+        readonly property var marks: markDrops.map(function(d) { return d.t / Math.max(1, root.length) })
         textFormat: Text.StyledText
-        text: Tui.meterRich(frac, cells, root.accent, Tui.mix(root.dim, root.bg, 0.4))
+        text: Tui.meterMarks(frac, cells, root.accent, Tui.mix(root.dim, root.bg, 0.4), marks, Tui.ensure(root.engine ? root.engine.c2 : root.accent, root.bg, 3))
         font.family: Style.font.family; font.pixelSize: Style.font.body
         MouseArea {
           id: meterMouse
@@ -153,7 +156,10 @@ Item {
             follow: true
             force: meter.scrubbing
             at: Math.max(0, Math.min(meterMouse.width, meterMouse.mouseX))
-            text: root.length > 0 ? root.clock((meter.scrubbing ? meter.scrubFrac : meterMouse.fracAt(meterMouse.mouseX)) * root.length) : ""
+            readonly property string lbl: meter.markDrops.length ? Tui.markLabel(meter.markDrops, root.length, meter.cells,
+                                          Math.round(meterMouse.fracAt(meterMouse.mouseX) * (meter.cells - 1)), root.clock) : ""
+            text: root.length > 0 ? root.clock((meter.scrubbing ? meter.scrubFrac : meterMouse.fracAt(meterMouse.mouseX)) * root.length)
+                                    + (lbl && !meter.scrubbing ? " · " + lbl : "") : ""
           }
         }
       }
@@ -175,9 +181,15 @@ Item {
           font.pixelSize: Style.font.body
           // Play breathes with the beat while music runs; hover lights any key.
           readonly property bool isPlay: modelData.action === "toggle"
-          color: hover.containsMouse ? root.accentText
-                 : (isPlay && root.playing ? Tui.mix(root.fg, root.accentText, 0.45 + 0.55 * root.beat) : root.fg)
-          Behavior on color { ColorAnimation { duration: 120 } }
+          // hover eases a 0..1 scalar, never the colour (the beat moves it every
+          // frame, and a ColorAnimation would trail it); a press shrinks the key
+          // in-frame and springs back on release
+          property real hot: hover.containsMouse ? 1 : 0
+          Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+          color: Tui.mix(isPlay && root.playing ? Tui.mix(root.fg, root.accentText, 0.45 + 0.55 * root.beat) : root.fg,
+                         root.accentText, hot)
+          scale: hover.pressed ? 0.86 : 1
+          Behavior on scale { enabled: !hover.pressed; SpringAnimation { spring: Tui.SPRING.spring; damping: Tui.SPRING.damping } }
           // ... and its halo pulses with the same beat.
           glowLive: isPlay && root.playing && root.bloom > 0
           glow: glowLive ? root.bloom * (0.3 + 0.7 * root.beat) : 0

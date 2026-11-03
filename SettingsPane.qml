@@ -28,11 +28,6 @@ Rectangle {
 
   MouseArea { anchors.fill: parent; onPressed: function(m) { pane.forceActiveFocus(); m.accepted = false } }
 
-  // the shared motion: a cursor step, a change of state, a page
-  readonly property int tFast: 120
-  readonly property int tMid: 180
-  readonly property int tSlow: 420
-
   // Desktop-only pieces: Omarchy's own Color has no theme list, and the global
   // hotkeys there are Hyprland binds, so both sections say so instead.
   readonly property bool hasThemes: typeof Color.themeList !== "undefined" && Color.themeList !== null
@@ -82,6 +77,10 @@ Rectangle {
       if (!hasThemes) return [{ kind: "note", label: "themes follow Omarchy here · omarchy-theme-set" }]
       r.push({ kind: "action", id: "builder", label: "theme builder…", hint: "make your own",
                desc: "pick a background, text and accent; the rest of the palette is worked out, and saved under yours" })
+      // glass: a blurred see-through window (desktop only; absent until Color has it)
+      if (onWindows && Color.glass !== undefined)
+        r.push({ kind: "toggle", id: "glass", label: "glass",
+                 desc: "the player window turns frosted glass over whatever is behind it" })
       var list = Color.themeList || [], group = ""
       for (var i = 0; i < list.length; i++) {
         if (list[i].group !== group) { group = list[i].group; r.push({ kind: "header", label: group.toLowerCase() }) }
@@ -96,6 +95,8 @@ Rectangle {
       r.push({ kind: "choice", id: "placement", label: "visualizer as", def: d.placement,
                options: e && e.placements ? e.placements : ["overlay", "desktop"],
                desc: "a window on top, live wallpaper behind the icons, or a fullscreen show" })
+      r.push({ kind: "choice", id: "scene", label: "stage scene", options: e && e.scenes ? e.scenes : ["viz", "cassette"], def: d.scene, key: "t",
+               desc: "what the visualizer window and the show draw: the visualizer, or a cassette deck with reels, vu meters and the queue as a j-card" })
       r.push({ kind: "choice", id: "showMonitor", label: "show on screen", options: screens(), def: "",
                desc: "which monitor the wallpaper and the fullscreen show use" })
       r.push({ kind: "toggle", id: "stage", label: "visualizer window", key: "V",
@@ -105,6 +106,19 @@ Rectangle {
                desc: "glow around the bright parts of the visualizer · dark themes only" })
       r.push({ kind: "choice", id: "feedback", label: "trails", options: ["off", "subtle", "full"], def: d.feedback,
                desc: "each frame leaves a fading echo of the last, like milkdrop" })
+      r.push({ kind: "toggle", id: "dropFx", label: "drop effects", def: d.dropFx,
+               desc: "a chroma burst, grain and a vignette when a drop lands" })
+      r.push({ kind: "choice", id: "ambient", label: "ambient light", options: ["off", "subtle", "vivid"], def: d.ambient,
+               desc: "the visualizer, dim and blurred, behind the player's panes · dark themes only" })
+      r.push({ kind: "choice", id: "deckLook", label: "cassette look", options: ["shell", "light"], def: d.deckLook,
+               desc: "the deck (t): a lit clear-shell machine, or the same deck drawn in light" })
+      r.push({ kind: "header", label: "motion" })
+      r.push({ kind: "toggle", id: "titleFx", label: "title decode", def: d.titleFx,
+               desc: "a new track's title scrambles and resolves in, like a terminal" })
+      r.push({ kind: "toggle", id: "pulseUi", label: "ui pulse", def: d.pulseUi,
+               desc: "the playing row, playhead and focused pane glow with the kick · dark themes only" })
+      r.push({ kind: "toggle", id: "bootScreen", label: "boot screen", def: d.bootScreen !== false,
+               desc: "a short start-up screen the first time the player opens · any key skips it" })
       r.push({ kind: "toggle", id: "trackTitle", label: "title card on track change", def: d.trackTitle,
                desc: "the new track's name fades in over the visualizer" })
       r.push({ kind: "toggle", id: "lyricsOverViz", label: "lyrics over the visualizer", def: d.lyricsOverViz,
@@ -116,11 +130,30 @@ Rectangle {
                desc: "flashes land on a predicted beat grid instead of a detection late" })
       r.push({ kind: "toggle", id: "autoStyle", label: "switch styles on drops", def: d.autoStyle,
                desc: "jump to another visualizer style when a big drop lands" })
+      r.push({ kind: "toggle", id: "dropMap", label: "drop map", def: d.dropMap,
+               desc: "analyse each track ahead of time so beats, builds and drops land exactly · needs ffmpeg" })
+      var an = api && api.status ? api.status.analysis : null
+      if (an && !an.available) r.push({ kind: "note", label: an.ffmpeg ? "numpy is missing · install the desktop extra" : "no decoder · winget install yt-dlp.FFmpeg (or put ffmpeg on PATH)" })
+      r.push({ kind: "header", label: "your shaders" })
+      r.push({ kind: "action", id: "shaderImport", label: "import shader from clipboard", hint: "a shadertoy link, or glsl with mainImage",
+               desc: "copy a shadertoy link or an image shader's code, then ⏎; it lands in your shaders folder and on the stage" })
+      r.push({ kind: "action", id: "shaderFolder", label: "open the shaders folder", hint: (e && e.userStyles ? e.userStyles.length : 0) + " styles",
+               desc: "drop any shadertoy-style .frag here; it compiles on save and appears as a style · " + (e ? e.shaderDir : "") })
+      r.push({ kind: "action", id: "shaderReload", label: "recompile your shaders", desc: "rescan the folder now, e.g. after installing qsb" })
+      r.push({ kind: "note", label: e && e.shaderCompiler ? "compiler · " + (e.shaderCompiler.version || e.shaderCompiler.path)
+                                    : (onWindows ? "no compiler · put qsb.exe and Qt6ShaderTools.dll in %LOCALAPPDATA%\\Orpheus\\tools\\qsb, or set ORPHEUS_QSB"
+                                                 : "no compiler · install qt6-shadertools (qsb), or set ORPHEUS_QSB") })
+      var us = e && e.userStyles ? e.userStyles : []
+      for (var si = 0; si < us.length; si++)
+        r.push({ kind: "note", label: (us[si].ok ? "● " : "✕ ") + us[si].name + (us[si].error ? " · " + us[si].error
+                                     : us[si].origin && us[si].origin.kind === "shadertoy" ? " · shadertoy · " + (us[si].origin.author || "") : "") })
     } else if (id === "sound") {
       r.push({ kind: "choice", id: "quality", label: "streaming quality", options: ["high", "lossless", "hires"],
                desc: "320k aac, cd-quality flac, or hi-res flac up to 24/192 (needs a hi-res sign-in)" })
       r.push({ kind: "action", id: "eq", label: "equalizer…", key: "e", hint: eqHint(),
                desc: "ten bands, presets and headroom · opens the equalizer page" })
+      r.push({ kind: "action", id: "autoeq", label: "headphone correction…", key: "A", hint: aeHint(),
+               desc: "AutoEq's measured correction for your headphones, stacked under the ten bands · fetched from github on request, cached here" })
       r.push({ kind: "header", label: "flow" })
       r.push({ kind: "toggle", id: "endless", label: "endless play", def: d.endless,
                desc: "when the queue runs out, keep going with radio from the last track" })
@@ -214,6 +247,9 @@ Rectangle {
                  hint: OrpheusGame.discord.indexOf("discordClientId") >= 0 ? "" : OrpheusGame.discord,
                  desc: "rich presence: the id of an application from discord.com/developers" })
       }
+      r.push({ kind: "header", label: "shadertoy" })
+      r.push({ kind: "text", id: "shadertoyKey", label: "shadertoy app key", secret: true, def: "",
+               desc: "from shadertoy.com/myapps · lets a pasted shadertoy link fetch the shader (public + api shaders only); pasting glsl needs no key" })
     } else if (id === "advanced") {
       r.push({ kind: "choice", id: "fps", label: "frame rate", options: [30, 60, 90, 120], def: d.fps,
                desc: "how often the visualizers draw · lower saves power" })
@@ -223,6 +259,8 @@ Rectangle {
                desc: "an fps counter in the corner of the visualizer" })
       r.push({ kind: "number", id: "lookaheadMs", label: "beat lookahead", min: 0, max: 400, step: 5, unit: "ms", def: d.lookaheadMs,
                desc: "how far ahead the beat grid aims · raise it if flashes land late, lower if early" })
+      r.push({ kind: "number", id: "dropMapLeadMs", label: "drop map lead", min: -200, max: 400, step: 5, unit: "ms", def: d.dropMapLeadMs,
+               desc: "how early the mapped beat shows · raise it if mapped flashes land late, lower if early" })
       r.push({ kind: "header", label: "phone remote" })
       r.push({ kind: "text", id: "remoteHost", label: "remote address", def: "", placeholder: "this machine's LAN address",
                desc: "the address the phone remote listens on · empty finds it" })
@@ -286,6 +324,10 @@ Rectangle {
     if (!api || !api.status || !api.status.eq) return ""
     return eqState.active ? "● on" + (eqState.preset ? " · " + eqState.preset : " · custom") : "○ bypassed"
   }
+  function aeHint() {
+    var a = eqState.autoeq
+    return a ? (eqState.autoeqActive ? "● " : "○ ") + a.name : "none"
+  }
   function hudHint() { return value({ id: "hud", kind: "toggle" }) ? "" : "the HUD is off" }
 
   // The list's model is a count: when it is rebuilt the ListView resets its
@@ -327,6 +369,9 @@ Rectangle {
     case "fps": return engine.fps
     case "bloom": return engine.bloom
     case "feedback": return engine.feedback
+    case "ambient": return engine.ambient || "subtle"
+    case "deckLook": return engine.deckLook || "shell"
+    case "glass": return Color.glass === true
     case "stage": return engine.open
     case "widget.enabled": return engine.widget.enabled !== false
     case "widget.style": return engine.widget.style
@@ -335,6 +380,7 @@ Rectangle {
     case "widget.layer": return engine.widget.layer || "top"
     case "widget.viz": return engine.widgetViz
     case "placement": return engine.placement
+    case "scene": return engine.scene || "viz"
     case "showMonitor": return c.showMonitor || ""
     case "quality": return api && api.status ? api.status.quality : ""
     case "startWithWindows": return keys ? keys.startWithWindows : false
@@ -348,6 +394,7 @@ Rectangle {
     case "playerHint": return c.playerHint !== false
     case "endless": return c.endless !== false
     case "lookaheadMs": return typeof c.lookaheadMs === "number" ? c.lookaheadMs : 85
+    case "dropMapLeadMs": return typeof c.dropMapLeadMs === "number" ? c.dropMapLeadMs : 30
     case "remotePort": return Number(c.remotePort) || 47838
     }
     // the engine's own reading of a flag when it has one, so defaults agree
@@ -362,6 +409,7 @@ Rectangle {
     if (r.id === "style" || r.id === "railViz" || r.id === "widget.viz") return styleName(v)
     if (r.id === "fps") return v + " fps"
     if (r.id === "placement") return ({ desktop: "wallpaper", fullscreen: "fullscreen show", overlay: "window on top" })[v] || v
+    if (r.id === "scene") return ({ viz: "visualizer", cassette: "cassette deck" })[v] || v
     if (r.id === "showMonitor" || r.id === "widget.monitor") return v || "the main one"
     if (r.id === "widget.layer") return ({ top: "above windows", desktop: "on the desktop", reserve: "reserve space", tile: "tiled window", float: "floating window" })[v] || v
     if (r.id === "quality") return ({ high: "320k", lossless: "lossless", hires: "hi-res" })[v] || "unknown"
@@ -392,6 +440,7 @@ Rectangle {
     switch (r.id) {
     case "style": engine.setStyle(v); return
     case "railViz": engine.setRailViz(v); return
+    case "glass": if (Color.setGlass) Color.setGlass(!!v); return
     case "bloom": engine.setBloom(v); return
     case "feedback": if (engine.setFeedback) { engine.setFeedback(v); return } break
     case "stage": engine.open = !!v; return
@@ -399,6 +448,7 @@ Rectangle {
     case "widget.style": case "widget.corner": case "widget.monitor": case "widget.layer": case "widget.viz":
       engine.setWidget(r.id.slice(7), v); return
     case "placement": engine.setPlacement(v); return
+    case "scene": if (engine.setScene) { engine.setScene(v); return } break
     case "showMonitor": if (engine.setShowMonitor) { engine.setShowMonitor(v); return } break
     case "miniPlayer": engine.setMiniPlayer(v ? "on" : "off"); return
     case "startWithWindows": if (keys) keys.setStartWithWindows(!!v); return
@@ -418,7 +468,7 @@ Rectangle {
       return
     }
     if ((r.kind === "toggle" || r.kind === "choice") && engine.setStageFlag && typeof engine[r.id] === "boolean"
-        && ["autoStyle", "trackTitle", "lyricsOverViz", "autoQuality", "showFps", "director", "beatLock"].indexOf(r.id) >= 0) {
+        && ["autoStyle", "trackTitle", "lyricsOverViz", "autoQuality", "showFps", "director", "beatLock", "dropMap"].indexOf(r.id) >= 0) {
       engine.setStageFlag(r.id, v ? "on" : "off"); return
     }
     engine.updateConfig(function(c) { c[r.id] = v })
@@ -463,17 +513,21 @@ Rectangle {
     if (r.kind === "hotkey" || r.kind === "text" || r.kind === "number") { startEdit(r); return }
     if (r.id === "builder") { Color.openBuilder(); return }
     if (r.id === "eq") { host.showEq(); return }
+    if (r.id === "autoeq") { host.go({ type: "eq", title: "equalizer", pick: true }); return }
+    if (r.id === "shaderImport") { engine.importShader(Quickshell.clipboardText, function(ok, msg) { host.say(msg, ok ? "info" : "error") }); return }
+    if (r.id === "shaderFolder") { if (engine.shaderDir) Qt.openUrlExternally("file:///" + String(engine.shaderDir).replace(/\\/g, "/").replace(/^\/+/, "")); return }
+    if (r.id === "shaderReload") { api.post("/shaders/reload", {}, function(ok) { host.say(ok ? "shaders rescanned" : "couldn't rescan", ok ? "info" : "error") }); return }
     if (r.id === "hudShow") { OrpheusGame.showHud(); host.say("HUD ╱╱ shown on the screen in front"); return }
-    if (r.id === "remoteReset") { api.post("/remote/pair/reset", {}, function(ok, d) { if (ok && d) pane.pair = d; host.say(ok ? "new pairing code · scan it again" : "couldn't reset the code") }); return }
+    if (r.id === "remoteReset") { api.post("/remote/pair/reset", {}, function(ok, d) { if (ok && d) pane.pair = d; host.say(ok ? "new pairing code · scan it again" : "couldn't reset the code", ok ? "ok" : "error") }); return }
     if (r.id === "lastfmConnect")
       return api.post("/lastfm/auth/start", {}, function(ok, d) {
         if (ok && d && d.url) { Qt.openUrlExternally(d.url); host.say("approve Orpheus on last.fm, then ⏎ finish here") }
-        else host.say("last.fm · " + host.errText(d, "couldn't start the sign-in"))
+        else host.say("last.fm · " + host.errText(d, "couldn't start the sign-in"), "error")
         pane.refreshDaemon()
       })
     if (r.id === "lastfmFinish")
       return api.post("/lastfm/auth/finish", {}, function(ok, d) {
-        host.say(ok && d ? "last.fm ╱╱ scrobbling as " + d.user : "last.fm · " + host.errText(d, "not approved yet"))
+        host.say(ok && d ? "last.fm ╱╱ scrobbling as " + d.user : "last.fm · " + host.errText(d, "not approved yet"), ok && d ? "ok" : "error")
         pane.refreshDaemon()
       })
     if (r.id === "lastfmDisconnect") { api.post("/lastfm/disconnect", {}, function() { pane.refreshDaemon() }); host.say("last.fm disconnected"); return }
@@ -512,7 +566,7 @@ Rectangle {
     if (r.kind === "hotkey") {
       if (!text) { setHotkey(r.id, undefined); host.say("back to the default"); return }
       var err = keys.check(text)
-      if (err) { host.say("can't use " + text + " · " + err); return }
+      if (err) { host.say("can't use " + text + " · " + err, "error"); return }
       var combo = keys.normalize(text)
       setHotkey(r.id, combo)
       host.say("bound " + combo + " · registering…")
@@ -521,13 +575,13 @@ Rectangle {
     if (r.kind === "number") {
       if (!text) { resetValue(r); return }
       var n = Number(text)
-      if (!isFinite(n)) { host.say(r.label + " · a number, " + r.min + " to " + r.max); return }
+      if (!isFinite(n)) { host.say(r.label + " · a number, " + r.min + " to " + r.max, "error"); return }
       n = Math.max(r.min, Math.min(r.max, Math.round(n)))
       engine.updateConfig(function(c) { c[r.id] = n })
       host.say(r.label + " · " + show(r, n))
       return
     }
-    if (r.id === "discordClientId" && text && !/^\d+$/.test(text)) { host.say("an application id is all digits"); return }
+    if (r.id === "discordClientId" && text && !/^\d+$/.test(text)) { host.say("an application id is all digits", "error"); return }
     engine.updateConfig(function(c) { if (text) c[r.id] = text; else delete c[r.id] })
     host.say(r.label + (text ? " · saved" : " · cleared"))
     Qt.callLater(refreshDaemon)
@@ -634,7 +688,7 @@ Rectangle {
           color: host.fg
           clip: true
           selectionColor: Tui.alpha(Color.accent, 0.35)
-          cursorDelegate: Rectangle { width: pane.cw; color: host.accent; opacity: 0.7; visible: search.activeFocus }
+          cursorDelegate: TuiCaret { host: pane.host; visible: search.activeFocus }
           text: pane.query
           onTextEdited: { pane.query = text; pane.cursor = pane.firstRow() }
           Keys.onPressed: function(e) {
@@ -661,7 +715,7 @@ Rectangle {
     Row {
       spacing: pane.cw * 2
       opacity: pane.searching ? 0.45 : 1
-      Behavior on opacity { NumberAnimation { duration: pane.tMid; easing.type: Easing.InOutCubic } }
+      Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
       Repeater {
         model: pane.sections
         Text {
@@ -671,8 +725,18 @@ Rectangle {
           readonly property bool on: index === pane.section && !pane.searching
           text: (on ? "▰ " : "▱ ") + modelData.label
           font.family: host.family; font.pixelSize: Style.font.body; font.bold: on
-          color: on || tabArea.containsMouse ? host.accentText : host.dim
-          Behavior on color { ColorAnimation { duration: pane.tMid; easing.type: Easing.InOutCubic } }
+          // hover eases a 0..1 scalar (theme colours glide on their own); a
+          // press fills at once
+          property real hot: on || tabArea.containsMouse ? 1 : 0
+          Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+          color: Tui.mix(host.dim, host.accentText, hot)
+          Rectangle {
+            z: -1
+            anchors.fill: parent; anchors.margins: -pane.cw * 0.3
+            color: Tui.alpha(Color.accent, tabArea.pressed ? Tui.A.press : Tui.A.hover)
+            opacity: tabArea.pressed || (tabArea.containsMouse && !tab.on) ? 1 : 0
+            Behavior on opacity { enabled: !tabArea.pressed; NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+          }
           MouseArea { id: tabArea; anchors.fill: parent; anchors.margins: -3; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                       onClicked: pane.goSection(tab.index) }
         }
@@ -690,6 +754,7 @@ Rectangle {
     clip: true
     model: pane.rows.length
     boundsBehavior: Flickable.StopAtBounds
+    flickDeceleration: Tui.FLICK.decel; maximumFlickVelocity: Tui.FLICK.vmax
     highlightFollowsCurrentItem: false
     highlightMoveDuration: 0
     onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
@@ -700,7 +765,7 @@ Rectangle {
       y: list.currentItem ? list.currentItem.y : 0
       visible: !!list.currentItem && pane.selectable(pane.rows[pane.cursor])
       color: host.cursorFill
-      Behavior on y { NumberAnimation { duration: pane.tFast; easing.type: Easing.InOutCubic } }
+      Behavior on y { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
       Rectangle { width: Math.max(2, pane.cw * 0.3); height: parent.height; color: host.accent }
     }
 
@@ -815,7 +880,11 @@ Rectangle {
             visible: valueRow.stepper
             text: "◂ "
             font.family: host.family; font.pixelSize: Style.font.body
-            color: leftArrow.containsMouse ? host.accentText : valueRow.arrow
+            property real hot: leftArrow.containsMouse ? 1 : 0
+            Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+            color: Tui.mix(valueRow.arrow, host.accentText, hot)
+            scale: leftArrow.pressed ? 0.86 : 1
+            Behavior on scale { enabled: !leftArrow.pressed; SpringAnimation { spring: Tui.SPRING.spring; damping: Tui.SPRING.damping } }
             MouseArea { id: leftArrow; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                         onClicked: { pane.forceActiveFocus(); pane.cursor = rowItem.index; pane.change(-1) } }
           }
@@ -843,13 +912,17 @@ Rectangle {
             font.bold: rowItem.isCursor && valueRow.stepper && !rowItem.dimmed
             color: rowItem.dimmed ? host.dim
                  : rowItem.r.kind === "toggle" && pane.value(rowItem.r) ? host.accentText : host.fg
-            Behavior on color { ColorAnimation { duration: pane.tMid; easing.type: Easing.InOutCubic } }
+            Behavior on color { ColorAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
           }
           Text {
             visible: valueRow.stepper
             text: " ▸"
             font.family: host.family; font.pixelSize: Style.font.body
-            color: rightArrow.containsMouse ? host.accentText : valueRow.arrow
+            property real hot: rightArrow.containsMouse ? 1 : 0
+            Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+            color: Tui.mix(valueRow.arrow, host.accentText, hot)
+            scale: rightArrow.pressed ? 0.86 : 1
+            Behavior on scale { enabled: !rightArrow.pressed; SpringAnimation { spring: Tui.SPRING.spring; damping: Tui.SPRING.damping } }
             MouseArea { id: rightArrow; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                         onClicked: { pane.forceActiveFocus(); pane.cursor = rowItem.index; pane.change(1) } }
           }
@@ -882,7 +955,7 @@ Rectangle {
             echoMode: rowItem.r.secret ? TextInput.Password : TextInput.Normal
             inputMethodHints: rowItem.r.kind === "number" ? Qt.ImhDigitsOnly : Qt.ImhNone
             selectionColor: Tui.alpha(Color.accent, 0.35)
-            cursorDelegate: Rectangle { width: pane.cw; color: host.accent; opacity: 0.7 }
+            cursorDelegate: TuiCaret { host: pane.host }
             Keys.onPressed: function(e) {
               if (e.key === Qt.Key_Return || e.key === Qt.Key_Enter) { pane.commitEdit(text); e.accepted = true; return }
               if (e.key === Qt.Key_Escape) { pane.cancelEdit(); e.accepted = true; return }
@@ -924,7 +997,7 @@ Rectangle {
         width: parent.width; height: rowItem.rowH
         opacity: rowMouse.containsMouse && !rowItem.isCursor ? 1 : 0
         color: Tui.alpha(Color.accent, 0.07)
-        Behavior on opacity { NumberAnimation { duration: pane.tFast; easing.type: Easing.InOutCubic } }
+        Behavior on opacity { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
       }
       // A click selects and does the obvious thing: steps a choice, flips a
       // toggle, runs an action, applies a theme. Right-click steps back; a
@@ -977,7 +1050,7 @@ Rectangle {
     color: host.fg
     opacity: 1
     onTextChanged: { opacity = 0.35; fadeIn.restart() }
-    NumberAnimation { id: fadeIn; target: descLine; property: "opacity"; to: 1; duration: pane.tMid; easing.type: Easing.InOutCubic }
+    NumberAnimation { id: fadeIn; target: descLine; property: "opacity"; to: 1; duration: Tui.STATE; easing.type: Tui.EASE }
   }
 
   // the keys for the row under the cursor, each one a button too

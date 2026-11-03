@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 
 from aiohttp import web
 
+from .analysis import Analysis, key_of
 from .anime import PLAYER as ANI_PLAYER, Anime, AnimeError
 try:
     from .mpris import Mpris
@@ -26,12 +27,14 @@ except ImportError:  # no D-Bus on Windows
     Mpris = None
 from .player import Player, QueueStore
 from . import eq as eqmod
+from . import autoeq as autoeqmod
 from . import endless
 from .config import Config
 from .history import History, Tracker
 from .remote import Remote
 from .scrobble import Scrobbler
 from .lyrics import Lyrics
+from . import shaders as shadersmod
 from .tidal import QUALITIES, Tidal
 from .video import Video
 from .soundcloud import SoundCloud
@@ -63,19 +66,27 @@ class App:
         # /quality lasts until the daemon restarts; a saved one pinned users to
         # lossless long after they had signed in for hi-res.
         self.prefs.pop("quality", None)
+        self.config = Config()
+        # The user's own visualizer styles: a folder of .frag files, compiled by qsb (orpheusd/shaders.py).
+        self.shaders = shadersmod.UserShaders(config=self.config, on_change=self._changed)
         self.tidal = Tidal(STATE_DIR, None)
         self.youtube = YouTube()
         self.sources = {"youtube": self.youtube, "soundcloud": SoundCloud()}
         self.anime = Anime(RUNTIME_DIR)
-        self.player = Player(self.tidal, self.sources, RUNTIME_DIR, CACHE_DIR, self._changed)
+        # The drop map: each resolved TIDAL track is analysed ahead, at idle.
+        self.analysis = Analysis(CACHE_DIR, RUNTIME_DIR, self.config, self._changed)
+        self.player = Player(self.tidal, self.sources, RUNTIME_DIR, CACHE_DIR, self._changed,
+                             on_resolved=self.analysis.schedule)
         self.store = QueueStore(STATE_DIR, self.player)
         self.video = Video(RUNTIME_DIR, self._changed)
         self.player.eq = eqmod.normalize(self.prefs.get("eq"))
         self.lyrics = Lyrics(self.tidal, CACHE_DIR)
+        # AutoEq headphone corrections: index and device files fetched on request
+        # into CACHE_DIR/autoeq; nothing is loaded until the first search.
+        self.autoeq = autoeqmod.AutoEq(CACHE_DIR)
         self.mpris = Mpris(self, self.player) if Mpris else NoMpris()
 
         # ---- listening: endless play, history, scrobbling, remote, sleep ----
-        self.config = Config()
         self.history = History(STATE_DIR)
         self.scrobbler = Scrobbler(self.config, self.history, STATE_DIR)
         self.tracker = Tracker(self.history, self.scrobbler.now_playing, self.scrobbler.scrobble)
@@ -193,6 +204,7 @@ class App:
             log.warning("history: %s", e)
         self.scrobbler.start()
         asyncio.create_task(self._listen_loop())
+        asyncio.create_task(self.shaders.run())
         asyncio.create_task(self.remote.loop())
         # No access log: the UIs long-poll /status, and a line per request
         # buried everything worth reading in orpheusd.log.
@@ -213,6 +225,8 @@ class App:
                 "quality": self.tidal.quality, "player": player,
                 "eq": self.player.eq_state(),
                 "video": self.video.state(),
+                "analysis": self.analysis.state(),
+                "shaders": self.shaders.status(),
                 "providers": {"youtube": True, "soundcloud": True, "anime": self.anime.available,
                               "curd": self.anime.curd},
                 "likedVersion": self.tidal.liked_version,
@@ -230,6 +244,9 @@ class App:
             try:
                 p.crossfade = self.config.crossfade
                 self.tracker.tick(p, end_slack=p.crossfade)
+                nxt = p.next_pos()
+                self.analysis.retarget(key_of(p.current) if p.current else None,
+                                       key_of(p.queue[p.order[nxt]]) if 0 <= nxt < len(p.order) else None)
                 await self._endless_check()
             except Exception as e:
                 log.warning("listening loop: %s", e)
@@ -484,6 +501,15 @@ class App:
             need_login()
             return J(await self.tidal.collection(req.match_info["what"]))
 
+        @r.get("/queue")
+        async def queue(req):
+            """?from=<order index>&count=<n ≤ 100>: a window of the queue in play order."""
+            try:
+                start = int(req.query.get("from", 0)); count = int(req.query.get("count", 40))
+            except ValueError:
+                raise web.HTTPBadRequest(text="from and count must be integers")
+            return J(self.player.queue_window(start, count))
+
         @r.get("/lyrics/{id}")
         async def lyrics(req):
             need_login()
@@ -497,11 +523,27 @@ class App:
                     break
             return J(await self.lyrics.get(tid, meta))
 
+        @r.get("/analysis/{id}")
+        async def analysis(req):
+            # The drop map for a track: the map itself once it is ready, else
+            # {"state": pending | none | failed}. No login needed: it is ours.
+            tid, q = req.match_info["id"], req.query
+            meta = next((t for t in ([self.player.current] if self.player.current else []) + self.player.queue
+                         if t and str(t.get("id")) == str(tid)), None)
+            provider = q.get("provider") or (meta or {}).get("provider") or "tidal"
+            try:
+                duration = float(q.get("duration") or (meta or {}).get("duration") or 0)
+            except ValueError:
+                duration = 0
+            if duration <= 0:
+                raise web.HTTPNotFound(text="unknown track")
+            return J(await self.analysis.get(tid, provider, duration))
+
         @r.get("/eq")
         async def eq_get(req):
             # describe() carries the band centres and the preset list, so the UI
             # never has to hardcode the spec.
-            return J({**eqmod.describe(), "state": self.player.eq_state()})
+            return J({**eqmod.describe(), "state": self.player.eq_state(full=True)})
 
         @r.post("/eq")
         async def eq_set(req):
@@ -510,12 +552,7 @@ class App:
                 preset = eqmod.preset_by_id(str(b["preset"]))
                 if preset is None:
                     raise web.HTTPBadRequest(text=f"unknown preset: {b['preset']}")
-                state = {
-                    "enabled": bool(b.get("enabled", True)),
-                    "gains": preset["gains"],
-                    "preamp": preset.get("preamp"),
-                    "preset": preset["id"],
-                }
+                state = eqmod.state_from_preset(preset, self.player.eq, bool(b.get("enabled", True)))
             else:
                 state = dict(self.player.eq)
                 if "gains" in b:
@@ -537,9 +574,13 @@ class App:
                     state["preamp"] = b["preamp"]
                 if "enabled" in b:
                     state["enabled"] = bool(b["enabled"])
+                if "autoeqOn" in b:
+                    state["autoeqOn"] = bool(b["autoeqOn"])
             out = await self.player.set_eq(state)
             self._save_prefs()
             return J(out)
+
+        autoeqmod.add_routes(r, self.autoeq, lambda: self.player.eq, self.player.set_eq, self._save_prefs)
 
         @r.post("/eq/presets")
         async def eq_import(req):
@@ -823,6 +864,7 @@ class App:
         app = web.Application(middlewares=[guard_middleware])
         app.add_routes(r)
         self.remote.add_routes(app)   # /remote and /remote/api, token-gated
+        shadersmod.add_routes(app, self.shaders)   # GET /shaders, POST /shaders/import, POST /shaders/reload
         return app
 
 
@@ -897,6 +939,7 @@ async def shutdown(app, runner):
         app.store.save_now()
     except Exception as e:
         log.warning("couldn't save the queue: %s", e)
+    await app.analysis.close()
     await app.player.stop()
     await runner.cleanup()
 

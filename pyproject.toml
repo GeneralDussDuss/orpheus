@@ -19,6 +19,11 @@ desktop = [
     "numpy>=2.5.4",
     "pyside6-essentials>=6.8",
 ]
+# The drop map's analysis worker (orpheusd/dropmap.py) on a daemon without the
+# desktop extra: `uv sync --extra analysis`. It also needs ffmpeg on PATH.
+analysis = [
+    "numpy>=2.5.4",
+]
 
 [build-system]
 requires = ["hatchling"]

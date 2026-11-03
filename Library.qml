@@ -40,6 +40,9 @@ FloatingWindow {
     return out
   }
   readonly property var track: api ? api.track : null
+  // Titles decode in on a real track change only (ScrambleText keys on the id).
+  readonly property string trackKey: track ? String(track.id || track.title || "") : ""
+  readonly property bool titleFx: !!engine && engine.titleFx && !engine.gameMode
   readonly property real clock: engine ? engine.time : -1
 
   title: "Orpheus"
@@ -56,7 +59,7 @@ FloatingWindow {
   // first, after which the components are real numbers.
   readonly property color baseBg: Color.background
   color: Qt.rgba(baseBg.r, baseBg.g, baseBg.b, 1)
-  onVisibleChanged: if (!visible && engine) engine.libraryOpen = false
+  onVisibleChanged: { if (!visible && engine) engine.libraryOpen = false; if (visible) maybeBoot() }
 
   // ---- fit the monitor we're on ---------------------------------------------
   // Monitors differ a lot here (3440x1440 @1 vs a rotated GPD panel @1.33), so the
@@ -125,14 +128,31 @@ FloatingWindow {
     readonly property bool on: !!win.api && win.api.isLiked(kind, itemId)
     visible: itemId !== ""
     text: on ? "󰋑" : "󰋕"
-    font.family: win.family; font.pixelSize: Style.font.body + 2
+    font.family: win.family; font.pixelSize: Tui.px("lead", Style.font.body)
     color: on ? win.accentText : (hm.containsMouse ? win.fg : win.dim)
-    scale: hm.pressed ? 0.85 : 1
-    Behavior on scale { SpringAnimation { spring: 6; damping: 0.4 } }
+    scale: hm.pressed ? 0.86 : 1
+    Behavior on scale { enabled: !hm.pressed; SpringAnimation { spring: Tui.SPRING.spring; damping: Tui.SPRING.damping } }
     MouseArea { id: hm; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                 onClicked: win.api.toggleLike(parent.kind, parent.itemId)
                 TuiTip { text: (on ? "unlike" : "like") + " this " + kind; key: kind === "track" ? "F" : "" } }
   }
+  component GlyphButton: Text {
+    id: gb
+    property color rest: win.dim
+    property color lit: win.accentText
+    property bool on: false              // a toggle that is on stays lit
+    property alias area: gbMouse
+    signal activated(var m)
+    property real hot: on || gbMouse.containsMouse ? 1 : 0
+    Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+    color: Tui.mix(rest, lit, hot)
+    scale: gbMouse.pressed ? 0.86 : 1
+    Behavior on scale { enabled: !gbMouse.pressed; SpringAnimation { spring: Tui.SPRING.spring; damping: Tui.SPRING.damping } }
+    MouseArea { id: gbMouse; anchors.fill: parent; anchors.margins: -3; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                onClicked: function(m) { gb.activated(m) } }
+  }
+
   readonly property real cw: fm.advanceWidth("M")
   readonly property real ch: fm.height
   // `cw` is the layout cell (margins, widths) and stays as the panes were
@@ -149,12 +169,33 @@ FloatingWindow {
   function colsIn(px) { return Math.max(1, Math.floor(px / colW)) }
   readonly property string family: Style.font.family
   readonly property color bg: Color.background
-  readonly property color fg: Tui.ensure(Color.foreground, bg, 7)
-  readonly property color dim: Tui.muted(Color.foreground, bg, 4.5)
+  // Ambient light (Ambient.qml) sits behind the panes, which let half of it
+  // through. Text is held to its contrast against the brightest that light
+  // gets inside a pane (the palette's colour at that strength), not against
+  // the bare background, so readability never depends on what the music does.
+  readonly property real ambientSee: 0.5
+  // Under glass the window already paints the tint; a full coat here would stack
+  // back to near-opaque, so panes only lift it a little.
+  readonly property color boxFill: Color.glass === true ? Tui.alpha(bg, ambientLayer.on ? 0.15 : 0.25)
+                                  : ambientLayer.on ? Tui.alpha(bg, 1 - ambientSee) : bg
+  readonly property color textBg: ambientLayer.on
+                                  ? Tui.mix(bg, Tui.mix(Color.accent, Color.foreground, 0.3), ambientLayer.strength * ambientSee)
+                                  : bg
+  readonly property color fg: Tui.ensure(Color.foreground, textBg, 7)
+  readonly property color dim: Tui.muted(Color.foreground, textBg, 4.5)
   readonly property color accent: Tui.ensure(Color.accent, bg, 3)
-  readonly property color accentText: Tui.ensure(Color.accent, bg, 4.5)
-  readonly property color cursorFill: Tui.alpha(Color.accent, 0.16)
-  readonly property color pressFill: Tui.alpha(Color.accent, 0.3)     // under a held button: the click landed
+  readonly property color accentText: Tui.ensure(Color.accent, textBg, 4.5)
+  // UI pulse: the few accents that mean "now" (the playing row, the playhead,
+  // the focused pane's halo) lift with the kick. Light only, never layout, and
+  // only through the glow, so light themes (no glow) and a hidden window or a
+  // game in front cost nothing.
+  readonly property bool pulseOn: !!engine && engine.pulseUi && bloom > 0 && !engine.gameMode
+                                  && win.visible && st.playing === true
+  property real pulse: pulseOn ? Math.min(1, engine.kick || 0) : 0
+  Behavior on pulse { NumberAnimation { duration: 90; easing.type: Easing.OutQuad } }
+  readonly property color cursorFill: Tui.alpha(Color.accent, Tui.A.cursor)
+  readonly property color pressFill: Tui.alpha(Color.accent, Tui.A.press)     // under a held button: the click landed
+  readonly property color hoverFill: Tui.alpha(Color.accent, Tui.A.hover)
   // Glow, only where light means something: the play key on the beat, the
   // playhead, the playing row, the focused pane, and the cover's own light.
   readonly property real bloom: Tui.bloom(engine)
@@ -241,6 +282,10 @@ FloatingWindow {
     return line + lpad(right, 8)
   }
 
+  // The side rail's presence, 0..1: eased across the 96-column breakpoint.
+  property real railIn: width / Math.max(1, cw) - 2 >= 96 ? 1 : 0
+  Behavior on railIn { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
+
   readonly property bool hasTrackTable: pageTracks.length > 0 && page.type !== "search" && page.type !== "video"
   property real loadedAt: 0
 
@@ -283,6 +328,7 @@ FloatingWindow {
   property var pageData: null    // detail payload (album/playlist/mix/artist)
   property var pageTracks: []    // tracks on this page, in play order
   property bool loading: false
+  property string lastLoadedKey: ""   // the page the rows belong to (load keeps them on a same-page reload)
   property string query: ""
 
   // ---- the video section -----------------------------------------------------
@@ -353,6 +399,18 @@ FloatingWindow {
     target: win.api
     function onSignedInChanged() { if (win.api.signedIn) win.load() }
   }
+  // Your shaders (orpheusd/shaders.py): ready, rebuilt, broken, removed, or failed on the GPU.
+  Connections {
+    target: win.engine
+    ignoreUnknownSignals: true
+    function onShaderEvent(kind, name, text) {
+      var msg = kind === "ready" ? "shader ╱╱ " + name
+              : kind === "reloaded" ? "shader ╱╱ " + name + " · rebuilt in " + text
+              : kind === "removed" ? "shader · " + name + " removed"
+              : "shader ✕ " + (name ? name + " · " : "") + text
+      win.say(msg, kind === "error" || kind === "gpu" ? "error" : "info")
+    }
+  }
 
   function section(title, items) {
     var out = []
@@ -383,7 +441,7 @@ FloatingWindow {
             : code === 401 ? "sign in to TIDAL first"
             : (typeof d === "string" && d.trim() && d.length < 90 && !/^\d{3}\b|<html/i.test(d.trim())) ? d.trim().toLowerCase()
             : (who || "TIDAL") + " didn't answer" + (code > 0 ? " (" + code + ")" : "")
-    rows = []; pageTracks = []; loading = false
+    rows = []; pageTracks = []; loading = false; lastLoadedKey = ""
     loadError = why
   }
   function retry() { load() }
@@ -410,6 +468,16 @@ FloatingWindow {
     }[p.what] || "nothing here yet"
     return "nothing here yet"
   }
+  // TuiEmpty's two lines from emptyText(): the first clause is the mark's
+  // title, the rest (after " · ") the reason. Search reads ╱╱ nothing found ╱╱
+  // over the query.
+  function emptyParts() {
+    if (page.type === "search" && query.trim()) return { title: "nothing found", reason: "for “" + query.trim() + "”" }
+    if (videoPage && vquery && !page.show && !(vprovider === "anime" && !providers.anime))
+      return { title: "nothing found", reason: "for “" + vquery.trim() + "” on " + vprovider }
+    var t = emptyText(), i = t.indexOf(" · ")
+    return i < 0 ? { title: t, reason: "" } : { title: t.slice(0, i), reason: t.slice(i + 3) }
+  }
   function emptyActions() {
     if (videoPage || page.type === "search") return []
     return [{ k: "/", l: "search", run: function() { go({ type: "search", title: "search" }) }, tip: "search TIDAL" }]
@@ -422,7 +490,13 @@ FloatingWindow {
     // The video section needs no TIDAL session: YouTube and ani-cli are not
     // TIDAL, and making someone sign in to watch something would be a lie.
     if (!api || (!api.signedIn && page.type !== "video")) return
-    rows = []; pageData = null; pageTracks = []; loading = true
+    // A reload of the page already shown (retry, a refresh) keeps its rows,
+    // dimmed, until the new ones land: a fast fetch never blanks the list.
+    // Another page clears, since its rows would be wrong here.
+    var key = JSON.stringify(page)
+    if (key !== lastLoadedKey) { rows = []; pageData = null; pageTracks = [] }
+    lastLoadedKey = key
+    loading = true
     var p = page
     if (p.type === "home") {
       var got = {}, bad = 0, why = null
@@ -496,7 +570,7 @@ FloatingWindow {
     if (it.kind === "show") { go({ type: "video", show: it, title: it.title }); return }
     if (it.provider === "soundcloud") { listenHere(); return }
     say("opening ╱╱ " + it.title)
-    api.watch(it, function(ok, d) { if (!ok) say(errText(d, "couldn't play that")) })
+    api.watch(it, function(ok, d) { if (!ok) say(errText(d, "couldn't play that"), "error") })
   }
 
   // The other half of a yt-dlp row: the sound of it, through the music player,
@@ -504,7 +578,7 @@ FloatingWindow {
   function listenHere() {
     var r = rows[list.currentIndex]
     var prov = r && r.item ? r.item.provider : ""
-    if (prov !== "youtube" && prov !== "soundcloud") { say("only youtube and soundcloud rows can be listened to"); return }
+    if (prov !== "youtube" && prov !== "soundcloud") { say("only youtube and soundcloud rows can be listened to", "error"); return }
     api.listen(pageTracks, r.trackIndex || 0, { kind: prov, title: prov + " · " + vquery.trim() })
     say("listening ╱╱ " + r.item.title)
   }
@@ -562,20 +636,31 @@ FloatingWindow {
     if (!it) { say("nothing to share"); return true }
     if (!engine) return true
     var url = engine.shareUrl(it.kind, it.id, universal)
-    if (!url) { say("a " + it.kind + " has no link to share"); return true }
+    if (!url) { say("a " + it.kind + " has no link to share", "error"); return true }
     // asked for a universal link and got the TIDAL one back: say so, rather
     // than letting someone paste a TIDAL link thinking it is portable
     var note = universal && !engine.universalUrl(it.kind, it.id) ? "tidal only · " : ""
     Quickshell.clipboardText = url
-    say("copied · " + note + url)
+    say("copied · " + note + url, "ok")
     return true
   }
 
   // Copying is invisible otherwise: nothing moves, and a working shortcut looks
   // exactly like a dead one.
+  // Three voices: "info" (╱╱), "ok" (✓) and "error" (✕, urgent). A toast
+  // stays as long as it takes to read; an error stays until it is clicked or
+  // the next one replaces it. A replacement dips, so the change reads.
   property string flash: ""
-  Timer { id: flashOff; interval: 2800; onTriggered: win.flash = "" }
-  function say(msg) { flash = msg; flashOff.restart() }
+  property string flashKind: "info"
+  Timer { id: flashOff; onTriggered: win.flash = "" }
+  function say(msg, kind) {
+    if (flash && msg && flash !== msg) flashDip.restart()
+    flashKind = kind || "info"
+    flash = msg
+    flashOff.stop()
+    flashOff.interval = flashKind === "error" ? 0 : Tui.toastMs(msg)
+    if (flashOff.interval > 0) flashOff.restart()
+  }
   function dismissHint() { if (engine) engine.updateConfig(function(c) { c.playerHint = false }) }
 
   // ---- the context menu ----------------------------------------------------------
@@ -677,7 +762,7 @@ FloatingWindow {
     if (!it || !api) return
     api.enqueue(it, next)
     // queueing was silent before: nothing on screen moved until the next track
-    say((next ? "playing next ╱╱ " : "added to the queue ╱╱ ") + (it.title || it.kind))
+    say((next ? "playing next · " : "added to the queue · ") + (it.title || it.kind), "ok")
   }
   function likeCursor() {
     // Like/unlike what's under the cursor; on a detail page with no row, the page itself.
@@ -687,9 +772,25 @@ FloatingWindow {
   }
   function nextProvider() { vprovider = vproviders[(providerIndex + 1) % vproviders.length].id }
   function openCurd() {
-    if (!providers.curd) { say("curd is not installed"); return }
+    if (!providers.curd) { say("curd is not installed", "error"); return }
     say("handing over to curd · it owns the player from here")
-    api.curd(true, function(ok, d) { if (!ok) say(errText(d, "couldn't start curd")) })
+    api.curd(true, function(ok, d) { if (!ok) say(errText(d, "couldn't start curd"), "error") })
+  }
+
+  // ---- the micro-OSD: what a key did to the volume or the playhead ------------
+  // A chip over the rail's plane (osd below); with the rail folded away the
+  // toast says it instead. Nothing at all while a game is in front.
+  function osd(text) {
+    if (!engine || engine.gameMode) return
+    if (railIn >= 1) osdChip.flash(text); else say(text, "info")
+  }
+  function osdVolume() { osd("vol " + Tui.meter(volMeter.shown / 100, 8, "▰", "▱", "") + " " + volMeter.shown) }
+  function seekBy(d) {
+    var dur = st.duration || 0
+    var to = Math.max(0, (api.position || 0) + d)
+    if (dur > 0) to = Math.min(dur, to)
+    api.control("seek", { position: to })
+    osd((d > 0 ? "+" : "−") + Math.abs(d) + " s " + (d > 0 ? "▸ " : "◂ ") + clockText(to))
   }
 
   function handleKey(e) {
@@ -708,14 +809,15 @@ FloatingWindow {
     if (k === Qt.Key_Space) { api.control("toggle"); return true }
     if (t === "n") { api.control("next"); return true }
     if (t === "p") { api.control("previous"); return true }
-    if (k === Qt.Key_Right || t === "l") { api.control("seek", { position: (api.position || 0) + 10 }); return true }
-    if (k === Qt.Key_Left || t === "h") { api.control("seek", { position: Math.max(0, (api.position || 0) - 10) }); return true }
-    if (t === "+" || t === "=") { volMeter.setVolume(volMeter.shown + 5); return true }
-    if (t === "-") { volMeter.setVolume(volMeter.shown - 5); return true }
+    if (k === Qt.Key_Right || t === "l") { seekBy(10); return true }
+    if (k === Qt.Key_Left || t === "h") { seekBy(-10); return true }
+    if (t === "+" || t === "=") { volMeter.setVolume(volMeter.shown + 5); osdVolume(); return true }
+    if (t === "-") { volMeter.setVolume(volMeter.shown - 5); osdVolume(); return true }
     if (t === "s") { api.control("shuffle"); return true }
     if (t === "r") { api.control("repeat"); return true }
     if (t === "v") { engine.cycleRailViz(1); return true }
     if (t === "V") { engine.open = !engine.open; return true }
+    if (t === "t") { engine.toggleCassette(); return true }
     if (t === "P") { playPage(false); return true }
     if (t === "S") { playPage(true); return true }
     if (t === "a") { queueItem(cursorItem(), true); return true }
@@ -724,6 +826,18 @@ FloatingWindow {
     if (t === "y") return share(false)
     if (t === "Y") return share(true)
     return false
+  }
+
+  // Ambient: the visualizer, dim and blurred, behind every pane. The same
+  // style as the rail's plane when that shows one, so the plane reads as the
+  // source of the light rather than a second, different picture; the stage's
+  // style when the rail is art.
+  Ambient {
+    id: ambientLayer
+    anchors.fill: parent
+    engine: win.engine
+    level: win.engine ? win.engine.ambient : "off"
+    styleName: !win.engine ? "prism" : win.engine.railViz !== "off" ? win.engine.railViz : win.engine.style
   }
 
   Item {
@@ -735,13 +849,24 @@ FloatingWindow {
       id: statusLine
       width: parent.width
       height: win.ch * 1.4
-      Text {
+      // ╱╱╱ ORPHEUS: the mark breathes a little light with the kick
+      Row {
         id: brand
         anchors.verticalCenter: parent.verticalCenter
-        textFormat: Text.StyledText
-        text: '<font color="' + Tui.hex(win.accent) + '">╱╱╱</font> <b>ORPHEUS</b>'
-        font.family: win.family; font.pixelSize: Style.font.body; font.letterSpacing: 2
-        color: win.fg
+        spacing: win.cw
+        Text {
+          text: "╱╱╱"
+          font.family: win.family; font.pixelSize: Style.font.body
+          color: win.accent
+        }
+        GlowText {
+          text: "ORPHEUS"
+          font.family: win.family; font.pixelSize: Style.font.body; font.bold: true; font.letterSpacing: Tui.TRACK.brand
+          color: win.fg
+          glowRadius: 6
+          glowLive: win.bloom > 0 && win.visible
+          glow: glowLive ? win.bloom * 0.35 * (0.8 + 0.2 * win.pulse) : 0
+        }
       }
       // First runs: one line naming the few things nothing else on screen
       // says, until it is dismissed (remembered in config as playerHint: false).
@@ -817,6 +942,7 @@ FloatingWindow {
       title: "library"
       keyHint: Tui.hints([["1-9", ""]], win.accentText, win.dim)
       clock: win.clock
+      background: win.boxFill
       Column {
         width: parent.width
         Repeater {
@@ -898,7 +1024,7 @@ FloatingWindow {
       width: (side.visible ? side.x - win.cw : parent.width) - x
       height: nav.height
       title: loginCover.active ? (!win.api || !win.api.online ? "offline" : win.api.signedIn ? "account" : "sign in")
-           : win.page.type === "detail" ? win.page.kind + " · " + (win.pageData ? win.pageData.title : win.page.title || "")
+           : win.page.type === "detail" ? win.page.kind + " ▸ " + (win.pageData ? win.pageData.title : win.page.title || "")
            : (win.page.title || win.page.type)
       hintItems: {
         function h(k, l, run, tip) { return { k: k, l: l, run: run, tip: tip } }
@@ -932,7 +1058,8 @@ FloatingWindow {
       focused: list.activeFocus || searchInput.activeFocus || (settingsLoader.item && settingsLoader.item.activeFocus)
                || (statsLoader.item && statsLoader.item.activeFocus) || false
       clock: win.clock
-      glow: win.bloom
+      background: win.boxFill
+      glow: Math.min(1, win.bloom * (1 + 0.7 * win.pulse))
 
       // Detail header: art + title + actions.
       Item {
@@ -951,39 +1078,51 @@ FloatingWindow {
           spacing: win.cw * 2
           Rectangle {
             width: win.ch * 8; height: width
-            color: Tui.alpha(Color.accent, 0.12)
+            color: Tui.alpha(Color.accent, Tui.A.tint)
+            // a mark until the cover arrives, then the cover fades in over it
+            Text { anchors.centerIn: parent; visible: !detailArt.arrived; text: "╱╱╱"
+                   font.family: win.family; font.pixelSize: Style.font.body; color: win.dim }
             Image {
+              id: detailArt
               anchors.fill: parent
               source: win.pageData ? (win.pageData.art || "") : ""
               fillMode: Image.PreserveAspectCrop
               asynchronous: true
               sourceSize: Qt.size(width * 2, height * 2)
+              // fades in when a new source arrives, not on every reload a size change causes
+              property bool arrived: false
+              onSourceChanged: arrived = false
+              onStatusChanged: if (status === Image.Ready) arrived = true
+              opacity: arrived ? 1 : 0
+              Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
             }
           }
           Column {
             anchors.bottom: parent.bottom
             spacing: win.ch * 0.2
             Text {
-              text: (win.page.kind || "").toUpperCase()
-              font.family: win.family; font.pixelSize: Style.font.caption; font.letterSpacing: 2; color: win.dim
+              textFormat: Text.StyledText
+              text: '<font color="' + Tui.hex(win.accent) + '">╱╱ </font>' + Tui.esc((win.page.kind || "").toUpperCase())
+              font.family: win.family; font.pixelSize: Style.font.caption; font.letterSpacing: Tui.TRACK.brand; color: win.dim
             }
             Text {
               // the name we came in with, dim, until the page lands
               text: win.pageData ? win.pageData.title : (win.page.title || "")
               opacity: win.pageData ? 1 : 0.5
-              Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Easing.InOutCubic } }
-              font.family: win.family; font.pixelSize: Style.font.body + 8; font.bold: true; color: win.fg
+              Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
+              font.family: win.family; font.pixelSize: Tui.px("hero", Style.font.body); font.bold: true; color: win.fg
               width: mainBox.width - win.ch * 8 - win.cw * 8
               elide: Text.ElideRight
             }
             Text {
               color: win.dim
-              font.family: win.family; font.pixelSize: Style.font.body
-              text: !win.pageData ? Tui.spinner(win.clock) + " loading…"
-                : win.page.kind === "album" ? win.artists(win.pageData.artists) + (win.pageData.year ? " · " + win.pageData.year : "") + " · " + (win.pageData.items || []).length + " tracks · " + win.clockText(win.pageData.duration)
+              textFormat: Text.StyledText
+              font.family: win.family; font.pixelSize: Tui.px("body", Style.font.body)
+              text: !win.pageData ? Tui.busy(win.clock, "loading", Tui.hex(win.accentText))
+                : win.page.kind === "album" ? Tui.esc(win.artists(win.pageData.artists)) + (win.pageData.year ? " · " + win.pageData.year : "") + " · " + (win.pageData.items || []).length + " tracks · " + win.clockText(win.pageData.duration)
                 : win.page.kind === "artist" ? (win.pageData.items || []).length + " top tracks · "
                                                + ((win.pageData.albums || []).length + (win.pageData.singles || []).length) + " releases"
-                : (win.pageData.subtitle ? win.pageData.subtitle + " · " : "") + (win.pageData.items || []).length + " tracks"
+                : (win.pageData.subtitle ? Tui.esc(win.pageData.subtitle) + " · " : "") + (win.pageData.items || []).length + " tracks"
             }
             Item { width: 1; height: win.ch * 0.2 }
             HintBar {
@@ -1024,7 +1163,7 @@ FloatingWindow {
                     + ' <font color="' + Tui.hex(Tui.mix(win.dim, win.bg, 0.3)) + '">'
                     + Tui.esc(ready ? modelData.by : "not installed") + '</font>'
               font.family: win.family; font.pixelSize: Style.font.caption; font.letterSpacing: 1
-              Behavior on opacity { NumberAnimation { duration: 160 } }
+              Behavior on opacity { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
               opacity: ready ? 1 : 0.55
               MouseArea {
                 id: pm
@@ -1048,8 +1187,8 @@ FloatingWindow {
             font.family: win.family
             font.pixelSize: Style.font.body
             color: win.fg
-            selectionColor: Tui.alpha(Color.accent, 0.35)
-            cursorDelegate: Rectangle { width: win.cw; color: win.accent; opacity: 0.7 }
+            selectionColor: Tui.alpha(Color.accent, Tui.A.select)
+            cursorDelegate: TuiCaret { host: win; visible: searchInput.activeFocus }
             text: win.videoPage ? win.vquery : win.query
             onTextEdited: {
               if (win.videoPage) win.vquery = text; else win.query = text
@@ -1076,6 +1215,8 @@ FloatingWindow {
               font: parent.font
               color: win.dim
             }
+            // an I-beam over the field: it is a place to type
+            MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.IBeamCursor }
           }
           Timer { id: searchTimer; interval: 300; onTriggered: win.searchNow() }
         }
@@ -1136,7 +1277,14 @@ FloatingWindow {
         focus: true
         model: win.rows
         boundsBehavior: Flickable.StopAtBounds
+        flickDeceleration: Tui.FLICK.decel; maximumFlickVelocity: Tui.FLICK.vmax
         keyNavigationEnabled: false
+        // A pane over the list (eq, lyrics, settings, stats) has the page: the
+        // list steps back rather than being drawn over. A same-page reload
+        // dims the rows it keeps until the new ones land.
+        readonly property bool covered: eqLoader.active || lyricsLoader.active || settingsLoader.active || statsLoader.active
+        opacity: covered ? 0 : win.loading && win.rows.length ? 0.4 : 1
+        Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
         highlightFollowsCurrentItem: false
 
         // Cursor: slides between rows on the shared selection timing.
@@ -1146,7 +1294,7 @@ FloatingWindow {
           y: list.currentItem ? list.currentItem.y : 0
           visible: !!list.currentItem && !!win.rows[list.currentIndex] && !!win.rows[list.currentIndex].item
           color: win.cursorFill
-          Behavior on y { NumberAnimation { duration: Tui.STATE; easing.type: Easing.InOutCubic } }
+          Behavior on y { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
           Rectangle { width: Math.max(2, win.cw * 0.3); height: parent.height; color: win.accent }
         }
 
@@ -1164,6 +1312,8 @@ FloatingWindow {
 
         Keys.onPressed: function(e) {
           var t = e.text
+          // rows kept through a reload are dimmed and not to be acted on
+          if (win.loading && win.rows.length && (e.key === Qt.Key_Return || e.key === Qt.Key_Enter)) { e.accepted = true; return }
           if (e.key === Qt.Key_Down || t === "j") { move(1); e.accepted = true }
           else if (e.key === Qt.Key_Up || t === "k") { if (!move(-1) && win.searching) searchInput.forceActiveFocus(); e.accepted = true }
           else if (e.key === Qt.Key_PageDown) { move(10); e.accepted = true }
@@ -1198,8 +1348,8 @@ FloatingWindow {
           property real reveal: Date.now() - win.loadedAt < 700 ? 0 : 1
           SequentialAnimation on reveal {
             running: rowItem.reveal < 1
-            PauseAnimation { duration: Math.min(rowItem.index, 24) * 14 }
-            NumberAnimation { from: 0; to: 1; duration: 220; easing.type: Easing.OutCubic }
+            PauseAnimation { duration: Math.min(rowItem.index, Tui.STAGGER_MAX) * Tui.STAGGER }
+            NumberAnimation { from: 0; to: 1; duration: Tui.STATE + 40; easing.type: Tui.OUT }
           }
 
           // ╱╱ section ─────
@@ -1218,7 +1368,7 @@ FloatingWindow {
 
           GlowText {
             visible: !!rowItem.it
-            glow: rowItem.isPlaying ? win.bloom * 0.3 : 0
+            glow: rowItem.isPlaying ? win.bloom * (0.3 + 0.5 * win.pulse) : 0
             glowRadius: 6
             anchors.verticalCenter: parent.verticalCenter
             x: win.cw
@@ -1263,7 +1413,7 @@ FloatingWindow {
           Rectangle {
             z: -1
             anchors.fill: parent
-            color: rowMouse.pressed ? win.pressFill : Tui.alpha(Color.accent, 0.07)
+            color: rowMouse.pressed ? win.pressFill : win.hoverFill
             opacity: !!rowItem.it && (rowMouse.pressed || (rowMouse.containsMouse && !rowItem.isCursor)) ? 1 : 0
             Behavior on opacity { enabled: !rowMouse.pressed; NumberAnimation { duration: Tui.HOVER; easing.type: Easing.InOutCubic } }
           }
@@ -1272,7 +1422,7 @@ FloatingWindow {
           MouseArea {
             id: rowMouse
             anchors.fill: parent
-            enabled: !!rowItem.it
+            enabled: !!rowItem.it && !(win.loading && win.rows.length)
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -1286,49 +1436,33 @@ FloatingWindow {
         }
 
         // Loading, failed, or empty: what is going on, and what to do about it.
-        Column {
+        TuiEmpty {
           id: pageState
           anchors.centerIn: parent
           width: Math.min(parent.width - win.cw * 4, win.cw * 70)
-          spacing: win.ch * 0.4
-          visible: opacity > 0.01
-          // a detail page shows its own loading line in the header
-          opacity: (win.loading && !header.detail) || win.loadError !== "" || (!win.loading && !win.rows.length && win.page.type !== "login") ? 1 : 0
-          Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Easing.InOutCubic } }
+          host: win
           readonly property string what: win.page.type === "detail" ? "this " + win.page.kind
                                         : (win.page.title || win.page.type)
-          Text {
-            width: parent.width
-            horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.WordWrap
-            textFormat: Text.StyledText
-            font.family: win.family; font.pixelSize: Style.font.body
-            color: win.loadError ? win.fg : win.dim
-            text: win.loading
-                ? '<font color="' + Tui.hex(win.accentText) + '">' + Tui.spinner(win.clock) + '</font>  loading ' + Tui.esc(pageState.what) + "…"
-                : win.loadError
-                ? '<font color="' + Tui.hex(Tui.ensure(Color.urgent, win.bg, 4.5)) + '">✕</font>  couldn\'t load ' + Tui.esc(pageState.what)
-                : Tui.esc(win.emptyText())
-          }
-          Text {
-            width: parent.width
-            visible: !win.loading && win.loadError !== ""
-            horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.WordWrap
-            text: win.loadError
-            font.family: win.family; font.pixelSize: Style.font.caption
-            color: win.dim
-          }
-          // what to do next, as buttons: retry, or somewhere to go from an empty page
-          HintBar {
-            anchors.horizontalCenter: parent.horizontalCenter
-            visible: !win.loading && items.length > 0
-            keyColor: win.accentText; labelColor: win.fg; hoverColor: win.accentText
-            items: win.loadError ? [{ k: "⏎", l: "retry", run: win.retry, tip: "try loading it again" }]
-                 : win.emptyActions()
-          }
+          readonly property var parts: win.emptyParts()
+          // a detail page shows its own loading line in the header; rows kept
+          // through a reload say "loading" by being dimmed
+          shown: (win.loading && !header.detail && !win.rows.length) || win.loadError !== ""
+                 || (!win.loading && !win.rows.length && win.page.type !== "login")
+          kind: win.loadError ? "error" : win.loading ? "busy" : "empty"
+          title: win.loadError ? "couldn't load " + what : win.loading ? "loading " + what : parts.title
+          reason: win.loadError ? win.loadError : parts.reason
+          actions: win.loadError ? [{ k: "⏎", l: "retry", run: win.retry, tip: "try loading it again" }]
+                 : win.loading ? [] : win.emptyActions()
         }
       }
+
+      // A pane fades in over the list as it loads (the list steps back under
+      // it). Loaders drop at once on the way out: the list fades back instead.
+      // One fade per pane, owned by the pane: two loading together (the sign-in
+      // cover and the eq page at startup) must not steal one animation and
+      // leave the first stuck at opacity 0.
+      Component { id: paneIn; NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Tui.STATE; easing.type: Tui.OUT } }
+      function fadeIn(item) { item.opacity = 0; paneIn.createObject(item, { target: item }).start() }
 
       // Equalizer cover. Above the list, below the sign-in cover: there is
       // nothing to equalize if we are not signed in.
@@ -1337,7 +1471,7 @@ FloatingWindow {
         anchors.fill: parent
         active: win.page.type === "eq"
         sourceComponent: EqPane { host: win }
-        onLoaded: item.forceActiveFocus()
+        onLoaded: { mainBox.fadeIn(item); item.forceActiveFocus() }
       }
 
       Loader {
@@ -1345,7 +1479,7 @@ FloatingWindow {
         anchors.fill: parent
         active: win.page.type === "lyrics"
         sourceComponent: LyricsPane { host: win }
-        onLoaded: item.forceActiveFocus()
+        onLoaded: { mainBox.fadeIn(item); item.forceActiveFocus() }
       }
 
       // Settings: above everything, the sign-in cover included, since nothing
@@ -1356,7 +1490,7 @@ FloatingWindow {
         z: 2
         active: win.page.type === "settings"
         sourceComponent: SettingsPane { host: win }
-        onLoaded: item.forceActiveFocus()
+        onLoaded: { mainBox.fadeIn(item); item.forceActiveFocus() }
       }
 
       // Listening stats: the daemon's own history, so no TIDAL session needed.
@@ -1366,7 +1500,7 @@ FloatingWindow {
         z: 2
         active: win.page.type === "stats"
         sourceComponent: StatsPane { host: win }
-        onLoaded: item.forceActiveFocus()
+        onLoaded: { mainBox.fadeIn(item); item.forceActiveFocus() }
       }
 
       // Sign-in / offline cover.
@@ -1377,6 +1511,7 @@ FloatingWindow {
         active: (!win.api || !win.api.online || win.page.type === "login"
              || (!win.api.signedIn && !win.videoPage)) && win.page.type !== "settings" && win.page.type !== "stats"
         sourceComponent: LoginPane { host: win }
+        onLoaded: mainBox.fadeIn(item)
       }
     }
 
@@ -1386,8 +1521,13 @@ FloatingWindow {
       x: parent.width - width
       y: statusLine.height
       readonly property real cols: parent.width / win.cw
-      visible: cols >= 96
-      width: !visible ? 0 : Math.round(win.cw * Math.max(28, Math.min(44, Math.floor(cols * 0.28))))
+      // Crossing 96 columns folds the rail in or out on a scalar, not on the
+      // width, so a window drag is never lagged: only the breakpoint animates.
+      readonly property real target: Math.round(win.cw * Math.max(28, Math.min(44, Math.floor(cols * 0.28))))
+      visible: win.railIn > 0.01
+      opacity: win.railIn
+      clip: true
+      width: Math.round(target * win.railIn)
       height: nav.height
 
       TuiBox {
@@ -1399,14 +1539,13 @@ FloatingWindow {
         titleExtra: Component {
           Row {
             readonly property string name: win.railName(win.engine ? win.engine.railViz : "off")
-            Text {
+            GlyphButton {
+              id: prevBtn
               text: "‹"
               font.family: win.family; font.pixelSize: Style.font.body; font.bold: true
-              color: prevMouse.containsMouse ? win.accentText : win.dim
               leftPadding: win.cw * 0.3; rightPadding: win.cw * 0.5
-              MouseArea { id: prevMouse; anchors.fill: parent; anchors.margins: -2; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                          onClicked: win.engine.cycleRailViz(-1)
-                          TuiTip { text: "previous visualizer · or right-click the picture" } }
+              onActivated: win.engine.cycleRailViz(-1)
+              TuiTip { target: prevBtn.area; text: "previous visualizer · or right-click the picture" }
             }
             Text {
               id: railNameText
@@ -1419,14 +1558,13 @@ FloatingWindow {
                           onClicked: win.railMenu(railNameText, 0, railNameText.height)
                           TuiTip { text: "pick a visualizer, or album art" } }
             }
-            Text {
+            GlyphButton {
+              id: nextBtn
               text: "›"
               font.family: win.family; font.pixelSize: Style.font.body; font.bold: true
-              color: nextMouse.containsMouse ? win.accentText : win.dim
               leftPadding: win.cw * 0.5; rightPadding: win.cw * 0.3
-              MouseArea { id: nextMouse; anchors.fill: parent; anchors.margins: -2; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                          onClicked: win.engine.cycleRailViz(1)
-                          TuiTip { text: "next visualizer · or click the picture"; key: "v" } }
+              onActivated: win.engine.cycleRailViz(1)
+              TuiTip { target: nextBtn.area; text: "next visualizer · or click the picture"; key: "v" }
             }
           }
         }
@@ -1440,6 +1578,7 @@ FloatingWindow {
           return h
         }
         clock: win.clock
+        background: win.boxFill
         // Ambient light: the cover, blurred and a little larger, behind itself,
         // so it spills its own colour into the panel. Two layers, so a new cover
         // crossfades in over the old one once it has loaded. A tiny decode
@@ -1526,16 +1665,28 @@ FloatingWindow {
                     ? Math.max(win.ch * 8, nowBox.height - infoRow.height - qualityChip.height
                                            - spectrumText.height - win.ch * 2.2)
                     : width
-            color: Tui.alpha(Color.accent, 0.1)
-            Behavior on height { NumberAnimation { duration: 180; easing.type: Easing.InOutCubic } }
+            // opaque: the ambient light behind the panes must not show through
+            // the visualizer's own clear parts and print the picture twice
+            color: Tui.mix(win.bg, Color.accent, 0.1)
+            Behavior on height { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
             clip: true
+            // a mark until the cover arrives, then the cover fades in over it
+            Text { anchors.centerIn: parent; visible: !plane.showViz && !planeArt.arrived; text: "╱╱╱"
+                   font.family: win.family; font.pixelSize: Tui.px("lead", Style.font.body); color: win.dim }
             Image {
+              id: planeArt
               anchors.fill: parent
               visible: !plane.showViz
               source: win.track ? (win.track.art || "") : ""
               fillMode: Image.PreserveAspectCrop
               asynchronous: true
               sourceSize: Qt.size(width * 2, height * 2)
+              // fades in when a new source arrives, not on every reload a size change causes
+              property bool arrived: false
+              onSourceChanged: arrived = false
+              onStatusChanged: if (status === Image.Ready) arrived = true
+              opacity: arrived ? 1 : 0
+              Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
             }
             Viz {
               anchors.fill: parent
@@ -1558,6 +1709,33 @@ FloatingWindow {
               TuiTip { text: "click: next visualizer · right-click: back · scroll"; key: "v"; delay: 900 }
             }
             VizLabel { id: railLabel; anchors.fill: parent }
+            // The micro-OSD (win.osd): what +/- or h/l just did, low on the
+            // plane, for a moment. In on STATE, out on PAGE; one-shot.
+            Rectangle {
+              id: osdChip
+              anchors.horizontalCenter: parent.horizontalCenter
+              anchors.bottom: parent.bottom; anchors.bottomMargin: win.ch * 0.8
+              opacity: 0
+              visible: opacity > 0.01
+              width: osdText.implicitWidth + win.cw * 2.4
+              height: osdText.implicitHeight + win.ch * 0.5
+              color: Tui.alpha(win.baseBg, Tui.A.chip)
+              border.width: 1
+              border.color: Tui.alpha(win.accentText, 0.7)
+              function flash(t) { osdText.text = t; osdFade.restart() }
+              Text {
+                id: osdText
+                anchors.centerIn: parent
+                font.family: win.family; font.pixelSize: Style.font.body; font.bold: true
+                color: win.fg
+              }
+              SequentialAnimation {
+                id: osdFade
+                NumberAnimation { target: osdChip; property: "opacity"; to: 1; duration: Tui.STATE; easing.type: Tui.OUT }
+                PauseAnimation { duration: 900 }
+                NumberAnimation { target: osdChip; property: "opacity"; to: 0; duration: Tui.PAGE; easing.type: Tui.IN }
+              }
+            }
             Connections {
               target: win.engine
               function onRailVizChanged() { railLabel.flash(win.railName(win.engine.railViz)) }
@@ -1573,16 +1751,30 @@ FloatingWindow {
             spacing: win.cw
             Rectangle {
               id: artTile
-              visible: plane.showViz && !!win.track
-              width: visible ? win.ch * 7 : 0
-              height: visible ? width : 0
-              color: Tui.alpha(Color.accent, 0.1)
+              // folds in and out on a scalar, like the rail
+              property real artIn: plane.showViz && !!win.track ? 1 : 0
+              Behavior on artIn { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
+              visible: artIn > 0.01
+              opacity: artIn
+              clip: true
+              width: Math.round(win.ch * 7 * artIn)
+              height: width
+              color: Tui.alpha(Color.accent, Tui.A.tint)
+              Text { anchors.centerIn: parent; visible: !tileArt.arrived; text: "╱╱╱"
+                     font.family: win.family; font.pixelSize: Style.font.caption; color: win.dim }
               Image {
-                anchors.fill: parent
+                id: tileArt
+                width: win.ch * 7; height: width
                 source: win.track ? (win.track.art || "") : ""
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
                 sourceSize: Qt.size(width * 2, height * 2)
+                // fades in when a new source arrives, not on every reload a size change causes
+                property bool arrived: false
+                onSourceChanged: arrived = false
+                onStatusChanged: if (status === Image.Ready) arrived = true
+                opacity: arrived ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
               }
               MouseArea {
                 id: tileMouse
@@ -1604,11 +1796,14 @@ FloatingWindow {
               Row {
                 width: parent.width
                 spacing: win.cw
-                Text {
+                ScrambleText {
                   width: parent.width - win.cw * 3
                   elide: Text.ElideRight
-                  text: win.track ? win.track.title : "nothing playing"
-                  font.family: win.family; font.pixelSize: Style.font.body + 2; font.bold: true; color: win.fg
+                  textFormat: Text.PlainText
+                  animate: win.titleFx
+                  key: win.trackKey
+                  target: win.track ? win.track.title : "nothing playing"
+                  font.family: win.family; font.pixelSize: Tui.px("lead", Style.font.body); font.bold: true; color: win.fg
                   MouseArea { id: titleMouse; anchors.fill: parent; enabled: !!win.track; acceptedButtons: Qt.RightButton
                               onClicked: function(m) { win.trackMenu(win.track, titleMouse, m.x, m.y) } }
                 }
@@ -1617,9 +1812,13 @@ FloatingWindow {
               Row {
                width: parent.width
                spacing: win.cw
-               Text {
+               ScrambleText {
                 width: parent.width - win.cw * 3; elide: Text.ElideRight
-                text: win.track ? win.artists(win.track.artists) : "⏎ plays the row under the cursor"
+                textFormat: Text.PlainText
+                animate: win.titleFx
+                key: win.trackKey
+                duration: Math.round(Tui.DECODE * 1.35)   // the secondary line settles after the title
+                target: win.track ? win.artists(win.track.artists) : "⏎ plays the row under the cursor"
                 font.family: win.family; font.pixelSize: Style.font.body
                 color: artistMouse.containsMouse && !!(win.track && win.track.artistId) ? win.accentText : win.dim
                 MouseArea {
@@ -1693,18 +1892,24 @@ FloatingWindow {
         title: "up next"
         keyHint: win.st.context && win.st.context.title ? win.st.context.title : ""
         clock: win.clock
-        // Nothing queued and nothing to continue: say so, rather than a blank box.
-        Text {
+        background: win.boxFill
+        // Nothing queued and nothing to continue: say so, and what to do,
+        // rather than a blank box.
+        TuiEmpty {
           anchors.centerIn: parent
-          visible: upNextList.count === 0 && !(upNextList.footerItem && upNextList.footerItem.visible)
-          text: win.track ? "nothing queued after this" : "the queue is empty"
-          font.family: win.family; font.pixelSize: Style.font.caption
-          color: win.dim
+          width: parent.width - win.cw * 2
+          host: win
+          shown: upNextList.count === 0 && !(upNextList.footerItem && upNextList.footerItem.visible)
+          title: win.track ? "nothing queued" : "queue empty"
+          reason: win.track ? "after this, playback stops · add with a on any row" : "pick something to play"
+          actions: win.track ? [] : [{ k: "/", l: "search", run: function() { win.go({ type: "search", title: "search" }) }, tip: "search TIDAL" }]
         }
         ListView {
           id: upNextList
           anchors.fill: parent
           clip: true
+          boundsBehavior: Flickable.StopAtBounds
+          flickDeceleration: Tui.FLICK.decel; maximumFlickVelocity: Tui.FLICK.vmax
           model: win.st.upNext || []
           // Where the queue gives way to endless radio, a line says so.
           delegate: Item {
@@ -1769,27 +1974,52 @@ FloatingWindow {
     }
 
     // A line that says what just happened, over the page and above the
-    // transport, then gets out of the way.
+    // transport, then gets out of the way. It rises a little as it arrives;
+    // an error keeps the urgent colour and stays until it is clicked.
     Rectangle {
       id: flashBox
+      readonly property bool bad: win.flashKind === "error"
+      readonly property color tone: bad ? Tui.ensure(Color.urgent, win.bg, 3) : win.accent
+      property real shownK: win.flash ? 1 : 0
+      Behavior on shownK { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
+      // a toast that replaces another dips, so the change reads as a change
+      property real dip: 1
+      SequentialAnimation {
+        id: flashDip
+        NumberAnimation { target: flashBox; property: "dip"; to: 0.4; duration: Tui.TIP / 2; easing.type: Tui.IN }
+        NumberAnimation { target: flashBox; property: "dip"; to: 1; duration: Tui.TIP / 2; easing.type: Tui.OUT }
+      }
+      opacity: shownK * dip
       visible: opacity > 0.01
-      opacity: win.flash ? 1 : 0
-      Behavior on opacity { NumberAnimation { duration: 180 } }
+      transform: Translate {
+        y: win.flash ? 0 : win.ch * 0.6
+        Behavior on y { NumberAnimation { duration: Tui.STATE; easing.type: Tui.OUT } }
+      }
       anchors.horizontalCenter: parent.horizontalCenter
       y: transport.y - height - win.ch * 0.8
-      width: Math.min(parent.width - win.cw * 2, flashLine.implicitWidth + win.cw * 4)
+      width: Math.min(parent.width - win.cw * 2, flashRow.implicitWidth + win.cw * 4)
       height: win.ch * 2.2
-      color: Qt.rgba(win.baseBg.r, win.baseBg.g, win.baseBg.b, 0.97)
+      color: Qt.rgba(win.baseBg.r, win.baseBg.g, win.baseBg.b, Tui.A.card)
       border.width: 1
-      border.color: win.accent
-      Text {
-        id: flashLine
+      border.color: tone
+      Row {
+        id: flashRow
         anchors.centerIn: parent
-        width: Math.min(implicitWidth, flashBox.width - win.cw * 3)
-        elide: Text.ElideMiddle
-        text: win.flash
-        font.family: win.family; font.pixelSize: Style.font.caption
-        color: win.accentText
+        spacing: win.cw
+        Text {
+          id: flashGlyph
+          text: win.flashKind === "ok" ? "✓" : flashBox.bad ? "✕" : "╱╱"
+          font.family: win.family; font.pixelSize: Style.font.caption; font.bold: true
+          color: flashBox.bad ? flashBox.tone : win.accentText
+        }
+        Text {
+          id: flashLine
+          width: Math.min(implicitWidth, flashBox.width - flashGlyph.width - win.cw * 4)
+          elide: Text.ElideMiddle
+          text: win.flash
+          font.family: win.family; font.pixelSize: Style.font.caption
+          color: flashBox.bad ? win.fg : win.accentText
+        }
       }
       MouseArea { anchors.fill: parent; onClicked: win.flash = "" }
     }
@@ -1814,6 +2044,7 @@ FloatingWindow {
                 { k: "r", l: "repeat", run: function() { a.control("repeat") } }]
       }
       clock: win.clock
+      background: win.boxFill
 
       Row {
         id: tline
@@ -1845,39 +2076,43 @@ FloatingWindow {
             required property var modelData
             readonly property bool isPlay: modelData.a === "toggle"
             text: modelData.t
-            font.family: win.family; font.pixelSize: Style.font.body + 2
-            // Play breathes toward the accent with the beat, and its halo with it.
-            color: tm.containsMouse ? win.accentText
-                   : (isPlay && win.st.playing ? Tui.mix(win.fg, win.accentText, 0.45 + 0.55 * win.beat) : win.fg)
+            font.family: win.family; font.pixelSize: Tui.px("lead", Style.font.body)
+            // Play breathes toward the accent with the beat, and its halo with
+            // it; hover eases a scalar on top of that.
+            property real hot: tm.containsMouse ? 1 : 0
+            Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+            color: Tui.mix(isPlay && win.st.playing ? Tui.mix(win.fg, win.accentText, 0.45 + 0.55 * win.beat) : win.fg, win.accentText, hot)
             glowLive: isPlay && win.st.playing === true && win.bloom > 0
-            // a press shrinks the key at once; it eases back on release
-            scale: tm.pressed ? 0.8 : 1
-            Behavior on scale { enabled: !tm.pressed; NumberAnimation { duration: Tui.HOVER; easing.type: Easing.InOutCubic } }
+            // a press shrinks the key in-frame; it springs back on release
+            scale: tm.pressed ? 0.86 : 1
+            Behavior on scale { enabled: !tm.pressed; SpringAnimation { spring: Tui.SPRING.spring; damping: Tui.SPRING.damping } }
             glow: glowLive ? win.bloom * (0.3 + 0.7 * win.beat) : 0
             MouseArea { id: tm; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: win.api.control(modelData.a)
                         TuiTip { text: modelData.tip; key: modelData.key } }
           }
         }
 
-        Text {
-          readonly property bool on: !!win.track && !!win.api && win.api.isLiked("track", win.track.id)
+        GlyphButton {
+          id: likeBtn
+          on: !!win.track && !!win.api && win.api.isLiked("track", win.track.id)
           text: on ? "󰋑" : "󰋕"
-          font.family: win.family; font.pixelSize: Style.font.body + 2
-          color: on || thm.containsMouse ? win.accentText : win.dim
+          font.family: win.family; font.pixelSize: Tui.px("lead", Style.font.body)
           opacity: win.track ? 1 : 0.3
-          MouseArea { id: thm; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                      onClicked: if (win.track) win.api.toggleLike("track", win.track.id)
-                      TuiTip { text: thm.parent.on ? "unlike what is playing" : "like what is playing"; key: "F" } }
+          onActivated: if (win.track) win.api.toggleLike("track", win.track.id)
+          TuiTip { target: likeBtn.area; text: likeBtn.on ? "unlike what is playing" : "like what is playing"; key: "F" }
         }
         // Below 96 columns the side rail is gone and nothing else says what is
         // playing, so the transport picks it up. Wide windows leave it to the
         // rail rather than printing it twice.
-        Text {
+        ScrambleText {
           id: nowText
           visible: !side.visible && !!win.track
           width: visible ? Math.min(win.cw * 34, transport.width * (tline.narrow ? 0.2 : 0.3)) : 0
           elide: Text.ElideRight
-          text: win.track ? win.track.title + "  · " + win.artists(win.track.artists) : ""
+          textFormat: Text.PlainText
+          animate: win.titleFx
+          key: win.trackKey
+          target: win.track ? win.track.title + "  · " + win.artists(win.track.artists) : ""
           font.family: win.family; font.pixelSize: Style.font.caption; color: win.dim
           anchors.verticalCenter: parent.verticalCenter
         }
@@ -1898,8 +2133,12 @@ FloatingWindow {
           readonly property real dur: win.st.duration || 0
           readonly property real frac: scrubbing ? scrubFrac
                                      : Math.max(0, Math.min(1, (win.api ? win.api.position : 0) / Math.max(1, dur || 1)))
+          // Drop-map markers: drops that hit hard enough to mark (strength >= 0.5), this track's map only.
+          readonly property var markDrops: win.engine && win.engine.map && win.track && String(win.engine.map.id) === String(win.track.id)
+                                           ? win.engine.map.drops.filter(function(d) { return d.strength >= 0.5 }) : []
+          readonly property var marks: markDrops.map(function(d) { return d.t / Math.max(1, seekMeter.dur) })
           textFormat: Text.StyledText
-          text: Tui.meterRich(frac, cells, win.accent, Tui.mix(win.dim, win.bg, 0.4))
+          text: Tui.meterMarks(frac, cells, win.accent, Tui.mix(win.dim, win.bg, 0.4), marks, Tui.ensure(win.engine ? win.engine.c2 : win.accent, win.bg, 3))
           font.family: win.family; font.pixelSize: Style.font.body
           // The playhead carries a halo: the one cell of the bar that is "now".
           TextMetrics { id: seekCell; font: seekMeter.font; text: "━" }
@@ -1909,7 +2148,7 @@ FloatingWindow {
             text: "╸"
             font: seekMeter.font
             color: win.accent
-            glow: win.bloom * (win.st.playing ? 0.9 : 0.45)
+            glow: Math.min(1, win.bloom * (win.st.playing ? 0.85 + 0.6 * win.pulse : 0.45))
             glowRadius: 8
           }
           MouseArea {
@@ -1935,7 +2174,10 @@ FloatingWindow {
               follow: true
               force: seekMeter.scrubbing
               at: Math.max(0, Math.min(seekMouse.width, seekMouse.mouseX))
-              text: seekMeter.dur > 0 ? win.clockText((seekMeter.scrubbing ? seekMeter.scrubFrac : seekMouse.fracAt(seekMouse.mouseX)) * seekMeter.dur) : ""
+              readonly property string lbl: seekMeter.markDrops.length ? Tui.markLabel(seekMeter.markDrops, seekMeter.dur, seekMeter.cells,
+                                            Math.round(seekMouse.fracAt(seekMouse.mouseX) * (seekMeter.cells - 1)), win.clockText) : ""
+              text: seekMeter.dur > 0 ? win.clockText((seekMeter.scrubbing ? seekMeter.scrubFrac : seekMouse.fracAt(seekMouse.mouseX)) * seekMeter.dur)
+                                        + (lbl && !seekMeter.scrubbing ? " · " + lbl : "") : ""
             }
           }
         }
@@ -1943,23 +2185,23 @@ FloatingWindow {
           text: win.clockText(win.st.duration)
           font.family: win.family; font.pixelSize: Style.font.body; color: win.dim
         }
-        Text {
+        GlyphButton {
+          id: shufBtn
           text: tline.narrow ? "⇄" : "⇄ shuf"
-          font.family: win.family; font.pixelSize: Style.font.caption; font.bold: win.st.shuffle === true
-          color: win.st.shuffle || shufMouse.containsMouse ? win.accentText : win.dim
-          font.underline: shufMouse.containsMouse
+          on: win.st.shuffle === true
+          font.family: win.family; font.pixelSize: Style.font.caption; font.bold: on
           anchors.verticalCenter: parent.verticalCenter
-          MouseArea { id: shufMouse; anchors.fill: parent; anchors.margins: -3; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: win.api.control("shuffle")
-                      TuiTip { text: "shuffle " + (win.st.shuffle ? "off" : "on"); key: "s" } }
+          onActivated: win.api.control("shuffle")
+          TuiTip { target: shufBtn.area; text: "shuffle " + (win.st.shuffle ? "off" : "on"); key: "s" }
         }
-        Text {
+        GlyphButton {
+          id: repBtn
           text: "↻ " + (win.st.repeat || "off")
-          font.family: win.family; font.pixelSize: Style.font.caption; font.bold: !!win.st.repeat && win.st.repeat !== "off"
-          color: (win.st.repeat && win.st.repeat !== "off") || repMouse.containsMouse ? win.accentText : win.dim
-          font.underline: repMouse.containsMouse
+          on: !!win.st.repeat && win.st.repeat !== "off"
+          font.family: win.family; font.pixelSize: Style.font.caption; font.bold: on
           anchors.verticalCenter: parent.verticalCenter
-          MouseArea { id: repMouse; anchors.fill: parent; anchors.margins: -3; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: win.api.control("repeat")
-                      TuiTip { text: "repeat: off, all or one (now " + (win.st.repeat || "off") + ")"; key: "r" } }
+          onActivated: win.api.control("repeat")
+          TuiTip { target: repBtn.area; text: "repeat: off, all or one (now " + (win.st.repeat || "off") + ")"; key: "r" }
         }
         Text {
           id: volMeter
@@ -1978,7 +2220,9 @@ FloatingWindow {
           readonly property int bar: tline.narrow ? 5 : 8
           text: "vol " + Tui.meter(shown / 100, bar, "▰", "▱", "") + " " + win.lpad(String(shown), 3)
           font.family: win.family; font.pixelSize: Style.font.caption
-          color: volMouse.containsMouse ? win.accentText : win.dim
+          property real hot: volMouse.containsMouse || volMouse.pressed ? 1 : 0
+          Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+          color: Tui.mix(win.dim, win.accentText, hot)
           anchors.verticalCenter: parent.verticalCenter
           // Measured in this text's own font: the bar's glyphs need not be as wide
           // as the body font's cells, which is what the old click maths assumed.
@@ -1990,12 +2234,11 @@ FloatingWindow {
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             TuiTip { text: "volume: click, drag or scroll"; key: "+ -" }
-            property real wheel: 0
-            // A notch is 120; touchpads send it in small pieces. Step 5% per notch.
+            property real wheelAcc: 0
+            // Whole notches (touchpads send them in pieces); 5% a notch.
             onWheel: function(w) {
-              wheel += w.angleDelta.y
-              var notches = wheel > 0 ? Math.floor(wheel / 120) : Math.ceil(wheel / 120)
-              if (notches !== 0) { wheel -= notches * 120; volMeter.setVolume(volMeter.shown + notches * 5) }
+              var n = Tui.notches(volMouse, w.angleDelta.y)
+              if (n !== 0) { volMeter.setVolume(volMeter.shown + n * 5); win.osdVolume() }
             }
             function at(x) {
               var x0 = volHead.advanceWidth, x1 = volBar.advanceWidth
@@ -2027,7 +2270,11 @@ FloatingWindow {
           text: tline.narrow ? "eq" : "eq " + win.eqSpark()
           font.family: win.family; font.pixelSize: Style.font.caption
           font.bold: win.eqActive
-          color: win.eqActive || eqMouse.containsMouse ? win.accentText : win.dim
+          property real hot: win.eqActive || eqMouse.containsMouse ? 1 : 0
+          Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+          color: Tui.mix(win.dim, win.accentText, hot)
+          scale: eqMouse.pressed ? 0.94 : 1
+          Behavior on scale { enabled: !eqMouse.pressed; SpringAnimation { spring: Tui.SPRING.spring; damping: Tui.SPRING.damping } }
           anchors.verticalCenter: parent.verticalCenter
           MouseArea {
             id: eqMouse
@@ -2070,6 +2317,39 @@ FloatingWindow {
   }
 
   CommandPalette { id: cmdPalette; host: win }
+
+  // The boot screen (Boot.qml), over everything, the first time the player
+  // window shows in this run, unless config says bootScreen: false. Missing
+  // or broken, the Loader just fails to load and the player works as ever.
+  Loader {
+    id: bootLoader
+    anchors.fill: parent
+    z: 10000
+    active: false
+    source: "Boot.qml"
+    onLoaded: { item.host = win; item.engine = win.engine }
+    onStatusChanged: if (status === Loader.Error) win.endBoot()
+    Connections {
+      target: bootLoader.item
+      ignoreUnknownSignals: true
+      function onFinished() { win.endBoot() }
+    }
+  }
+  function maybeBoot() {
+    if (!visible || !engine || !engine.bootScreen || engine.bootShown) return
+    engine.bootShown = true
+    bootLoader.active = true
+  }
+  function endBoot() {
+    if (!bootLoader.active) return
+    // The rows and the box titles finished printing under the boot screen;
+    // replay them so the reveal lands on a page that is still arriving.
+    win.loadedAt = Date.now()
+    var boxes = [nav, mainBox, nowBox, queueBox]
+    for (var i = 0; i < boxes.length; i++) if (typeof boxes[i].replay === "function") boxes[i].replay()
+    bootLoader.active = false
+    Qt.callLater(refocus)
+  }
   TuiMenu { id: ctxMenu; onClosed: win.refocus() }
   KeysSheet { id: keysSheet; host: win }
 
@@ -2080,5 +2360,6 @@ FloatingWindow {
     else if (engine && engine.lyricsRequests > 0 && engine.lyricsRequests !== engine.lyricsHandled) { engine.lyricsHandled = engine.lyricsRequests; load(); showLyrics() }
     else if (engine && engine.settingsRequests > 0 && engine.settingsRequests !== engine.settingsHandled) { engine.settingsHandled = engine.settingsRequests; load(); showSettings() }
     else load()
+    maybeBoot()
   }
 }

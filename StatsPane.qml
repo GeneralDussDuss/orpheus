@@ -37,6 +37,9 @@ Rectangle {
   property var d: null
   property bool loading: false
   property string err: ""
+  // The range `d` was read for. A new range dims the old page while it loads
+  // and fades the new one in; the 20 s refresh of the same range just lands.
+  property string dRange: ""
 
   function load() {
     if (!api) return
@@ -45,11 +48,17 @@ Rectangle {
     api.stats(r, function(ok, data) {
       if (r !== pane.range) return
       pane.loading = false
-      if (ok && data && typeof data === "object") { pane.d = data; pane.err = "" }
+      if (ok && data && typeof data === "object") {
+        var fresh = pane.dRange !== r
+        pane.dRange = r; pane.d = data; pane.err = ""
+        if (fresh) bodyIn.restart()
+      }
       else pane.err = host.errText(data, "the service has no stats yet")
     })
   }
-  onRangeChanged: { flick.contentY = 0; load() }
+  onRangeChanged: { scrollSnap = true; flick.contentY = 0; scrollSnap = false; load() }
+  property bool scrollSnap: false
+  readonly property bool stale: loading && !!d && dRange !== range
   Component.onCompleted: load()
   // A play lands in the history when it ends; keep the page current while open.
   Timer { interval: 20000; repeat: true; running: pane.visible; onTriggered: pane.load() }
@@ -60,23 +69,24 @@ Rectangle {
     var t = e.text, k = e.key
     if (k === Qt.Key_Tab || t === "]" || k === Qt.Key_Right || t === "l") { step(1); e.accepted = true }
     else if (k === Qt.Key_Backtab || t === "[" || k === Qt.Key_Left || t === "h") { step(-1); e.accepted = true }
-    else if (k === Qt.Key_Down || t === "j") { flick.scrollBy(ch * 3); e.accepted = true }
-    else if (k === Qt.Key_Up || t === "k") { flick.scrollBy(-ch * 3); e.accepted = true }
-    else if (k === Qt.Key_PageDown) { flick.scrollBy(flick.height * 0.8); e.accepted = true }
-    else if (k === Qt.Key_PageUp) { flick.scrollBy(-flick.height * 0.8); e.accepted = true }
-    else if (t === "g") { flick.contentY = 0; e.accepted = true }
+    else if (k === Qt.Key_Down || t === "j") { Tui.scrollTo(flick, flick.contentY + ch * 3); e.accepted = true }
+    else if (k === Qt.Key_Up || t === "k") { Tui.scrollTo(flick, flick.contentY - ch * 3); e.accepted = true }
+    else if (k === Qt.Key_PageDown) { Tui.scrollTo(flick, flick.contentY + flick.height * 0.8); e.accepted = true }
+    else if (k === Qt.Key_PageUp) { Tui.scrollTo(flick, flick.contentY - flick.height * 0.8); e.accepted = true }
+    else if (t === "g") { Tui.scrollTo(flick, 0); e.accepted = true }
     else if (t === "w") { range = "wrapped"; e.accepted = true }
     else if (t === "r") { load(); e.accepted = true }
     else e.accepted = host.handleKey(e)
   }
 
   // ---- drawing helpers -------------------------------------------------------
-  readonly property real cw: host ? host.cw : 8
-  readonly property real ch: host ? host.ch : 16
-  readonly property color accent: host ? host.accent : "#7aa2f7"
-  readonly property color fg: host ? host.fg : "#e6e6e6"
-  readonly property color dim: host ? host.dim : "#808080"
-  readonly property color faint: Tui.mix(dim, host ? host.bg : "#000000", 0.45)
+  // host is always the player window (Library.qml mounts this with host: win)
+  readonly property real cw: host.cw
+  readonly property real ch: host.ch
+  readonly property color accent: host.accent
+  readonly property color fg: host.fg
+  readonly property color dim: host.dim
+  readonly property color faint: Tui.mix(dim, host.bg, 0.45)
   readonly property int cols: Math.max(40, Math.floor(width / cw))
 
   function rule(title) {
@@ -191,12 +201,23 @@ Rectangle {
       Repeater {
         model: pane.ranges
         Text {
+          id: rangeTab
           required property var modelData
           required property int index
           readonly property bool on: index === pane.rangeIndex
           text: (on ? "▰ " : "▱ ") + modelData.label
           font.family: host.family; font.pixelSize: Style.font.body; font.bold: on
-          color: on || rangeArea.containsMouse ? host.accentText : pane.dim
+          property real hot: on || rangeArea.containsMouse ? 1 : 0
+          Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+          color: Tui.mix(pane.dim, host.accentText, hot)
+          // a faint fill under the pointer, a deep one while held
+          Rectangle {
+            z: -1
+            anchors.fill: parent; anchors.margins: -pane.cw * 0.3
+            color: Tui.alpha(Color.accent, rangeArea.pressed ? Tui.A.press : Tui.A.hover)
+            opacity: rangeArea.pressed || (rangeArea.containsMouse && !rangeTab.on) ? 1 : 0
+            Behavior on opacity { enabled: !rangeArea.pressed; NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+          }
           MouseArea { id: rangeArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                       onClicked: { pane.range = parent.modelData.id; pane.forceActiveFocus() } }
         }
@@ -212,18 +233,32 @@ Rectangle {
     clip: true
     contentHeight: body.height
     boundsBehavior: Flickable.StopAtBounds
-    function scrollBy(dy) { contentY = Math.max(0, Math.min(Math.max(0, contentHeight - height), contentY + dy)) }
+    flickDeceleration: Tui.FLICK.decel; maximumFlickVelocity: Tui.FLICK.vmax
+    // keys glide; the wheel and a drag stay direct
+    Behavior on contentY { enabled: !flick.moving && !pane.scrollSnap; NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
+
+    // Nothing to show yet: reading (after the spinner delay), or why not.
+    TuiEmpty {
+      y: pane.ch * 4
+      width: flick.width
+      host: pane.host
+      shown: !pane.d && (pane.loading || pane.err !== "")
+      kind: pane.err ? "error" : "busy"
+      title: pane.err ? "no stats to show" : "reading the history"
+      reason: pane.err
+      actions: pane.err ? [{ k: "r", l: "reload", run: function() { pane.load() }, tip: "read the history again" }] : []
+    }
 
     Column {
       id: body
       width: flick.width
       spacing: pane.ch * 0.9
-
-      Text {
-        visible: !pane.d
-        text: pane.err || (pane.loading ? "reading the history…" : "")
-        font.family: host.family; font.pixelSize: Style.font.body; color: pane.dim
-      }
+      // the old range steps back while the new one loads; a new one fades in
+      property real staleK: pane.stale ? 0.4 : 1
+      Behavior on staleK { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
+      property real enter: 1
+      opacity: staleK * enter
+      NumberAnimation { id: bodyIn; target: body; property: "enter"; from: 0; to: 1; duration: Tui.STATE; easing.type: Tui.OUT }
 
       // ── the regular view ─────────────────────────────────────────────────
       Column {
@@ -244,7 +279,7 @@ Rectangle {
                     big((d.distinct || {}).artists || 0, "artists"),
                     big((s.current || 0) + " d", "streak · best " + (s.longest || 0))].join("&nbsp;&nbsp;&nbsp;")
           }
-          font.family: host.family; font.pixelSize: Style.font.body + 2
+          font.family: host.family; font.pixelSize: Tui.px("lead", Style.font.body)
         }
 
         Text {
@@ -307,8 +342,10 @@ Rectangle {
         readonly property var w: (pane.d && pane.d.wrapped) || ({})
 
         Text {
+          width: parent.width
+          elide: Text.ElideRight
           text: (parent.w.month || "this month").toUpperCase()
-          font.family: host.family; font.pixelSize: Style.font.body * 2; font.bold: true; font.letterSpacing: 3
+          font.family: host.family; font.pixelSize: Tui.px("display", Style.font.body); font.bold: true; font.letterSpacing: Tui.TRACK.display
           color: host.accentText
         }
         Text {
@@ -316,7 +353,9 @@ Rectangle {
           text: '<font color="' + Tui.hex(pane.dim) + '">you listened for </font><font color="' + Tui.hex(pane.fg) + '"><b>'
                 + pane.hours(pane.d ? pane.d.minutes : 0) + '</b></font><font color="' + Tui.hex(pane.dim) + '"> · '
                 + (pane.d ? pane.d.plays : 0) + ' plays · ' + ((pane.d && pane.d.distinct) ? pane.d.distinct.tracks : 0) + ' different songs</font>'
-          font.family: host.family; font.pixelSize: Style.font.body + 4
+          width: parent.width
+          elide: Text.ElideRight
+          font.family: host.family; font.pixelSize: Tui.px("title", Style.font.body)
         }
         // the cards: label on the left, the answer on the right
         Text {
@@ -384,7 +423,7 @@ Rectangle {
     elide: Text.ElideRight
     textFormat: Text.StyledText
     text: Tui.hints([["⇥", "range"], ["w", "wrapped"], ["j/k", "scroll"], ["r", "reload"], ["esc", "back"]], host.accentText, pane.dim)
-          + (pane.loading ? '<font color="' + Tui.hex(pane.dim) + '">&nbsp;&nbsp;&nbsp;·&nbsp;reading…</font>' : "")
+          + (pane.loading ? '&nbsp;&nbsp;&nbsp;<font color="' + Tui.hex(pane.dim) + '">·</font>&nbsp;' + '<font color="' + Tui.hex(pane.dim) + '">' + Tui.busy(host.clock, "reading", Tui.hex(host.accentText)) + '</font>' : "")
     font.family: host.family; font.pixelSize: Style.font.caption
   }
 }

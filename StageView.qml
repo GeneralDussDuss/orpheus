@@ -6,12 +6,21 @@ import "Tui.js" as Tui
 
 // What the stage shows inside its frame (or full-bleed): the visualizer, at a
 // resolution auto quality picks from the measured frame rate, with the title
-// card, the kinetic lyrics and the fps readout over it.
+// card, the kinetic lyrics and the fps readout over it. Or, with the engine's
+// scene on "cassette", the cassette deck (Cassette.qml) in its place: the two
+// crossfade at page pace, and the window is never rebuilt for it.
 Item {
   id: view
 
   property var engine: null
   property string styleName: "skyline"
+  property bool cursorHidden: false       // the show's sleeping pointer, for the deck's own mouse
+  // The deck's mouse, passed up to the Stage: wake the show, leave it, close after an eject.
+  signal sceneMoved()
+  signal sceneLeave()
+  signal sceneEjected()
+  readonly property bool deck: !!engine && engine.scene === "cassette"
+  readonly property var deckItem: deckLoader.item
 
   readonly property color bg: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 1)
   readonly property color fg: Tui.ensure(Color.foreground, bg, 7)
@@ -19,6 +28,7 @@ Item {
   readonly property color accentText: Tui.ensure(Color.accent, bg, 4.5)
   readonly property string family: Style.font.family
   readonly property real bloom: Tui.bloom(engine)
+  readonly property bool titleFx: !!engine && engine.titleFx && !engine.gameMode
   // Type scales with the stage: a card on a desk and a 3440 px wall both read.
   readonly property real unit: Math.max(10, Math.min(width / 46, height / 18))
 
@@ -44,7 +54,7 @@ Item {
   property string idle: ""
   onIdleWantChanged: idleWait.restart()
   Timer { id: idleWait; interval: view.idle === "" ? 900 : 250; onTriggered: view.idle = view.idleWant }
-  Component.onCompleted: { idleWait.restart(); if (trackKey !== "" && engine && engine.trackTitle) titleCard.play() }
+  Component.onCompleted: { idleWait.restart(); if (trackKey !== "" && engine && engine.trackTitle && !deck) titleCard.play() }
   // The player window's global key (on Windows as the hotkeys actually bound it).
   readonly property string libraryKey: {
     if (typeof OrpheusKeys === "undefined") return "super+shift+m"
@@ -53,15 +63,46 @@ Item {
     return ""
   }
 
-  Viz {
-    id: viz
+  // ---- the scene ----------------------------------------------------------------
+  //
+  // One Loader per scene. The one going out fades over the incoming one and
+  // unloads when it is gone, so the visualizer's recursive buffers are torn
+  // down with it (never resized) and the two only overlap for the fade.
+  Loader {
+    id: vizLoader
     anchors.fill: parent
-    engine: view.engine
-    styleName: view.styleName
-    renderScale: view.scale_
+    property real shown: view.deck ? 0 : 1
+    Behavior on shown { NumberAnimation { duration: Tui.PAGE; easing.type: Easing.InOutCubic } }
+    active: !view.deck || shown > 0.01
     // At rest the picture steps back; the music brings it forward again.
-    opacity: view.idle === "" || view.idle === "deaf" ? 1 : 0.55
-    Behavior on opacity { NumberAnimation { duration: Tui.PAGE; easing.type: Easing.InOutCubic } }
+    property real rest: view.idle === "" || view.idle === "deaf" ? 1 : 0.55
+    Behavior on rest { NumberAnimation { duration: Tui.PAGE; easing.type: Easing.InOutCubic } }
+    // Qualified: an unqualified name finds a component id before this item's
+    // own property (the at-rest Column below once had this name as its id: NaN).
+    opacity: vizLoader.shown * vizLoader.rest
+    sourceComponent: Viz {
+      engine: view.engine
+      styleName: view.styleName
+      renderScale: view.scale_
+    }
+  }
+  Loader {
+    id: deckLoader
+    anchors.fill: parent
+    property real shown: view.deck ? 1 : 0
+    Behavior on shown { NumberAnimation { duration: Tui.PAGE; easing.type: Easing.InOutCubic } }
+    active: view.deck || shown > 0.01
+    opacity: shown
+    visible: shown > 0.001
+    sourceComponent: Cassette {
+      engine: view.engine
+      unit: view.unit
+      cursorHidden: view.cursorHidden
+      onMoved: view.sceneMoved()
+      onLeave: view.sceneLeave()
+      onEjected: view.sceneEjected()
+    }
+    onLoaded: item.powerOn()
   }
 
   // ---- auto quality --------------------------------------------------------
@@ -80,6 +121,8 @@ Item {
   property real cap: 1e9               // a ceiling that is not ours to fix
   readonly property real target: Math.min(engine ? engine.fps : 60, cap)
   onStyleNameChanged: { cap = 1e9; low = 0; good = 0; fpsBeforeDrop = 0 }
+  // A scene change starts the measuring over too (the deck ignores the scale).
+  onDeckChanged: { cap = 1e9; low = 0; good = 0; fpsBeforeDrop = 0; step = 0 }
   readonly property int fpsSetting: engine ? engine.fps : 60
   onFpsSettingChanged: cap = 1e9
   property int frames: 0
@@ -143,7 +186,7 @@ Item {
     api: view.engine && view.engine.lyricsOverViz ? view.api : null
     track: view.track
   }
-  readonly property bool lyricsOn: !!engine && engine.lyricsOverViz && lyr.lines.length > 0
+  readonly property bool lyricsOn: !!engine && engine.lyricsOverViz && lyr.lines.length > 0 && !deck   // not over the deck's keys
   readonly property real pos: api ? (api.position || 0) : 0
   readonly property int lineIdx: lyricsOn ? lyr.lineAt(pos + 0.45 - lyr.offset) : -1
   readonly property string lineText: lineIdx >= 0 ? (lyr.lines[lineIdx].text || "") : ""
@@ -356,7 +399,7 @@ Item {
   // wide tracking, the artist follows, it holds, and it all fades away.
   readonly property string trackKey: track ? String(track.id || track.title || "") : ""
   onTrackKeyChanged: {
-    if (trackKey !== "" && engine && engine.trackTitle) titleCard.play()
+    if (trackKey !== "" && engine && engine.trackTitle && !deck) titleCard.play()   // the j-card names it there
     else titleCard.clear()                 // nothing loaded: no stale title over an empty stage
   }
 
@@ -399,15 +442,15 @@ Item {
       nextArtist = t ? (Array.isArray(t.artists) ? t.artists.join(", ") : (t.artist || "")) : ""
       if (!nextTitle) { clear(); return }
       // A skip while a card is up: the old one steps out first, never cut.
-      gone.stop()
+      fadeOut.stop()
       handover.duration = opacity > 0.01 ? Tui.STATE : 0
       card.restart()
     }
     function clear() {
       card.stop()
-      if (opacity > 0.01) gone.restart()
+      if (opacity > 0.01) fadeOut.restart()
     }
-    NumberAnimation { id: gone; target: titleCard; property: "opacity"; to: 0; duration: Tui.STATE; easing.type: Easing.InOutCubic }
+    NumberAnimation { id: fadeOut; target: titleCard; property: "opacity"; to: 0; duration: Tui.STATE; easing.type: Easing.InOutCubic }
 
     Column {
       id: col
@@ -418,9 +461,13 @@ Item {
         color: view.accentText
       }
       // The title's halo flares while the letters resolve and settles with them.
-      GlowText {
+      // and the letters decode in left to right as the card lands (titleFx)
+      ScrambleText {
         width: titleCard.width
-        text: titleCard.title
+        textFormat: Text.PlainText
+        animate: view.titleFx
+        duration: 600
+        target: titleCard.title
         glow: view.bloom * (0.3 + 0.7 * Math.min(1, titleCard.spread / Math.max(1, view.unit * 0.9)))
         glowLive: titleCard.visible && view.bloom > 0
         glowColor: view.accentText
@@ -434,10 +481,13 @@ Item {
         style: Text.Raised
         styleColor: Qt.rgba(view.bg.r, view.bg.g, view.bg.b, 0.6)
       }
-      Text {
+      ScrambleText {
         id: artistText
         width: titleCard.width
-        text: titleCard.artist
+        textFormat: Text.PlainText
+        animate: view.titleFx
+        duration: 700
+        target: titleCard.artist
         elide: Text.ElideRight
         font.family: view.family
         font.pixelSize: view.unit * 1.0
@@ -468,9 +518,54 @@ Item {
 
   // ---- readouts ----------------------------------------------------------------
 
+  // Your shaders: a tick where the fps sits when one is rebuilt, breaks, or
+  // fails on the GPU, and the fps itself for 4 s after a rebuild of the shown
+  // style, so a heavy shader announces its cost.
+  property bool fpsPeek: false
+  Timer { id: fpsPeekOff; interval: 4000; onTriggered: view.fpsPeek = false }
   Text {
-    visible: !!view.engine && view.engine.showFps
+    id: tick
+    property string msg: ""
+    property bool bad: false
+    visible: opacity > 0.01
+    opacity: 0
     anchors { top: parent.top; right: parent.right; margins: Math.max(6, view.unit * 0.4) }
+    text: msg
+    font.family: view.family
+    font.pixelSize: Math.max(Style.font.caption, view.unit * 0.45)
+    color: bad ? view.accentText : view.dim
+    style: Text.Outline
+    styleColor: Qt.rgba(view.bg.r, view.bg.g, view.bg.b, 0.7)
+    function show(m, isBad) {
+      msg = m; bad = isBad
+      tickAnim.stop()
+      tickHold.duration = isBad ? 3000 : 1400
+      tickAnim.start()
+    }
+    SequentialAnimation {
+      id: tickAnim
+      NumberAnimation { target: tick; property: "opacity"; to: 1; duration: Tui.HOVER; easing.type: Easing.OutCubic }
+      PauseAnimation { id: tickHold; duration: 1400 }
+      NumberAnimation { target: tick; property: "opacity"; to: 0; duration: Tui.STATE; easing.type: Easing.InCubic }
+    }
+  }
+  Connections {
+    target: view.engine
+    ignoreUnknownSignals: true
+    function onShaderEvent(kind, name, text) {
+      var mine = name === String(view.styleName || "").replace(/^@/, "")
+      if (kind === "gpu" && mine) tick.show(text, true)
+      else if (!mine) return
+      else if (kind === "reloaded") { tick.show("reloaded · " + text, false); view.fpsPeek = true; fpsPeekOff.restart() }
+      else if (kind === "ready") { view.fpsPeek = true; fpsPeekOff.restart() }
+      else if (kind === "error") tick.show("✕ " + String(text).slice(0, 60), true)
+    }
+  }
+
+  Text {
+    visible: !!view.engine && (view.engine.showFps || view.fpsPeek)
+    anchors { top: tick.visible ? tick.bottom : parent.top; right: parent.right
+              topMargin: tick.visible ? 2 : Math.max(6, view.unit * 0.4); rightMargin: Math.max(6, view.unit * 0.4) }
     text: Math.round(view.fps) + " fps" + (view.scale_ < 1 ? " · " + Math.round(view.scale_ * 100) + "%" : "")
     font.family: view.family
     font.pixelSize: Math.max(Style.font.caption, view.unit * 0.45)
@@ -486,11 +581,17 @@ Item {
   // the title and the lyrics stay where they were.
   readonly property real breath: engine && engine.time >= 0 ? 0.5 + 0.5 * Math.sin(engine.time * 1.2) : 1
   Column {
-    id: rest
-    anchors.centerIn: parent
-    width: parent.width * 0.8
+    id: restLine
+    // Under the deck, centred over the machine, never across the j-card's
+    // paper (which says "no tape" itself).
+    readonly property var dk: view.deck && deckLoader.item && !deckLoader.item.compact ? deckLoader.item : null
+    width: dk ? dk.deckW * 0.9 : parent.width * 0.8
+    x: (dk ? dk.deckX + dk.deckW / 2 : parent.width / 2) - width / 2
+    y: (parent.height - height) / 2
     spacing: view.unit * 0.3
+    // The deck shows two of these itself: ejected for no track, needles at rest when deaf.
     readonly property bool on: view.idle !== "" && view.idle !== "paused"
+                               && !(view.deck && (view.idle === "nothing playing" || view.idle === "deaf"))
     opacity: on ? 1 : 0
     visible: opacity > 0.01
     Behavior on opacity { NumberAnimation { duration: Tui.PAGE; easing.type: Easing.InOutCubic } }
@@ -534,7 +635,7 @@ Item {
     font.family: view.family
     font.pixelSize: Math.max(Style.font.caption, view.unit * 0.42)
     color: view.dim
-    readonly property bool on: view.idle === "paused"
+    readonly property bool on: view.idle === "paused" && !view.deck
     property real shown: on ? 1 : 0
     Behavior on shown { NumberAnimation { duration: Tui.STATE; easing.type: Easing.InOutCubic } }
     opacity: shown * (0.6 + 0.4 * view.breath)

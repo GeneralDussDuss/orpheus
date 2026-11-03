@@ -41,6 +41,8 @@ TuiBox {
   readonly property real bloom: Tui.bloom(engine)
   readonly property bool playing: !!(player && player.isPlaying)
   readonly property real beat: engine && playing ? Math.max(0, Math.min(1, engine.beat || 0)) : 0
+  readonly property bool titleFx: !!engine && engine.titleFx && !engine.gameMode
+  readonly property string trackKey: player ? (player.trackTitle || "") + " | " + (player.trackArtist || "") : ""
 
   // The player window's global key (on Windows as the hotkeys actually bound it).
   readonly property string libraryKey: {
@@ -84,7 +86,7 @@ TuiBox {
   }
 
   implicitHeight: content.implicitHeight + ch * 2
-  background: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, fill ? 1 : 0.82)
+  background: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, fill ? (Color.glass === true ? 0 : 1) : 0.82)
   title: full ? "orpheus · " + (engine ? (engine.styleLabels[engine.widgetViz] || "") : "").toLowerCase() : "now playing"
   keyHint: player && player.isPlaying ? "▶" : "‖"
   clock: engine ? engine.time : -1
@@ -145,13 +147,28 @@ TuiBox {
         id: art
         width: box.ch * 4.4
         height: width
-        color: Tui.alpha(Color.accent, 0.12)
+        color: Tui.alpha(Color.accent, Tui.A.tint)
+        // a placeholder mark until the cover arrives; then the cover fades in
+        Text {
+          anchors.centerIn: parent
+          visible: !artImg.arrived
+          text: "╱╱╱"
+          font.family: Style.font.family; font.pixelSize: Style.font.body
+          color: box.dim
+        }
         Image {
+          id: artImg
           anchors.fill: parent
           source: box.player && box.player.trackArtUrl ? box.player.trackArtUrl : ""
           fillMode: Image.PreserveAspectCrop
           asynchronous: true
           sourceSize: Qt.size(art.width * 2, art.height * 2)
+          // fades in when a new source arrives, not on every reload a size change causes
+          property bool arrived: false
+          onSourceChanged: arrived = false
+          onStatusChanged: if (status === Image.Ready) arrived = true
+          opacity: arrived ? 1 : 0
+          Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
         }
         MouseArea { anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: if (box.engine) box.engine.libraryOpen = true
                     TuiTip { text: "open the player" } }
@@ -160,14 +177,23 @@ TuiBox {
       Column {
         width: parent.width - art.width - box.cw * 2
         anchors.verticalCenter: parent.verticalCenter
-        Text {
+        // Title and artist decode in on a track change (titleFx); keyed on the
+        // pair, so the player re-sending the same track never scrambles it.
+        ScrambleText {
           width: parent.width; elide: Text.ElideRight
-          text: box.player ? (box.player.trackTitle || "unknown track") : "nothing playing"
+          textFormat: Text.PlainText
+          animate: box.titleFx
+          key: box.trackKey
+          target: box.player ? (box.player.trackTitle || "unknown track") : "nothing playing"
           font.family: Style.font.family; font.pixelSize: Style.font.body; font.bold: true; color: box.fg
         }
-        Text {
+        ScrambleText {
           width: parent.width; elide: Text.ElideRight
-          text: box.player ? (box.player.trackArtist || "") : "pick something in the player" + (box.libraryKey ? " \u00b7 " + box.libraryKey : "")
+          textFormat: Text.PlainText
+          animate: box.titleFx
+          key: box.trackKey
+          duration: Tui.DECODE
+          target: box.player ? (box.player.trackArtist || "") : "pick something in the player" + (box.libraryKey ? " \u00b7 " + box.libraryKey : "")
           font.family: Style.font.family; font.pixelSize: Style.font.body; color: box.dim
         }
         GlowText {
@@ -223,9 +249,14 @@ TuiBox {
               required property var modelData
               readonly property bool isPlay: modelData.a === "toggle"
               text: modelData.g
-              font.family: Style.font.family; font.pixelSize: Style.font.body + 3
-              color: (modelData.a === "like" && box.liked) || cm.containsMouse ? Color.accent
-                     : isPlay && box.playing ? Tui.mix(box.fg, Color.accent, 0.45 + 0.55 * box.beat) : box.fg
+              font.family: Style.font.family; font.pixelSize: Tui.px("lead", Style.font.body)
+              // hover eases a scalar; a press shrinks in-frame, springs back
+              property real hot: cm.containsMouse ? 1 : 0
+              Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+              color: modelData.a === "like" && box.liked ? Color.accent
+                     : Tui.mix(isPlay && box.playing ? Tui.mix(box.fg, Color.accent, 0.45 + 0.55 * box.beat) : box.fg, Color.accent, hot)
+              scale: cm.pressed ? 0.86 : 1
+              Behavior on scale { enabled: !cm.pressed; SpringAnimation { spring: Tui.SPRING.spring; damping: Tui.SPRING.damping } }
               glowLive: box.bloom > 0 && ((isPlay && box.playing) || (modelData.a === "like" && box.liked))
               glow: !glowLive ? 0 : isPlay ? box.bloom * (0.3 + 0.7 * box.beat) : box.bloom * 0.4
               visible: modelData.a !== "like" || box.orpheusTrack !== null

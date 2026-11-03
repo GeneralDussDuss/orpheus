@@ -14,10 +14,12 @@ Item {
   anchors.fill: parent
   visible: opacity > 0
   opacity: shown ? 1 : 0
-  Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.InOutCubic } }
+  Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
   z: 50
 
-  function open() { shown = true; flick.contentY = 0; flick.forceActiveFocus() }
+  // opening lands at the top at once; only the keys glide
+  property bool snap: false
+  function open() { snap = true; flick.contentY = 0; snap = false; shown = true; flick.forceActiveFocus() }
   function close() { shown = false; host.refocus() }
 
   readonly property bool hasKeys: typeof OrpheusKeys !== "undefined"
@@ -34,8 +36,9 @@ Item {
     ["lists", [["j k  ↓ ↑", "move"], ["pgdn pgup", "move 10"], ["g  G", "top / bottom"], ["⏎", "open or play"],
                ["a", "play the row next"], ["f", "like the row"], ["P  S", "play / shuffle the page"]]],
     ["search box", [["type", "search as you type"], ["↓  esc", "to the results"], ["⏎", "open the selected result"]]],
-    ["visualizer", [["v", "cycle the player rail"], ["V", "open / close the visualizer window"]]],
-    ["in the visualizer window", [["l h  → ←", "next / previous style"], ["1-8", "pick a style"], ["f", "fullscreen show / window"],
+    ["visualizer", [["v", "cycle the player rail"], ["V", "open / close the visualizer window"], ["t", "cassette deck on / off"]]],
+    ["in the visualizer window", [["l h  → ←", "next / previous style · in the deck: shuttle ± 10 s"], ["1-9  0  ⇧1-9", "pick a style (leaves the deck)"],
+                                  ["t", "cassette deck / visualizer"], ["e", "eject · cassette deck only"], ["f", "fullscreen show / window"],
                                   ["p", "mini player on / off"], ["space", "play / pause"], ["esc", "close it"]]],
     ["mouse · player", [["click row", "select it"], ["dbl-click row", "play or open it"], ["right-click", "menu: queue, radio, link"],
                         ["click picture", "next rail visual · right-click back"], ["scroll picture", "step through visuals"],
@@ -44,13 +47,17 @@ Item {
                         ["vol", "click, drag or scroll"], ["eq", "click opens · right-click bypass"],
                         ["click a hint", "key hints are buttons too"], ["hover", "what it does, and its key"]]],
     ["mouse · visualizer, widget", [["click", "next style · right-click back"], ["scroll", "step through styles"],
-                                    ["dbl-click show", "back to a window"]]],
+                                    ["dbl-click show", "back to a window"], ["drag a reel", "scrub the tape · scroll ± 5 s"],
+                                    ["click a j-card track", "play it"], ["drop a .frag", "import it as a style"]]],
     ["menus", [["j k  ↓ ↑", "move"], ["⇥ ⇧⇥", "the same"], ["⏎  space", "run"], ["g G  home end", "first / last"], ["esc  q", "close"]]],
     ["video page", [["⇥", "next provider"], ["⏎", "watch"], ["a", "listen instead"], ["c", "hand over to curd"],
                     ["space", "pause the video"], ["l h  → ←", "seek the video"], ["F", "fullscreen"], ["x", "close the video"]]],
     ["equalizer", [["h l  ← →", "pick a band"], ["k j  ↑ ↓", "band up / down a step"], ["K J", "up / down coarse"], ["0  z", "zero the band / all"],
                    ["p  P", "next / previous preset"], ["b", "bypass"], ["]  [", "preamp up / down"], ["\\", "auto headroom"],
+                   ["A", "find headphones (AutoEQ)"], ["x  X", "AutoEQ on / off · clear"],
                    ["drag  scroll", "set a band"], ["middle-click", "zero a band"], ["right-click", "bypass"]]],
+    ["autoeq picker", [["type", "filter"], ["⏎", "apply"], ["↑ ↓", "move"], ["pgup pgdn", "page"],
+                       ["ctrl+r", "refresh the index"], ["esc", "back to the bars"]]],
     ["lyrics", [["]  [", "sync later / earlier"], ["\\", "reset the sync"], ["m", "entrance: wave, rain, plain"], ["j k  ↓ ↑", "scroll"]]],
     ["stats", [["⇥ ⇧⇥  ] [", "next / previous range"], ["l h  → ←", "the same"], ["w", "wrapped"], ["r", "reload"],
                ["j k  ↓ ↑", "scroll"], ["pgdn pgup", "scroll a page"], ["g", "top"]]],
@@ -96,6 +103,13 @@ Item {
     anchors.centerIn: parent
     width: Math.min(parent.width - host.cw * 4, host.cw * 135)
     height: parent.height - host.ch * 3
+    // it settles into place as it fades in, like the command palette
+    scale: sheet.shown ? 1 : 0.985
+    Behavior on scale { NumberAnimation { duration: Tui.STATE; easing.type: Tui.OUT } }
+    transform: Translate {
+      y: sheet.shown ? 0 : host.ch * 0.5
+      Behavior on y { NumberAnimation { duration: Tui.STATE; easing.type: Tui.OUT } }
+    }
     background: Qt.rgba(sheet.base.r, sheet.base.g, sheet.base.b, 1)
     title: "keys"
     hintItems: [{ k: "j/k", l: "scroll" }, { k: "esc", l: "close", run: function() { sheet.close() } }]
@@ -110,16 +124,19 @@ Item {
       clip: true
       contentHeight: content.height
       boundsBehavior: Flickable.StopAtBounds
+      flickDeceleration: Tui.FLICK.decel; maximumFlickVelocity: Tui.FLICK.vmax
+      // keys glide; the wheel and a drag stay direct
+      Behavior on contentY { enabled: !flick.moving && !sheet.snap; NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
       Keys.onPressed: function(e) {
         var k = e.key, t = e.text
-        var step = host.ch * 3, maxY = Math.max(0, contentHeight - height)
+        var step = host.ch * 3
         if (k === Qt.Key_Escape || t === "?" || t === "q") sheet.close()
-        else if (k === Qt.Key_Down || t === "j") contentY = Math.min(maxY, contentY + step)
-        else if (k === Qt.Key_Up || t === "k") contentY = Math.max(0, contentY - step)
-        else if (k === Qt.Key_PageDown || k === Qt.Key_Space) contentY = Math.min(maxY, contentY + height * 0.8)
-        else if (k === Qt.Key_PageUp) contentY = Math.max(0, contentY - height * 0.8)
-        else if (t === "g") contentY = 0
-        else if (t === "G") contentY = maxY
+        else if (k === Qt.Key_Down || t === "j") Tui.scrollTo(flick, contentY + step)
+        else if (k === Qt.Key_Up || t === "k") Tui.scrollTo(flick, contentY - step)
+        else if (k === Qt.Key_PageDown || k === Qt.Key_Space) Tui.scrollTo(flick, contentY + height * 0.8)
+        else if (k === Qt.Key_PageUp) Tui.scrollTo(flick, contentY - height * 0.8)
+        else if (t === "g") Tui.scrollTo(flick, 0)
+        else if (t === "G") Tui.scrollTo(flick, contentHeight)
         e.accepted = true
       }
 

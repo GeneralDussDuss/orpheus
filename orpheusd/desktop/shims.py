@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import (Property, QFileSystemWatcher, QObject, QProcess, QSize,
-                            QTimer, Signal, Slot, QEnum)
+                            QTimer, Qt, Signal, Slot, QEnum)
 from PySide6.QtGui import QColor, QGuiApplication
 from PySide6.QtQml import QJSValue, QmlAttached, QmlElement, QmlSingleton, QmlUncreatable
 
@@ -724,16 +724,76 @@ def _prefs_path() -> Path:
     return STATE_DIR / "desktop.json"
 
 
-def saved_theme() -> str:
+def load_prefs() -> dict:
+    """desktop.json: the theme and glass mode. Missing or unreadable is {}."""
     import json
     try:
-        name = json.loads(_prefs_path().read_text(encoding="utf-8")).get("theme", DEFAULT_THEME)
-    except (OSError, ValueError, AttributeError):
-        return DEFAULT_THEME
-    return name if name in theme_names() else DEFAULT_THEME
+        d = json.loads(_prefs_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
+def save_prefs(**changes):
+    """Merge `changes` into desktop.json, keeping every other key."""
+    import json
+    d = load_prefs()
+    d.update(changes)
+    p = _prefs_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(d) + "\n", encoding="utf-8")
+
+
+def saved_theme() -> str:
+    name = load_prefs().get("theme", DEFAULT_THEME)
+    return name if isinstance(name, str) and name in theme_names() else DEFAULT_THEME
+
+
+# Glass mode (Windows): the window shows a blur of what is behind it, tinted
+# with the theme background at this opacity. Text is held to its contrast
+# against the opaque background, and 0.74 of a dark theme over the brightest
+# wallpaper still leaves body text near 6:1. backdrop.py does the Win32 part.
+GLASS_ALPHA = 0.74
+
+
+def saved_glass() -> bool:
+    return sys.platform == "win32" and load_prefs().get("glass") is True
 
 
 THEME: list = []   # the live Color singleton, once the QML has made it
+
+
+# Theme changes glide instead of cutting. Mixing in OKLab keeps the midpoint at
+# an even lightness: a plain RGB mix of two saturated colours goes muddy grey.
+def _to_oklab(c: QColor) -> tuple:
+    def lin(v):
+        return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+    r, g, b = lin(c.redF()), lin(c.greenF()), lin(c.blueF())
+    l = (0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b) ** (1 / 3)
+    m = (0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b) ** (1 / 3)
+    s = (0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b) ** (1 / 3)
+    return (0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+            1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+            0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s,
+            c.alphaF())
+
+
+def _from_oklab(L, a, b, alpha) -> QColor:
+    l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3
+    m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3
+    s = (L - 0.0894841775 * a - 1.2914855480 * b) ** 3
+    def enc(v):
+        v = max(0.0, min(1.0, v))
+        return 12.92 * v if v <= 0.0031308 else 1.055 * v ** (1 / 2.4) - 0.055
+    return QColor.fromRgbF(enc(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s),
+                           enc(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s),
+                           enc(-0.0041960863 * l - 0.7034186147 * m + 1.7076956621 * s),
+                           alpha)
+
+
+THEME_GLIDE_MS = 650    # picking a theme
+ALBUM_GLIDE_MS = 1100   # the album theme following a new cover: slower, it isn't asked for
+PREVIEW_GLIDE_MS = 120  # the builder's sliders: just enough to smooth a drag
 
 
 @QmlElement
@@ -742,40 +802,45 @@ class Color(QObject):
     """The theme. Omarchy's comes from the shell; here there is no desktop theme
     to follow, so the app carries Omarchy's palettes and switches between them
     itself. "orpheus" is the app's own dark look with the system accent."""
-    changed = Signal()
+    changed = Signal()         # the theme's name
+    colorsChanged = Signal()   # the four colours, every frame of a glide
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._name = ""
         self._v = {}
+        self._glide = None     # (start lab, end lab, end colours, started, ms)
+        self._timer = QTimer(self)
+        self._timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self._timer.setInterval(16)
+        self._timer.timeout.connect(self._step)
+        self._glass = saved_glass()
         THEME[:] = [self]
         from .albumtheme import AlbumTheme
         self.album = AlbumTheme(self, self)
         self.set_theme(saved_theme(), save=False)
 
     def set_theme(self, name: str, save: bool = True):
-        import json
         from .themegen import to_toml
         if name == "album":
             # Until the first cover arrives, keep looking like Orpheus.
             self._name = name
             p = self.album.palette
-            self._apply(p or {}, to_toml(p) if p else "")
+            self._apply(p or {}, to_toml(p) if p else "", THEME_GLIDE_MS)
         else:
             path = _theme_file(name) if name != DEFAULT_THEME else None
             t = _read_toml(path) if path else {}
             if not t:
                 name = DEFAULT_THEME
             self._name = name
-            self._apply(t, path.read_text(encoding="utf-8") if path else "")
+            self._apply(t, path.read_text(encoding="utf-8") if path else "", THEME_GLIDE_MS)
+        self.changed.emit()
         if save:
-            p = _prefs_path()
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(json.dumps({"theme": name}) + "\n", encoding="utf-8")
+            save_prefs(theme=name)
 
     def apply_album(self, palette: dict):
         from .themegen import to_toml
-        self._apply(palette, to_toml(palette))
+        self._apply(palette, to_toml(palette), ALBUM_GLIDE_MS)
 
     # ---- for QML (the settings page) ----------------------------------------
     themesChanged = Signal()
@@ -802,20 +867,83 @@ class Color(QObject):
         """Show a palette without making it the theme: the builder's live view.
         set_theme(name) afterwards puts the chosen one back."""
         from .themegen import to_toml
-        self._apply(palette, to_toml(palette))
+        self._apply(palette, to_toml(palette), PREVIEW_GLIDE_MS)
 
-    def _apply(self, t: dict, toml_text: str):
+    def _apply(self, t: dict, toml_text: str, ms: int = 0):
         bg = QColor(t.get("background", "#0b0d12"))
-        # Omarchy's background is slightly see-through over a blurring compositor.
-        # Windows has no blur behind, and a window whose colour has any alpha is
-        # made layered, which Windows hit-tests as clear: clicks would fall through.
-        bg.setAlphaF(1.0 if sys.platform == "win32" else 0.94)
-        self._v = {"background": bg,
-                   "foreground": QColor(t.get("foreground", "#d7dbe6")),
-                   "accent": QColor(t["accent"]) if "accent" in t else _accent(),
-                   "urgent": QColor(t.get("red", "#ff5c7a"))}
+        bg.setAlphaF(self._bg_alpha())
+        end = {"background": bg,
+               "foreground": QColor(t.get("foreground", "#d7dbe6")),
+               "accent": QColor(t["accent"]) if "accent" in t else _accent(),
+               "urgent": QColor(t.get("red", "#ff5c7a"))}
         self._write_palette(toml_text)
-        self.changed.emit()
+        if not self._v or ms <= 0:   # the first theme of the run appears as it is
+            self._timer.stop()
+            self._glide, self._v = None, end
+            self.colorsChanged.emit()
+            return
+        # From whatever is on screen, so a second pick mid-glide turns smoothly.
+        self._glide = ({k: _to_oklab(c) for k, c in self._v.items()},
+                       {k: _to_oklab(c) for k, c in end.items()}, end, time.monotonic(), ms)
+        self._timer.start()
+        self._step()
+
+    def _bg_alpha(self) -> float:
+        # Omarchy's background is slightly see-through over a blurring compositor.
+        # On Windows it is opaque unless glass mode is on: Qt makes a frameless
+        # window with alpha layered, and Windows hit-tests a layered GPU-drawn
+        # window as clear, so clicks fell through. backdrop.py takes the layered
+        # style back off glass windows, so they keep every click.
+        if sys.platform != "win32":
+            return 0.94
+        return GLASS_ALPHA if self._glass else 1.0
+
+    # ---- glass mode -----------------------------------------------------------
+    glassChanged = Signal()
+
+    def set_glass(self, on: bool, save: bool = True):
+        on = bool(on) and sys.platform == "win32"   # Linux: the compositor blurs already
+        if on == self._glass:
+            return
+        self._glass = on
+        a = self._bg_alpha()
+        # Into what is on screen and into where a glide is heading, so a theme
+        # change in flight does not bring the old alpha back.
+        if "background" in self._v:
+            c = QColor(self._v["background"])
+            c.setAlphaF(a)
+            self._v = dict(self._v, background=c)
+        if self._glide:
+            start, end_lab, end, t0, ms = self._glide
+            c = QColor(end["background"])
+            c.setAlphaF(a)
+            self._glide = (dict(start, background=start["background"][:3] + (a,)),
+                           dict(end_lab, background=end_lab["background"][:3] + (a,)),
+                           dict(end, background=c), t0, ms)
+        if save:
+            save_prefs(glass=on)
+        self.glassChanged.emit()
+        self.colorsChanged.emit()
+
+    glass = Property(bool, lambda self: self._glass, notify=glassChanged)
+    glassAlpha = Property(float, lambda self: GLASS_ALPHA, constant=True)
+
+    @Slot(bool)
+    def setGlass(self, on):
+        self.set_glass(on)
+
+    def _step(self):
+        if not self._glide:
+            return self._timer.stop()
+        a, b, end, t0, ms = self._glide
+        x = min(1.0, (time.monotonic() - t0) * 1000 / ms)
+        if x >= 1.0:
+            self._timer.stop()
+            self._glide, self._v = None, end
+        else:
+            e = 4 * x ** 3 if x < 0.5 else 1 - (-2 * x + 2) ** 3 / 2   # ease in-out cubic
+            self._v = {k: _from_oklab(*(p + (q - p) * e for p, q in zip(a[k], b[k]))) for k in a}
+        self.colorsChanged.emit()
 
     def _write_palette(self, text: str):
         """Service.qml fills its second and third visualizer colours from the
@@ -845,10 +973,10 @@ class Color(QObject):
 
     name = Property(str, lambda self: self._name, notify=changed)
 
-    background = Property(QColor, _getter("background"), notify=changed)
-    foreground = Property(QColor, _getter("foreground"), notify=changed)
-    accent = Property(QColor, _getter("accent"), notify=changed)
-    urgent = Property(QColor, _getter("urgent"), notify=changed)
+    background = Property(QColor, _getter("background"), notify=colorsChanged)
+    foreground = Property(QColor, _getter("foreground"), notify=colorsChanged)
+    accent = Property(QColor, _getter("accent"), notify=colorsChanged)
+    urgent = Property(QColor, _getter("urgent"), notify=colorsChanged)
     shellValues = Property("QVariant", lambda self: {}, notify=changed)
 
     @Slot(str, str, result=QColor)

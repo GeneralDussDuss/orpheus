@@ -5,12 +5,18 @@ import QtQuick
 //
 //   source ─┬─────────────────────────────── fresh ─┬─ fbFx ⟲ (feedback buffer)
 //   old ────┴ transFx (only while switching style) ─┘     │
-//                                                   fresh + trails ─ showFx ─ Bloom
+//                                                   fresh + trails ─ showFx + drop fx ─ Bloom
 //
 // Each pass is a ShaderEffect drawn only into its own texture (hideSource),
 // like Bloom.qml and the history target. Passes that are not needed right now
 // are hidden and not live, so they cost nothing: with feedback off and no
 // transition running this is exactly the old bloom-only path.
+//
+// The drop effects (colour split, lens push and shockwave, kick vignette,
+// grain) are folded into showFx: no pass of their own. With trails on (the
+// default) they only switch a branch in it; otherwise showFx comes on just for
+// a build or a drop's tail and goes again after, its texture kept allocated
+// while the setting is on so that costs no reallocation.
 Item {
   id: post
 
@@ -45,7 +51,23 @@ Item {
   property color c3: "white"
   property real light: 0
 
-  readonly property bool needShow: feedbackOn || transitioning
+  // ---- drop effects (the director's structure, see _common.glsl) ----------------
+  property bool dropFx: false
+  property real drop: 0
+  property real build: 0
+  property real downbeat: 0
+  property real beatPhase: 0
+  property real snap: 0
+  property real anticipate: 0            // 0..1 wind-up before a mapped drop (Director.anticipate)
+  property real mapped: 0                // 1 while the drop pulse came from the map
+
+  // Live from a build's first tension to the end of a drop's tail (~8 s). The
+  // envelopes are floored at those thresholds so nothing pops on or off.
+  readonly property bool dropLive: dropFx && (drop > 0.006 || build > 0.02 || anticipate > 0.001)
+  readonly property real dropK: dropLive ? Math.max(0, drop - 0.006) / 0.994 : 0
+  readonly property real buildK: dropLive ? Math.max(0, build - 0.02) / 0.98 : 0
+
+  readonly property bool needShow: feedbackOn || transitioning || dropLive
 
   // ---- 1. transition: old and new style blended ------------------------------
   ShaderEffect {
@@ -76,53 +98,93 @@ Item {
   property real amount: 0
   onFeedbackOnChanged: { amount = 0; if (feedbackOn) warmup.restart() }
   Timer { id: warmup; interval: 50; onTriggered: post.amount = 1 }
-  Component.onCompleted: if (feedbackOn) warmup.restart()
+  Component.onCompleted: { fbSize = fbWant; fbReady = true; if (feedbackOn) warmup.restart() }
 
-  ShaderEffect {
-    id: fbFx
-    width: post.width; height: post.height
-    blending: false
-    visible: post.feedbackOn
-    property var prev: fbSrc
-    property var fresh: post.fresh
-    property vector2d res: Qt.vector2d(post.width, post.height)
-    property vector4d warpA: post.warpA
-    property vector4d warpB: post.warpB
-    property vector4d warpC: post.warpC
-    property color c1: post.c1
-    property color c2: post.c2
-    property color c3: post.c3
-    property real time: post.time
-    property real amount: post.amount
-    property real light: post.light
-    fragmentShader: Qt.resolvedUrl("shaders/feedback.frag.qsb")
+  // The buffer renders from its own last frame (a recursive source), and a
+  // recursive source must never change size in place: Qt reallocates its
+  // texture while the shader still holds the old one bound, and the NVIDIA
+  // D3D11 driver crashes on it (access violation in nvwgf2umx.dll). The size
+  // moves with auto quality's render scale and with every window resize, so
+  // instead the buffer is torn down when the wanted size changes and built
+  // fresh once the size has held still for a moment; meanwhile the frame
+  // shows without trails.
+  readonly property size fbWant: Qt.size(Math.max(1, Math.round(sourceSize.width * fbScale)),
+                                         Math.max(1, Math.round(sourceSize.height * fbScale)))
+  property size fbSize           // the size the live buffer was built at
+  property bool fbReady: false   // built in Component.onCompleted, once sizes are in
+  onFbWantChanged: {
+    if (fbWant.width === fbSize.width && fbWant.height === fbSize.height) return
+    fbReady = false
+    fbRebuild.restart()
   }
-  ShaderEffectSource {
-    id: fbSrc
-    sourceItem: fbFx
-    hideSource: true
-    recursive: true
-    smooth: true
-    live: post.feedbackOn
-    // Half float: decays well below 1/255 per frame still reach zero.
-    format: ShaderEffectSource.RGBA16F
-    textureSize: Qt.size(Math.max(1, Math.round(post.sourceSize.width * post.fbScale)),
-                         Math.max(1, Math.round(post.sourceSize.height * post.fbScale)))
+  Timer { id: fbRebuild; interval: 150; onTriggered: { post.fbSize = post.fbWant; post.fbReady = true } }
+  readonly property var trailSrc: feedbackOn && fbLoader.item ? fbLoader.item.src : null
+
+  Loader {
+    id: fbLoader
+    active: post.feedbackOn && post.fbReady
+    onLoaded: { post.amount = 0; warmup.restart() }
+    sourceComponent: Item {
+      readonly property alias src: fbSrc
+      ShaderEffect {
+        id: fbFx
+        width: post.width; height: post.height
+        blending: false
+        property var prev: fbSrc
+        property var fresh: post.fresh
+        property vector2d res: Qt.vector2d(post.width, post.height)
+        property vector4d warpA: post.warpA
+        property vector4d warpB: post.warpB
+        property vector4d warpC: post.warpC
+        property color c1: post.c1
+        property color c2: post.c2
+        property color c3: post.c3
+        property real time: post.time
+        property real amount: post.amount
+        property real light: post.light
+        fragmentShader: Qt.resolvedUrl("shaders/feedback.frag.qsb")
+      }
+      ShaderEffectSource {
+        id: fbSrc
+        sourceItem: fbFx
+        hideSource: true
+        recursive: true
+        smooth: true
+        live: true
+        // Half float: decays well below 1/255 per frame still reach zero.
+        format: ShaderEffectSource.RGBA16F
+        // set once: a resize rebuilds the whole Loader instead (see above)
+        Component.onCompleted: textureSize = post.fbSize
+      }
+    }
   }
 
-  // ---- 3. this frame, crisp, with the trails showing through ------------------
+  // ---- 3. this frame, crisp, with the trails showing through, and the drop fx --
   ShaderEffect {
     id: showFx
     width: post.width; height: post.height
     visible: post.needShow
     property var fresh: post.fresh
-    property var trail: post.feedbackOn ? fbSrc : post.fresh
-    property real gain: post.feedbackOn ? post.gain : 0
+    property var trail: post.trailSrc ? post.trailSrc : post.fresh
+    property real gain: post.trailSrc ? post.gain : 0
     property real light: post.light
+    property real fxOn: post.dropLive ? 1 : 0
+    property vector2d res: Qt.vector2d(post.width, post.height)
+    property real time: post.time
+    property real drop: post.dropK
+    property real build: post.buildK
+    property real downbeat: post.downbeat
+    property real kick: post.kick
+    property real swell: post.swell
+    property color c1: post.c1
+    property color c2: post.c2
+    property real anticipate: post.anticipate
+    property real mapped: post.mapped
     fragmentShader: Qt.resolvedUrl("shaders/fbshow.frag.qsb")
   }
   // Only needed as a texture when bloom reads it; otherwise showFx draws itself.
-  ShaderEffectSource { id: showSrc; sourceItem: post.bloomOn && post.needShow ? showFx : null; hideSource: true; smooth: true
+  // Kept (not live) while drop fx are on, so a drop does not allocate it.
+  ShaderEffectSource { id: showSrc; sourceItem: post.bloomOn && (post.needShow || post.dropFx) ? showFx : null; hideSource: true; smooth: true
                        live: post.bloomOn && post.needShow
                        textureSize: post.sourceSize; format: ShaderEffectSource.RGBA16F }
 

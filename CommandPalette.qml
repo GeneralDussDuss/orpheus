@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import Quickshell.Io
 import qs.Commons
 import "Tui.js" as Tui
@@ -26,7 +27,7 @@ Item {
   anchors.fill: parent
   visible: opacity > 0
   opacity: shown ? 1 : 0
-  Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.InOutCubic } }
+  Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
   z: 50
 
   function open() {
@@ -138,9 +139,22 @@ Item {
         (function(s) {
           add("viz.rail." + s, "visuals", "set rail · " + (s === "off" ? "album art" : e.styleLabels[s].toLowerCase()), "", e.railViz === s ? "● now" : "", function() { e.setRailViz(s) })
         })(rails[ri])
+      add("viz.shader.import", "visuals", "import shader · from clipboard", "", "", function() {
+        e.importShader(Quickshell.clipboardText, function(ok, msg) { h.say(msg, ok ? "info" : "error") }) })
+      add("viz.shader.folder", "visuals", "open shaders folder", "", e.userStyles ? e.userStyles.length + " styles" : "", function() {
+        if (e.shaderDir) Qt.openUrlExternally("file:///" + String(e.shaderDir).replace(/\\/g, "/").replace(/^\/+/, ""))
+        else h.say("the shaders folder isn't known yet · is orpheusd running?") })
+      add("viz.shader.rebuild", "visuals", "recompile your shaders", "", "", function() {
+        a.post("/shaders/reload", {}, function(ok) { h.say(ok ? "shaders rescanned" : "couldn't rescan", ok ? "info" : "error") }) })
       var places = e.placements || ["overlay", "desktop"], placeNames = { overlay: "window on top", desktop: "wallpaper", fullscreen: "fullscreen show" }
       for (var pl = 0; pl < places.length; pl++)
         (function(p) { add("viz.as." + p, "visuals", "set visualizer as · " + (placeNames[p] || p), "", e.placement === p ? "● now" : "", function() { e.setPlacement(p) }) })(places[pl])
+      if (e.scenes) {
+        add("viz.scene.toggle", "visuals", "toggle cassette deck", "t", e.scene === "cassette" && e.open ? "on" : "off", function() { e.toggleCassette() })
+        var sceneNames = { viz: "visualizer", cassette: "cassette deck" }
+        for (var sc = 0; sc < e.scenes.length; sc++)
+          (function(s) { add("viz.scene." + s, "visuals", "set stage scene · " + (sceneNames[s] || s), "", e.scene === s ? "● now" : "", function() { e.setScene(s) }) })(e.scenes[sc])
+      }
       var levels = ["off", "subtle", "full"]
       for (var b = 0; b < levels.length; b++)
         (function(lv) {
@@ -148,8 +162,23 @@ Item {
           if (e.setFeedback)
             add("viz.trails." + lv, "visuals", "set trails · " + lv, "", e.feedback === lv ? "● now" : "", function() { e.setFeedback(lv) })
         })(levels[b])
+      var ambients = ["off", "subtle", "vivid"]
+      for (var am = 0; am < ambients.length; am++)
+        (function(lv) {
+          add("viz.ambient." + lv, "visuals", "set ambient light · " + lv, "", e.ambient === lv ? "● now" : "",
+              function() { e.updateConfig(function(c) { c.ambient = lv }) })
+        })(ambients[am])
+      // the newer on/off looks, written straight to config (Service reads them)
+      var looks = [["dropFx", "toggle drop effects"], ["titleFx", "toggle title decode"], ["pulseUi", "toggle ui pulse"],
+                   ["bootScreen", "toggle boot screen"]]
+      for (var lk = 0; lk < looks.length; lk++)
+        (function(fl) {
+          if (typeof e[fl[0]] !== "boolean") return
+          add("viz." + fl[0], "visuals", fl[1], "", onOff(e[fl[0]]), function() { var v = !e[fl[0]]; e.updateConfig(function(c) { c[fl[0]] = v }) })
+        })(looks[lk])
       var flags = [["trackTitle", "toggle title card"], ["lyricsOverViz", "toggle lyrics over visualizer"],
-                   ["director", "toggle song structure"], ["beatLock", "toggle beat lock"], ["autoStyle", "toggle style switch on drops"]]
+                   ["director", "toggle song structure"], ["beatLock", "toggle beat lock"], ["autoStyle", "toggle style switch on drops"],
+                   ["dropMap", "toggle drop map"]]
       for (var g = 0; g < flags.length; g++)
         (function(fl) {
           if (typeof e[fl[0]] !== "boolean") return
@@ -167,6 +196,13 @@ Item {
             })
           })(qs[q])
         add("sound.eq", "sound", "toggle equalizer", "", h.eqActive ? "on" : "bypassed", function() { a.post("/eq", { enabled: !h.eqActive }, function() {}) })
+        add("sound.autoeq.pick", "sound", "pick autoeq headphone", "A", h.eqState.autoeq ? h.eqState.autoeq.name : "",
+            function() { h.go({ type: "eq", title: "equalizer", pick: true }) })
+        if (h.eqState.autoeq)
+          add("sound.autoeq", "sound", "toggle autoeq · " + h.eqState.autoeq.name, "", h.eqState.autoeqActive ? "on" : "off",
+              function() { a.post("/eq", h.eqState.autoeqOn ? { autoeqOn: false } : { autoeqOn: true, enabled: true }, function() {}) })
+        if (h.eqState.autoeq)
+          add("sound.autoeq.clear", "sound", "clear autoeq headphone", "", "", function() { a.post("/autoeq/clear", {}, function() {}) })
       }
       var endless = e.config.endless !== false
       add("sound.endless", "sound", "toggle endless play", "", onOff(endless), cfgSet("endless", !endless))
@@ -222,6 +258,8 @@ Item {
     if (typeof Color.themeList !== "undefined" && Color.themeList) {
       add("theme.builder", "theme", "open theme builder", "", "", function() { Color.openBuilder() })
       add("theme.next", "theme", "cycle theme", "", "", function() { Color.cycle(1) })
+      if (Color.glass !== undefined && Color.setGlass)
+        add("theme.glass", "theme", "toggle glass", "", onOff(Color.glass === true), function() { Color.setGlass(Color.glass !== true) })
       var tl = Color.themeList
       for (var t = 0; t < tl.length; t++)
         (function(th) { add("theme." + th.name, "theme", "set theme · " + th.label.toLowerCase(), "", Color.name === th.name ? "● now" : "", function() { Color.setTheme(th.name); h.say("theme ╱╱ " + th.label) }) })(tl[t])
@@ -264,6 +302,7 @@ Item {
     return total - s.length * 0.01
   }
   function filter() {
+    all = all.filter(function(x) { return x.id !== "viz.shader.paste" })
     var q = input.text.trim().toLowerCase(), out = [], hd = []
     if (!q) {
       // recent first, then everything else by group (nothing listed twice)
@@ -293,6 +332,16 @@ Item {
       }
       sc.sort(function(a, b) { return b.s - a.s || a.i - b.i })
       for (var n = 0; n < sc.length; n++) { out.push(sc[n].i); hd.push("") }
+      // A shadertoy link, a bare id nothing else matched, or pasted GLSL: offer to import it, first.
+      var raw = input.text.trim()
+      if (host && host.engine && host.engine.importShader
+          && (/shadertoy\.com\/(view|embed)\/[A-Za-z0-9]{6}/.test(raw) || raw.indexOf("mainImage(") >= 0
+              || (/^[A-Za-z0-9]{6}$/.test(raw) && sc.length === 0))) {
+        var eng = host.engine, hh = host
+        all.push({ id: "viz.shader.paste", group: "visuals", label: "import shader · " + raw.replace(/\s+/g, " ").slice(0, 48),
+                   key: "", now: "⏎", run: function() { eng.importShader(raw, function(ok, msg) { hh.say(msg, ok ? "info" : "error") }) } })
+        out.unshift(all.length - 1); hd.unshift("")
+      }
     }
     hits = out
     heads = hd
@@ -314,6 +363,13 @@ Item {
     y: parent.height * 0.12
     width: Math.min(parent.width - host.cw * 4, host.cw * 80)
     height: Math.min(parent.height * 0.76, host.ch * 28)
+    // it settles into place as it fades in, rather than appearing on top
+    scale: pal.shown ? 1 : 0.985
+    Behavior on scale { NumberAnimation { duration: Tui.STATE; easing.type: Tui.OUT } }
+    transform: Translate {
+      y: pal.shown ? 0 : host.ch * 0.5
+      Behavior on y { NumberAnimation { duration: Tui.STATE; easing.type: Tui.OUT } }
+    }
     background: Qt.rgba(pal.base.r, pal.base.g, pal.base.b, 1)
     title: "commands"
     hintItems: [{ k: "⏎", l: "run", run: function() { pal.run(pal.cursor) } }, { k: "↑↓", l: "pick" },
@@ -334,7 +390,7 @@ Item {
         font.family: host.family; font.pixelSize: Style.font.body
         color: host.fg
         selectionColor: Tui.alpha(Color.accent, 0.35)
-        cursorDelegate: Rectangle { width: host.cw; color: host.accent; opacity: 0.7 }
+        cursorDelegate: TuiCaret { host: pal.host }
         onTextEdited: pal.filter()
         Keys.onPressed: function(e) {
           var k = e.key, ctrl = e.modifiers & Qt.ControlModifier
@@ -369,6 +425,7 @@ Item {
       currentIndex: pal.cursor
       highlightFollowsCurrentItem: false
       boundsBehavior: Flickable.StopAtBounds
+      flickDeceleration: Tui.FLICK.decel; maximumFlickVelocity: Tui.FLICK.vmax
       onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
       onCountChanged: { currentIndex = -1; currentIndex = Qt.binding(function() { return pal.cursor }) }
       highlight: Rectangle {
@@ -377,7 +434,7 @@ Item {
         y: results.currentItem ? results.currentItem.y + results.currentItem.headH : 0
         visible: !!results.currentItem
         color: host.cursorFill
-        Behavior on y { NumberAnimation { duration: 120; easing.type: Easing.InOutCubic } }
+        Behavior on y { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
         Rectangle { width: Math.max(2, host.cw * 0.3); height: parent.height; color: host.accent }
       }
       delegate: Item {
@@ -407,6 +464,14 @@ Item {
           y: hit.headH
           width: parent.width
           height: hit.rowH
+          // a faint fill under the pointer, a deep one while held
+          Rectangle {
+            z: -1
+            anchors.fill: parent
+            color: Tui.alpha(Color.accent, rowMouse.pressed ? Tui.A.press : Tui.A.hover)
+            opacity: rowMouse.pressed || (rowMouse.containsMouse && !hit.isCursor) ? 1 : 0
+            Behavior on opacity { enabled: !rowMouse.pressed; NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+          }
           Text {
             id: groupText
             x: host.cw
@@ -447,6 +512,7 @@ Item {
           // The pointer moves the cursor and a click runs, like ⏎: a double-click
           // to run a command read as a palette that ignored the first click.
           MouseArea {
+            id: rowMouse
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
@@ -455,12 +521,13 @@ Item {
           }
         }
       }
-      Text {
+      TuiEmpty {
         anchors.centerIn: parent
-        visible: !pal.hits.length
-        text: "nothing by that name · try fewer letters"
-        font.family: host.family; font.pixelSize: Style.font.body
-        color: host.dim
+        width: Math.min(parent.width - host.cw * 4, host.cw * 50)
+        host: pal.host
+        shown: !pal.hits.length
+        title: "no match"
+        reason: "try fewer letters · esc closes"
       }
     }
   }

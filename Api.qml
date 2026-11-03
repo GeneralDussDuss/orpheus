@@ -43,6 +43,12 @@ QtObject {
       if (done) done(ok, data, code)
     })
   }
+  // A window of the queue in play order (the cassette deck's j-card): rows
+  // { i, id, title, artists, album, duration, ... }, never art. Refetch when
+  // player.queueRev changes, not on every status.
+  function queue(from, count, done) {
+    get("/queue?from=" + Math.max(0, from | 0) + "&count=" + Math.max(1, Math.min(100, count | 0)), done)
+  }
 
   // ---- likes: ids per kind, refreshed when the service's likedVersion moves ----
   property var liked: ({ track: {}, album: {}, artist: {}, playlist: {} })

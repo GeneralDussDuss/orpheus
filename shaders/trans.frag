@@ -1,10 +1,12 @@
 #version 440
 // Orpheus style transition: the outgoing style (a) and the incoming one (b),
-// both live, blended through one of four moves while `prog` runs 0 -> 1.
+// both live, blended through one of five moves while `prog` runs 0 -> 1.
 //   0 glitch slice   bands of the screen tear sideways and flip over one by one
 //   1 zoom through   the old view rushes past the camera and the new one flies in after it
 //   2 radial dissolve  the new style grows out of the centre behind a lit, ragged front
 //   3 chroma split   both views tear into their colour channels and cross over
+//   4 melt           the old view softens and drips away down a domain-warped,
+//                    ragged front with a thin hot edge in the palette
 // Only runs while a transition is in flight.
 
 layout(location = 0) in vec2 qt_TexCoord0;
@@ -30,6 +32,11 @@ float vnoise(vec2 x) {
     vec2 i = floor(x), f = fract(x);
     f = f * f * (3.0 - 2.0 * f);
     return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float fbm(vec2 x) {
+    float v = 0.0, w = 0.5;
+    for (int i = 0; i < 4; i++) { v += w * vnoise(x); x = x * 2.03 + vec2(17.1, 9.7); w *= 0.5; }
+    return v / 0.9375;
 }
 vec4 tap(sampler2D s, vec2 uv) {
     vec2 e = step(vec2(0.0), uv) * step(uv, vec2(1.0));
@@ -96,6 +103,45 @@ void main() {
         o = mix(tap(a, uv - push), tap(b, uv), w);
         float front = exp(-pow((r - R) / 0.012, 2.0)) * smoothstep(0.0, 0.1, p) * smoothstep(1.0, 0.85, p);
         o = lightUp(o, mix(c1.rgb, c2.rgb, n), front * 0.8);
+    } else if (kind > 3.5) {
+        // ---- melt ----
+        // The old view slides down like something molten, each column at its
+        // own pace (some runs lead, some hang back), and dissolves along a
+        // front in its own frame: vertically stretched noise (drips run
+        // down), domain-warped so the front wobbles like a liquid.
+        vec2 sd = vec2(seed * 0.137, seed * 0.071);
+        float col = vnoise(vec2(uv.x * asp.x * 5.0 + seed, 0.5));
+        float slide = 0.22 * p * p * (0.4 + 1.2 * col);
+        vec2 uo = uv - vec2(0.0, slide);                                 // where this pixel was in the old view
+        vec2 q = uo * asp;
+        vec2 wv = vec2(fbm(q * 2.2 + sd + vec2(0.0, p * 0.6)), fbm(q * 2.2 + sd + vec2(5.2, 1.3 - p * 0.6))) - 0.5;
+        float n = fbm(vec2(q.x * 7.0, q.y * 1.6) + wv * 1.4 + sd);
+        float v = 0.42 * uo.y + 0.40 * n + 0.18 * col;
+        // v spans ~0.2..0.75 in practice, and the slide carries the old view
+        // down through the front, so the front only sweeps that; pinned at both ends.
+        float T = p * 0.58 + 0.165;
+        float s = v - T;                                                 // > 0: still old
+        float keep = max(smoothstep(-0.005, 0.005, s), 1.0 - smoothstep(0.0, 0.05, p)) * (1.0 - smoothstep(0.92, 1.0, p));
+        // Right behind the front it slumps further: sampled from higher up,
+        // so its content stretches down into runs, smeared along the fall.
+        float heat = exp(-max(s, 0.0) * 9.0) * keep;
+        float sag = 0.08 * heat * (0.55 + 0.9 * col);
+        // Clamped, not cut: above the old view's top edge its first row smears
+        // on down, and the wobble never pulls a gap in at the sides.
+        vec2 ua = uo - vec2(wv.x * 0.02 * heat, sag);
+        float st = sag + slide * 0.15;
+        vec4 A = texture(a, clamp(ua, 0.0, 1.0)) * 0.5 + texture(a, clamp(ua - vec2(0.0, st * 0.35), 0.0, 1.0)) * 0.3
+               + texture(a, clamp(ua - vec2(0.0, st * 0.7), 0.0, 1.0)) * 0.2;
+        // The new view is already there underneath, settling out of a little wobble.
+        vec4 B = texture(b, clamp(uv + wv * 0.012 * (1.0 - p), 0.0, 1.0));
+        o = mix(B, A, keep);
+        // The old picture warms toward the palette as it goes, then a thin lit
+        // edge right on the front (fading in and out at the ends).
+        vec3 hot = mix(c1.rgb, c3.rgb, clamp(n * 1.4 - 0.2, 0.0, 1.0));
+        o = lightUp(o, hot, heat * 0.16 * mid);
+        float edge = exp(-pow(s / 0.007, 2.0)) * smoothstep(0.0, 0.08, p) * smoothstep(1.0, 0.9, p);
+        if (light < 0.5) o = lightUp(o, mix(hot, vec3(1.0), 0.25), edge * 0.75);
+        else o = o * (1.0 - edge * 0.7) + vec4(hot * 0.75, 1.0) * edge * 0.7;   // light themes: an ink line
     } else {
         // ---- chroma split ----
         vec2 dir = normalize(vec2(hash(vec2(seed, 3.0)) - 0.5, hash(vec2(seed, 5.0)) - 0.5) + 1e-3) / asp;

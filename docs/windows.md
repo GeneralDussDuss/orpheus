@@ -43,7 +43,13 @@ and the second hands over to the first.
 Useful flags: `--open library|stage|widget|none`, `--style <name>`,
 `--shot <dir>` (render each window off-screen to PNGs, with a throwaway config so your
 real settings are untouched), `--write-icon <path.ico>`. `ORPHEUS_HOME` points the
-config somewhere else; `ORPHEUS_MPV` points at a specific `mpv.exe`.
+config somewhere else; `ORPHEUS_MPV` points at a specific `mpv.exe`, `ORPHEUS_FFMPEG` at
+`ffmpeg.exe` (the drop map's decoder), `ORPHEUS_SHADERS` at your shader folder and
+`ORPHEUS_QSB` at the shader compiler (set but empty = none). `--scene viz|cassette` picks the
+stage's scene first; `--shot` also sandboxes `ORPHEUS_SHADERS`.
+
+Tools dir: `%LOCALAPPDATA%\Orpheus\tools\qsb\` holds `qsb.exe` + `Qt6ShaderTools.dll` for your
+own shaders (optional; the daemon also finds qsb on PATH, beside PySide6, or at `ORPHEUS_QSB`).
 
 Logs: `%LOCALAPPDATA%\Orpheus\state\desktop.log` and `orpheusd.log`. Under `pythonw`
 there is no console, so everything goes there.
@@ -133,6 +139,15 @@ there is no console, so everything goes there.
   a box.
 - On a CI runner Win+Alt+M was already taken. The tray only lists hotkeys that actually
   registered.
+- ffmpeg (the drop map's decoder) arrives with `yt-dlp.yt-dlp`'s winget dependency under
+  `WinGet\Packages\yt-dlp.FFmpeg_*\…\bin`, not in `WinGet\Links`, so a fresh shell's PATH may
+  not have it. `find_tools()` and `ffmpeg_path()` glob for it; without it Settings ▸ visuals
+  shows "no decoder" under the drop-map toggle and every track plays on the live grid.
+- qsb.exe needs Qt6Core/Qt6Gui beside Qt6ShaderTools.dll; the daemon puts the venv's PySide6
+  dir first on PATH for it.
+- qsb picks the shader stage from the input's suffix: the daemon compiles
+  `.build\<name>.frag`; hand-compiling a `.glsl` gives a vertex shader that D3D11 refuses at
+  pipeline creation.
 
 ## ╱╱ still unproven on a real PC
 
