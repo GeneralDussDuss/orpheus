@@ -3,7 +3,10 @@
 // Small colour helpers for the TUI look: mixing and a WCAG contrast guard
 // that nudges lightness (never hue) until text stays readable.
 
+// Colours arrive undefined for a beat while a window's context is built or
+// torn down; answer black instead of throwing, the binding re-runs right.
 function lum(c) {
+  if (!c) return 0
   function ch(v) { return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) }
   return 0.2126 * ch(c.r) + 0.7152 * ch(c.g) + 0.0722 * ch(c.b)
 }
@@ -14,10 +17,11 @@ function contrast(a, b) {
 }
 
 function mix(a, b, t) {
+  if (!a || !b) return Qt.rgba(0, 0, 0, 1)
   return Qt.rgba(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, 1)
 }
 
-function alpha(c, a) { return Qt.rgba(c.r, c.g, c.b, a) }
+function alpha(c, a) { return c ? Qt.rgba(c.r, c.g, c.b, a) : Qt.rgba(0, 0, 0, a) }
 
 // Move `fg` away from `bg` in lightness until it reaches `ratio`.
 function ensure(fg, bg, ratio) {
@@ -32,6 +36,7 @@ function ensure(fg, bg, ratio) {
 
 // A muted text colour: as far toward the background as contrast allows.
 function muted(fg, bg, ratio) {
+  if (!fg || !bg) return Qt.rgba(0, 0, 0, 1)
   for (var t = 0.6; t >= 0; t -= 0.05) {
     var c = mix(fg, bg, t)
     if (contrast(c, bg) >= ratio) return c

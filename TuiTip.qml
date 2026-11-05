@@ -32,7 +32,8 @@ Item {
   readonly property bool want: text !== "" && (force || hovered)
   property bool shown: false
 
-  readonly property color bgc: Color.background
+  // Color.* is undefined for a beat while the window's context is built.
+  readonly property color bgc: Color.background !== undefined ? Color.background : "#000000"
   readonly property color bg: Qt.rgba(bgc.r, bgc.g, bgc.b, 1)
   readonly property color fg: Tui.ensure(Color.foreground, bg, 7)
   readonly property color keyColor: Tui.ensure(Color.accent, bg, 4.5)
@@ -58,9 +59,16 @@ Item {
     chip.y = Math.round(above >= 2 ? above : p.y + target.height + gap)
   }
 
+  // The chip only joins the window's content item while it has something to
+  // show. A permanent cross-window parent binding re-evaluates while windows
+  // are torn down (stage close, placement switch) and briefly attaches the
+  // chip to two windows at once — Qt warns "Cannot use same item on different
+  // windows at the same time" and the chip's deferred destructor then
+  // segfaults in derefWindow. Unparented while idle, there is nothing to race.
+  Component.onDestruction: chip.parent = null
   Rectangle {
     id: chip
-    parent: tip.Window.contentItem
+    parent: (tip.shown || opacity > 0) && tip.Window.window ? tip.Window.contentItem : null
     // Fades and rises in; on leave it fades out instead of vanishing.
     visible: opacity > 0.01 && !!parent
     z: 100000

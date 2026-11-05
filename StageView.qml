@@ -22,7 +22,8 @@ Item {
   readonly property bool deck: !!engine && engine.scene === "cassette"
   readonly property var deckItem: deckLoader.item
 
-  readonly property color bg: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 1)
+  // Color.* is undefined for a beat while the window's context is built.
+  readonly property color bg: Color.background !== undefined ? Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 1) : "#000000"
   readonly property color fg: Tui.ensure(Color.foreground, bg, 7)
   readonly property color dim: Tui.muted(Color.foreground, bg, 4.5)
   readonly property color accentText: Tui.ensure(Color.accent, bg, 4.5)

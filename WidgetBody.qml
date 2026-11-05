@@ -86,7 +86,8 @@ TuiBox {
   }
 
   implicitHeight: content.implicitHeight + ch * 2
-  background: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, fill ? (Color.glass === true ? 0 : 1) : 0.82)
+  // Color.* is undefined for a beat while the window's context is built.
+  background: Color.background !== undefined ? Qt.rgba(Color.background.r, Color.background.g, Color.background.b, fill ? (Color.glass === true ? 0 : 1) : 0.82) : "#000000"
   title: full ? "orpheus · " + (engine ? (engine.styleLabels[engine.widgetViz] || "") : "").toLowerCase() : "now playing"
   keyHint: player && player.isPlaying ? "▶" : "‖"
   clock: engine ? engine.time : -1
@@ -207,7 +208,8 @@ TuiBox {
           property real scrubFrac: 0
           readonly property real frac: scrubbing ? scrubFrac : box.position / Math.max(1, box.length)
           text: Tui.meter(frac, cells, "━", "─", "●") + " " + box.clock(scrubbing ? scrubFrac * box.length : box.position)
-          font.family: Style.font.family; font.pixelSize: Style.font.caption; color: Color.accent
+          font.family: Style.font.family; font.pixelSize: Style.font.caption
+          color: Color.accent !== undefined ? Color.accent : "#000000"
           // the line's own width, measured in its font (the old maths scaled the body cell)
           TextMetrics { id: seekLine; font: seek.font; text: Tui.meter(0, seek.cells, "━", "─", "●") }
           MouseArea {
