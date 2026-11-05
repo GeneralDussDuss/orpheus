@@ -38,6 +38,14 @@ var styles = {
   abyss:   { zoom: 1.008, zoomK: 0.02, zoomS: 0.004, decay: 0.90, shift: 0.05, gain: 0.7, cx: 0.5, cy: 0.5 },
   // Hyperspace: stars smear into long streaks, hardest on kicks.
   nova:    { zoom: 1.012, zoomK: 0.04, zoomS: 0.008, smear: 0.006, smearK: 0.03, decay: 0.915, shift: 0.07, gain: 0.9, cx: 0.5, cy: 0.5 },
+  // Gravitational waves: each kick's ripple echoes outward through the trails, a faint swirl around the lens.
+  lens:    { zoom: 1.002, zoomK: 0.006, swirl: 0.012, swirlK: 0.03, ripple: 0.003, rippleK: 0.012, decay: 0.925, shift: 0.06, gain: 0.8, cx: 0.5, cy: 0.5 },
+  // Buttery wake: the lit folds stream gently back past the camera and curl.
+  gyre:    { zoom: 1.005, zoomK: 0.012, zoomS: 0.003, rot: 0.0012, turb: 0.0008, decay: 0.93, shift: 0.05, gain: 0.75, cx: 0.5, cy: 0.5 },
+  // Slow drifting dust: very soft zoom and curl, long trails.
+  nebula:  { zoom: 1.0006, zoomK: 0.002, turb: 0.0006, decay: 0.965, shift: 0.03, gain: 0.6, cx: 0.5, cy: 0.5 },
+  // Heat haze: smoke rises off the fire, pushed outward a little on kicks.
+  inferno: { zoom: 1.002, zoomK: 0.008, dy: 0.0020, turb: 0.0018, decay: 0.93, shift: 0.05, gain: 0.8, cx: 0.5, cy: 0.85 },
   // Rising light: the curtains' brightest rays leave a slow upward wisp, like the aurora's own drift.
   aurora:  { zoom: 1.0, dy: 0.0011, turb: 0.0004, decay: 0.95, shift: 0.04, gain: 0.7, cx: 0.5, cy: 0.5 },
   // A short heat shimmer rising off the lines (trails lighten over the ridge fills, so keep them close).
