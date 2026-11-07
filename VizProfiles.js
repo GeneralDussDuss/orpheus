@@ -65,7 +65,9 @@ var styles = {
   // Slipstream: the lit vapour trails past and up, a little harder on kicks.
   aether:  { zoom: 1.006, zoomK: 0.014, zoomS: 0.004, dy: 0.0007, turb: 0.0009, decay: 0.92, shift: 0.05, gain: 0.7, cx: 0.5, cy: 0.5 },
   // Dust in the wake: bone-light lingers and settles as you pass.
-  wyrm:    { zoom: 1.005, zoomK: 0.012, zoomS: 0.003, turb: 0.0006, decay: 0.93, shift: 0.04, gain: 0.65, cx: 0.5, cy: 0.5 }
+  wyrm:    { zoom: 1.005, zoomK: 0.012, zoomS: 0.003, turb: 0.0006, decay: 0.93, shift: 0.04, gain: 0.65, cx: 0.5, cy: 0.5 },
+  // Persistence of vision: the seams streak and turn with the mandala, hard on kicks.
+  mandala: { zoom: 1.008, zoomK: 0.022, rot: 0.0022, swirl: 0.015, swirlK: 0.035, decay: 0.92, shift: 0.07, gain: 0.9, cx: 0.5, cy: 0.5 }
 }
 
 function of(name) {
