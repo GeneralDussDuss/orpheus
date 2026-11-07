@@ -59,7 +59,9 @@ var styles = {
   // Incense: the lit dust drifts slowly upward through the shafts.
   sanctum: { zoom: 1.0, dy: 0.0008, turb: 0.0004, decay: 0.95, shift: 0.03, gain: 0.5, cx: 0.5, cy: 0.4 },
   // Frame drag: everything the disk shines smears a little around the hole.
-  quasar:  { zoom: 1.003, zoomK: 0.008, rot: 0.0018, swirl: 0.02, swirlK: 0.04, decay: 0.93, shift: 0.06, gain: 0.85, cx: 0.5, cy: 0.5 }
+  quasar:  { zoom: 1.003, zoomK: 0.008, rot: 0.0018, swirl: 0.02, swirlK: 0.04, decay: 0.93, shift: 0.06, gain: 0.85, cx: 0.5, cy: 0.5 },
+  // Speed: the lights streak toward the camera, hardest when the cycles run.
+  grid:    { zoom: 1.006, zoomK: 0.02, zoomS: 0.004, decay: 0.90, shift: 0.05, gain: 0.7, cx: 0.5, cy: 0.62 }
 }
 
 function of(name) {

@@ -1,21 +1,23 @@
 #version 440
-// Orpheus "Quasar": the music falls into a black hole. An accretion disk
-// seen nearly edge-on, drawn the Interstellar way in 2D: light from the far
-// side of the disk is lensed over and under the shadow, so the hole wears
-// the disk as a crown and a chin-strap, with a thin photon ring at the last
-// orbit. The disk's matter IS the spectrum history: fresh energy lands on
-// the outer rim and spirals inward with Keplerian shear (inner orbits run
-// faster), so a phrase you heard four seconds ago is a glowing ring half
-// swallowed by now. Frequencies are radii — bass burns at the inner edge,
-// treble glitters at the rim. The approaching side is doppler-bright, the
-// receding side dims and reddens toward c1. Kicks drop hot blobs on the
-// inner edge that smear into arcs as they orbit. A build feeds the disk
-// (accretion rate up, everything tightens inward); the drop-map wind-up
-// makes the poles begin to shimmer — and the drop fires the relativistic
-// jet, twin beams with a travelling pulse, that fade as the disk relaxes.
-// The starfield behind is pulled toward the shadow, swirled by frame drag.
-// Light themes: the hole stays black on paper — ink disk, no additive glow.
-// Cost: 2 lensed disk taps + 1 history tap each, starfield hash, no march.
+// Orpheus "Quasar", second build. The first cut read as a flat ellipse
+// sticker with hard Saturn rings (user call, 2026-11-07): the history was
+// mapped straight to radius with no turbulence, and the lensed far side was
+// too faint to see. This one renders plasma: the disk's emission is the
+// spectrum history SHEARED into fire by orbital turbulence (fbm streaks
+// stretched along Keplerian orbits — inner orbits outrun outer ones, so
+// every phrase you heard smears into glowing filaments as it falls). The
+// lensed crown is now the money shot: the far side of the disk bends over
+// and under the shadow in two bright arcs that hug the hole, a crisp double
+// photon ring sits at the last orbit, and the disk has thickness — a hot
+// vertical glow that blooms near the inner edge. Doppler: the approaching
+// side burns, the receding side dims toward c1. The camera precesses slowly
+// so the tilt is alive even between songs. Behind it all: a faint nebula
+// wash and a starfield dense enough to feel like space. Kicks drop hot
+// blobs that smear into orbit-arcs; a build tightens the accretion; the
+// drop-map wind-up shimmers the poles — and the drop fires the twin jet
+// with a pulse that rides out along it. Light themes: ink disk on paper,
+// the hole stays the one true black.
+// Cost: 2 lensed disk evaluations (3 fbm taps each), nebula fbm, star hash.
 
 //#common
 
@@ -23,35 +25,52 @@ layout(binding = 1) uniform sampler2D hist;   // 32 x 40 spectrum history, row 0
 
 const float PI = 3.14159265;
 const float RS = 0.11;         // the shadow's radius (screen height units)
-const float RIN = 0.145;       // inner disk edge
-const float ROUT = 0.60;       // outer rim
+const float RIN = 0.14;        // inner disk edge
+const float ROUT = 0.62;       // outer rim
 
-// Disk emission at polar (r, a) on the disk plane. Radius maps frequency,
-// history spirals inward: age grows from rim to inner edge, sheared by orbit.
+mat2 rot(float a) { return mat2(cos(a), -sin(a), sin(a), cos(a)); }
+
+float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x),
+               mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+float fbm3(vec2 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 3; i++) { v += a * vnoise(p); p = rot(0.62) * p * 2.07 + 19.0; a *= 0.5; }
+    return v;
+}
+
+// Disk emission at polar (r, a) on the disk plane: history sheared into fire.
 vec3 diskLight(float r, float a, float feed, out float amt) {
-    float t = clamp((r - RIN) / (ROUT - RIN), 0.0, 1.0);   // 0 inner .. 1 rim
-    // Keplerian shear: inner orbits run faster; flow drives the rotation.
-    float orbit = a + flow * 0.55 / pow(max(t, 0.08), 1.5);
-    // matter falls in as it ages: age 0 at the rim, 1 at the inner edge,
-    // nudged inward faster while the disk is being fed
-    float age = (1.0 - t) * (0.75 + 0.25 * feed);
-    float freq = clamp(t, 0.02, 0.98);                      // bass inside, treble out
+    float t = clamp((r - RIN) / (ROUT - RIN), 0.0, 1.0);    // 0 inner .. 1 rim
+    float omega = 0.55 / pow(max(t, 0.06), 1.5);            // Keplerian: inner runs faster
+    float orbit = a + flow * omega;
+    // the spectrum history as infalling matter: rim is now, inner edge is the past
+    float age = (1.0 - t) * (0.72 + 0.28 * feed);
+    float freq = clamp(t, 0.02, 0.98);                      // bass burns inside, treble at the rim
     float e = texture(hist, vec2(freq, clamp(age, 0.0, 0.975))).r;
-    float live = band(freq) * smoothstep(0.9, 1.0, t);      // the rim takes the live signal
-    e = max(e, live);
-    // orbital grain so the disk is streaks, not a wash
-    float grain = 0.75 + 0.25 * sin(orbit * 9.0 + t * 30.0) * sin(orbit * 3.7 - t * 11.0);
-    // inner edge always simmers; everything brightens toward the centre
-    float hot = exp(-(t) * 2.6) * (0.25 + 0.45 * bass);
-    e = pow(clamp(e, 0.0, 1.0), 0.7);                       // quiet phrases still shine
-    amt = (e * e * (0.7 + 0.5 * grain) + hot) * smoothstep(0.0, 0.06, t) * smoothstep(1.0, 0.94, t);
-    vec3 c = pal(clamp(0.9 - t * 0.9, 0.0, 1.0));           // inner = hot end of the palette
+    e = max(e, band(freq) * smoothstep(0.88, 1.0, t));      // the rim takes the live signal
+    e = pow(clamp(e, 0.0, 1.0), 0.6);
+    // TURBULENCE: streaks stretched hard along the orbit, sheared by radius,
+    // so the energy reads as plasma filaments, never as printed rings
+    float streak = fbm3(vec2(orbit * 1.4, t * 9.0 - flow * 0.05));
+    streak = pow(streak, 2.0) * 1.8 + 0.15;
+    float wisp = fbm3(vec2(orbit * 0.5 + 7.0, t * 3.0));    // slow large-scale unevenness
+    // the inner edge always burns; feeding pushes the burn outward
+    float hot = exp(-t * (3.2 - 1.2 * feed)) * (0.35 + 0.65 * bass + 0.4 * feed);
+    amt = (e * (0.5 + 1.3 * streak) * (0.6 + 0.8 * wisp) + hot * streak)
+        * smoothstep(0.0, 0.05, t) * smoothstep(1.0, 0.9, t);
+    // colour runs hot to cold with radius: white-hot core palette out to the cool rim
+    vec3 c = mix(pal(0.98), pal(0.25), t);
+    c = mix(c, fg.rgb, exp(-t * 6.0) * 0.5);                // the innermost ring whitens
     return c * amt;
 }
 
 void main() {
     vec2 px = vec2(qt_TexCoord0.x, 1.0 - qt_TexCoord0.y) * res;
-    vec2 uv = (px - res * 0.5) / res.y;                     // centered, y up, height units
+    vec2 uv = (px - res * 0.5) / res.y;
     float dark = 1.0 - light;
 
     float bd = clamp(build, 0.0, 1.0);
@@ -59,125 +78,136 @@ void main() {
     float dr = clamp(drop, 0.0, 1.0);
     float feed = clamp(bd + dr * 0.5, 0.0, 1.0);
 
-    // the camera breathes with the loudness envelope
-    uv *= 1.0 - 0.06 * swell;
-    uv = rotateAround(uv, vec2(0.0), camRoll() * 0.4);
+    // the camera: breathes with loudness, precesses so the tilt is alive
+    uv *= 1.0 - 0.05 * swell;
+    uv = rotateAround(uv, vec2(0.0), camRoll() * 0.5 + sin(time * 0.043) * 0.06);
+    float TILT = 0.20 + 0.05 * sin(time * 0.031);
 
     float rr = length(uv);
     float phi = atan(uv.y, uv.x);
 
-    // ---- the disk, seen at a shallow tilt, plus its two lensed images ----
-    const float TILT = 0.22;                                // how open the ellipse is
+    // ---- the disk: direct image + the lensed crown and chin ----
     vec3 colD = vec3(0.0);
     float amtD = 0.0;
-    // direct image: deproject the screen point onto the disk plane
-    {
+    {   // direct image: the near half, passing in front of the shadow
         vec2 d = vec2(uv.x, uv.y / TILT);
         float r = length(d);
-        if (r > RIN && r < ROUT && uv.y < RS * 0.4) {       // the near half, in front of the hole
+        if (r > RIN && r < ROUT && uv.y < RS * 0.45) {
             float a; vec3 c = diskLight(r, atan(d.y, d.x), feed, a);
+            // the near edge occludes the shadow: thicken it with a soft rim
             colD += c; amtD += a;
         }
     }
-    // lensed far side: bent over (and under) the shadow. Approximation: fold
-    // the vertical axis past the hole with a 1/r bend, strongest at the shadow.
-    {
-        float bend = RS * RS / max(rr, RS * 0.6);
-        vec2 lp = vec2(uv.x, (abs(uv.y) + bend * 1.6));     // pulled over the pole
+    {   // the crown: the far side, bent OVER the shadow. Bright. The money shot.
+        float bend = RS * RS / max(rr, RS * 0.55);
+        vec2 lp = vec2(uv.x, abs(uv.y) + bend * 1.7);
         vec2 d = vec2(lp.x, lp.y / TILT);
         float r = length(d);
         if (r > RIN && r < ROUT) {
             float a; vec3 c = diskLight(r, atan(d.y, d.x) + PI, feed, a);
-            float arc = smoothstep(RS * 2.6, RS * 1.1, rr); // only near the hole
-            colD += c * arc * 1.5; amtD += a * arc * 1.5;   // the crown must be SEEN
+            float arc = smoothstep(RS * 3.4, RS * 1.02, rr);
+            colD += c * arc * 2.2; amtD += a * arc * 2.2;
         }
     }
-    // doppler: the left side approaches
-    float dop = 1.0 + 0.55 * (-uv.x / max(rr, 1e-3)) * smoothstep(0.0, 0.2, rr);
+    // doppler: the left side approaches and burns, the right recedes and cools
+    float dop = 1.0 + 0.6 * (-uv.x / max(rr, 1e-3)) * smoothstep(0.0, 0.2, rr);
     colD *= dop;
-    colD = mix(colD, c1.rgb * amtD * 0.6, clamp(0.5 * (uv.x / max(rr, 1e-3)), 0.0, 0.5));  // recede reddens
+    colD = mix(colD, c1.rgb * amtD * 0.55, clamp(0.55 * (uv.x / max(rr, 1e-3)), 0.0, 0.55));
 
-    // ---- kicks: hot blobs smearing into arcs on the inner edge ----
+    // ---- the disk's thickness: a hot haze above and below the plane ----
+    float planeD = abs(uv.y) / TILT;
+    float inR = smoothstep(ROUT, RIN, rr) * smoothstep(RIN * 0.6, RIN * 1.3, rr);
+    vec3 haze = mix(pal(0.95), pal(0.5), clamp(rr / ROUT, 0.0, 1.0))
+              * exp(-planeD * planeD / 0.035) * inR * (0.25 + 0.5 * bass + 0.3 * feed);
+
+    // ---- kicks: hot blobs smearing into arcs along their orbits ----
     for (int k = 0; k < 3; k++) {
         float age = kickAge[k];
         if (age < 3.0) {
             float s = kicks - float(k);
-            float bt = 0.1 + 0.2 * hash(vec2(s, 3.3));
+            float bt = 0.12 + 0.25 * hash(vec2(s, 3.3));
             float br = mix(RIN, ROUT, bt);
             float ba = hash(vec2(s, 7.7)) * 2.0 * PI + flow * 0.55 / pow(bt, 1.5);
             vec2 at = vec2(cos(ba), sin(ba) * TILT) * br;
-            float smear = 1.0 + age * 2.0;                   // the blob stretches along its orbit
+            float smear = 1.0 + age * 2.5;
             vec2 rel = uv - at;
             vec2 tang = normalize(vec2(-at.y, at.x) + 1e-5);
-            float along = dot(rel, tang) * (1.0 / smear);
+            float along = dot(rel, tang) / smear;
             float acrossB = dot(rel, normalize(at + 1e-5));
-            float blob = exp(-(along * along + acrossB * acrossB * 4.0) / 0.0012)
-                       * exp(-age * 1.4) * (k == 0 ? kickAge.w : 0.7);
-            colD += pal(0.95) * blob * (uv.y < RS * 0.4 ? 1.0 : 0.4);
+            float blob = exp(-(along * along + acrossB * acrossB * 4.0) / 0.0016)
+                       * exp(-age * 1.3) * (k == 0 ? kickAge.w : 0.7);
+            colD += pal(0.95) * blob * (uv.y < RS * 0.45 ? 1.2 : 0.5);
             amtD += blob * 0.5;
         }
     }
 
-    // ---- the photon ring and the shadow ----
-    float ring = exp(-pow((rr - RS * 1.18) / (0.0045 + 0.002 * swell), 2.0)) * (0.35 + 0.65 * swell);
-    float shadow = smoothstep(RS * 1.04, RS * 0.9, rr);     // absolute black, the one true black
+    // ---- the photon ring: crisp, doubled, and the shadow ----
+    float ring = exp(-pow((rr - RS * 1.16) / (0.004 + 0.002 * swell), 2.0)) * (0.5 + 0.5 * swell);
+    ring += exp(-pow((rr - RS * 1.30) / 0.006, 2.0)) * 0.25 * swell;
+    float shadow = smoothstep(RS * 1.03, RS * 0.9, rr);
 
     // ---- the jet: charged by the wind-up, fired by the drop ----
     vec3 jet = vec3(0.0);
     float poleGlow = 0.0;
     {
-        float ax = abs(uv.x) ;
+        float ax = abs(uv.x);
         float along = abs(uv.y);
-        if (ant > 0.01) {                                    // the poles shimmer before it blows
-            poleGlow = exp(-ax * ax / 0.0015) * exp(-pow((along - RS * 1.4) / 0.08, 2.0)) * ant * (0.4 + 0.3 * sin(time * 7.0 + uv.y * 30.0));
+        if (ant > 0.01) {
+            poleGlow = exp(-ax * ax / 0.002) * exp(-pow((along - RS * 1.5) / 0.1, 2.0))
+                     * ant * (0.45 + 0.3 * sin(time * 7.0 + uv.y * 30.0));
         }
         if (dr > 0.003) {
-            float coreW = 0.006 + 0.004 * dr;
+            float coreW = 0.007 + 0.005 * dr;
             float core = exp(-ax * ax / (coreW * coreW)) * smoothstep(RS * 0.9, RS * 1.3, along);
-            float sheath = exp(-ax * ax / 0.004) * smoothstep(RS * 0.9, RS * 2.0, along) * 0.4;
-            float pulse = exp(-pow((along - (1.0 - dr) * 1.1 - RS) / 0.07, 2.0));   // rides outward
-            float fade = exp(-along * 1.4);
-            jet = (c3.rgb * core + pal(0.75) * sheath) * (fade * 0.8 + pulse * 0.9) * dr;
+            float sheath = exp(-ax * ax / 0.006) * smoothstep(RS * 0.9, RS * 2.0, along) * 0.5;
+            float pulse = exp(-pow((along - (1.0 - dr) * 1.1 - RS) / 0.08, 2.0));
+            float fade = exp(-along * 1.3);
+            jet = (c3.rgb * core + pal(0.7) * sheath) * (fade * 0.9 + pulse * 1.0) * dr;
         }
     }
 
-    // ---- the starfield, lensed near the hole only ----
-    // The pull and any radius-dependent rotation must DIE OFF with distance:
-    // warping the whole hash lattice by a function of r turns the cell grid
-    // into giant moiré contour rings (seen live, first cut of this shader).
-    vec3 stars = vec3(0.0);
+    // ---- space: a nebula wash and a starfield that feels populated ----
+    vec3 deep = vec3(0.0);
     {
+        float neb = fbm3(uv * 1.7 + vec2(flow * 0.006, 0.0));
+        neb = pow(max(neb - 0.35, 0.0), 1.6);
+        deep += mix(pal(0.15), pal(0.45), fbm3(uv * 0.9 + 31.0)) * neb * 0.16;
         float nearH = smoothstep(RS * 4.0, RS * 1.1, rr);
         float pull = (RS * RS / max(rr * rr, RS * RS * 0.8)) * nearH;
-        vec2 sp = rotateAround(uv * (1.0 + pull * 1.2), vec2(0.0), flow * 0.004);
-        vec2 cellp = floor(sp * 34.0);
-        float h = hash(cellp);
-        if (h > 0.962) {
-            vec2 at = (cellp + vec2(hash(cellp + 1.3), hash(cellp + 2.6))) / 34.0;
-            float d2 = dot(sp - at, sp - at);
-            float tw = 0.5 + 0.5 * sin(time * (1.0 + h * 3.0) + h * 40.0);
-            stars += mix(fg.rgb, pal(h), 0.4) * exp(-d2 / 0.0000035) * (0.25 + 0.3 * tw + 0.3 * band(0.85));
+        vec2 sp = rotateAround(uv * (1.0 + pull * 1.2), vec2(0.0), flow * 0.003);
+        for (int L = 0; L < 2; L++) {
+            float g = 30.0 + 26.0 * float(L);
+            vec2 cellp = floor(sp * g + float(L) * 17.0);
+            float h = hash(cellp);
+            if (h > 0.93) {
+                vec2 at = (cellp + vec2(hash(cellp + 1.3), hash(cellp + 2.6)) - float(L) * 17.0) / g;
+                float d2 = dot(sp - at, sp - at);
+                float tw = 0.5 + 0.5 * sin(time * (0.8 + h * 2.5) + h * 40.0);
+                deep += mix(fg.rgb, pal(h), 0.45) * exp(-d2 * g * g * 280.0)
+                      * (0.2 + 0.35 * tw + 0.3 * band(0.85)) * (1.0 - 0.4 * float(L));
+            }
         }
     }
 
     // ---- compose ----
     vec3 col;
     if (light < 0.5) {
-        col = bg.rgb * 0.22 + stars * lit(1.0);              // space is nearly black even on dark themes
-        col += colD * lit(1.35);
-        col += c3.rgb * ring * lit(0.9) * faux(1.0, 0.5);
+        col = bg.rgb * 0.18 + deep * lit(1.0);
+        col += haze * lit(1.0);
+        col += colD * lit(1.5);
+        col += c3.rgb * ring * lit(1.0) * faux(1.0, 0.5);
         col += jet * lit(1.0) + c2.rgb * poleGlow * lit(0.8);
-        col = 1.0 - exp(-col * 1.25);
-        col *= 1.0 - shadow;                                  // the hole eats everything, last
+        col = 1.0 - exp(-col * 1.3);
+        col *= 1.0 - shadow;                                 // the hole eats everything, last
     } else {
-        // ink on paper: the disk as ink density, the hole stays black
-        col = bg.rgb - (bg.rgb - fg.rgb * 0.1) * clamp(stars * 2.0, 0.0, 1.0).r * 0.3;
-        float inkAmt = clamp(amtD * 1.3, 0.0, 1.0);
+        col = bg.rgb;
+        col = mix(col, fg.rgb * 0.5, clamp(deep.r + deep.g, 0.0, 1.0) * 0.4);
+        float inkAmt = clamp(amtD * 1.4 + haze.r + haze.g, 0.0, 1.0);
         vec3 tint = clamp(colD / max(amtD, 1e-3), 0.0, 1.0);
-        col = mix(col, mix(tint, fg.rgb, 0.55) * 0.5, inkAmt);
-        col = mix(col, fg.rgb * 0.25, ring * 0.8);
-        col = mix(col, mix(fg.rgb, pal(0.75), 0.4) * 0.45, clamp(jet.b + jet.r + poleGlow, 0.0, 1.0));
-        col *= 1.0 - shadow * 0.92;                           // near-black hole, still printable
+        col = mix(col, mix(tint, fg.rgb, 0.5) * 0.45, inkAmt);
+        col = mix(col, fg.rgb * 0.2, ring * 0.85);
+        col = mix(col, mix(fg.rgb, pal(0.7), 0.4) * 0.4, clamp(jet.b + jet.r + poleGlow, 0.0, 1.0));
+        col *= 1.0 - shadow * 0.92;
     }
 
     fragColor = vec4(max(col, 0.0) + dither(px), 1.0) * qt_Opacity;
