@@ -240,8 +240,8 @@ ShaderEffect {
 
   // Spectrum history for Prism, Horizon, Scope and Skyline, kept on the GPU: histFx renders a 32x40 target
   // from its own previous frame (rows shift back one step, row 0 = now).
-  function usesHistory(s) { return s === "prism" || s === "horizon" || s === "scope" || s === "skyline" || s === "ridge"
-                                   || s === "teletype" || s === "quasar" }
+  function usesHistory(s) { return s === "prism" || s === "horizon" || s === "scope" || s === "skyline"
+                                   || s === "teletype" }
   readonly property bool wantsHistory: usesHistory(shownStyle || styleName) || (transitioning && usesHistory(oldStyle))
                                        || uses(userMeta, "iChannel1") || uses(oldMeta, "iChannel1")
   property var hist: histSource
@@ -267,7 +267,7 @@ ShaderEffect {
   // not frames: its history steps at a fixed rate (40 rows at 30 Hz = 1.3 s,
   // the same at any fps). The others shift every frame, as they were tuned.
   readonly property int histHz: { const s = shownStyle || styleName
-                                  return s === "ridge" || s === "teletype" || s === "quasar" ? 30 : 0 }
+                                  return s === "teletype" ? 30 : 0 }
   Timer {
     interval: fx.histHz > 0 ? Math.round(1000 / fx.histHz) : 1000
     repeat: true
@@ -387,7 +387,7 @@ ShaderEffect {
   property int tkind: 0
   property real tseed: 0
   property real lastBar: 0
-  readonly property var kinds: ({ prism: 0, skyline: 0, horizon: 3, orb: 2, tunnel: 1, halo: 2, scope: 3, nova: 1, ridge: 0, ink: 4, abyss: 1, aurora: 4 })
+  readonly property var kinds: ({ prism: 0, skyline: 0, horizon: 3, orb: 2, tunnel: 1, halo: 2, scope: 3, nova: 1, ink: 4, abyss: 1, aurora: 4 })
 
   Component.onCompleted: { shownStyle = styleName; inkSize = inkWant; inkReady = true; inkWake() }
   onStyleNameChanged: requestStyle()
