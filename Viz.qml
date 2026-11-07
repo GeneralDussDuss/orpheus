@@ -23,6 +23,11 @@ ShaderEffect {
   fragmentShader: engine && engine.styleUrl ? engine.styleUrl(shownStyle || styleName)
                                             : Qt.resolvedUrl("shaders/" + (shownStyle || styleName) + ".frag.qsb")
   blending: true
+  // While fragmentShader is empty or fails to load, Qt swaps in its default
+  // shader, which samples `source` — undeclared, that logs "does not have a
+  // matching property" once per Viz instance. Declared here and on oldFx so
+  // the fallback binds quietly; the real styles never read it.
+  property var source
 
   // What the daemon knows about a user style (uses, scale, transition); null for builtins.
   readonly property var userMeta: engine && engine.userStyle ? engine.userStyle(shownStyle || styleName) : null
@@ -443,6 +448,7 @@ ShaderEffect {
     fragmentShader: fx.oldStyle === "" ? ""
                     : fx.engine && fx.engine.styleUrl ? fx.engine.styleUrl(fx.oldStyle)
                     : Qt.resolvedUrl("shaders/" + fx.oldStyle + ".frag.qsb")
+    property var source                 // see fx.source: quiets the default shader
     property var hist: fx.hist
     property var inkState: fx.inkState
     property real time: fx.time

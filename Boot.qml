@@ -219,6 +219,10 @@ Item {
     layer.enabled: true
     layer.effect: ShaderEffect {
       fragmentShader: "shaders/boot.frag.qsb"
+      // layer.effect hands the layer's texture to a property named `source`
+      // (layer.samplerName); without this declaration Qt warns and binds a
+      // dummy texture, so the reveal samples black instead of the screen.
+      property var source
       property vector2d res: Qt.vector2d(boot.width, boot.height)
       property vector2d cell: Qt.vector2d(boot.colW, boot.rowH)
       property real power: boot.clamp01(boot.t / 0.16)
