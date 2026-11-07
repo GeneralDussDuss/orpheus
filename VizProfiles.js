@@ -51,7 +51,15 @@ var styles = {
   // A short heat shimmer rising off the lines (trails lighten over the ridge fills, so keep them close).
   ridge:   { zoom: 1.0, dy: 0.0008, turb: 0.0006, decay: 0.86, shift: 0.05, gain: 0.4, cx: 0.5, cy: 0.27 },
   // The water already remembers: only a faint, short wet sheen that drifts with the current.
-  ink:     { zoom: 1.0, turb: 0.0006, decay: 0.86, shift: 0.02, gain: 0.32, cx: 0.5, cy: 0.5 }
+  ink:     { zoom: 1.0, turb: 0.0006, decay: 0.86, shift: 0.02, gain: 0.32, cx: 0.5, cy: 0.5 },
+  // Phosphor persistence: printed dots linger a beat on the glass, no drift at all.
+  teletype:{ zoom: 1.0, decay: 0.80, shift: 0.02, gain: 0.35, cx: 0.5, cy: 0.5 },
+  // The rain and the strike stay in the eye: trails fall with the weather.
+  storm:   { zoom: 1.0, dy: -0.0016, turb: 0.0009, decay: 0.90, shift: 0.04, gain: 0.6, cx: 0.5, cy: 0.6 },
+  // Incense: the lit dust drifts slowly upward through the shafts.
+  sanctum: { zoom: 1.0, dy: 0.0008, turb: 0.0004, decay: 0.95, shift: 0.03, gain: 0.5, cx: 0.5, cy: 0.4 },
+  // Frame drag: everything the disk shines smears a little around the hole.
+  quasar:  { zoom: 1.003, zoomK: 0.008, rot: 0.0018, swirl: 0.02, swirlK: 0.04, decay: 0.93, shift: 0.06, gain: 0.85, cx: 0.5, cy: 0.5 }
 }
 
 function of(name) {

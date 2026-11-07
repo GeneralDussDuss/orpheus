@@ -240,7 +240,8 @@ ShaderEffect {
 
   // Spectrum history for Prism, Horizon, Scope and Skyline, kept on the GPU: histFx renders a 32x40 target
   // from its own previous frame (rows shift back one step, row 0 = now).
-  function usesHistory(s) { return s === "prism" || s === "horizon" || s === "scope" || s === "skyline" || s === "ridge" }
+  function usesHistory(s) { return s === "prism" || s === "horizon" || s === "scope" || s === "skyline" || s === "ridge"
+                                   || s === "teletype" || s === "quasar" }
   readonly property bool wantsHistory: usesHistory(shownStyle || styleName) || (transitioning && usesHistory(oldStyle))
                                        || uses(userMeta, "iChannel1") || uses(oldMeta, "iChannel1")
   property var hist: histSource
@@ -265,7 +266,8 @@ ShaderEffect {
   // Ridge draws each history row as its own line, so it wants seconds of song,
   // not frames: its history steps at a fixed rate (40 rows at 30 Hz = 1.3 s,
   // the same at any fps). The others shift every frame, as they were tuned.
-  readonly property int histHz: (shownStyle || styleName) === "ridge" ? 30 : 0
+  readonly property int histHz: { const s = shownStyle || styleName
+                                  return s === "ridge" || s === "teletype" || s === "quasar" ? 30 : 0 }
   Timer {
     interval: fx.histHz > 0 ? Math.round(1000 / fx.histHz) : 1000
     repeat: true

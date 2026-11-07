@@ -31,11 +31,12 @@ Item {
   readonly property string themeRoot: home + "/.local/state/omarchy/current"
 
   readonly property var builtinStyles: ["prism", "skyline", "horizon", "orb", "tunnel", "halo", "scope", "nova", "ridge", "ink", "abyss", "aurora",
-                                        "lens", "gyre", "nebula", "inferno"]
+                                        "lens", "gyre", "nebula", "inferno", "teletype", "storm", "sanctum", "quasar"]
   readonly property var builtinLabels: ({ prism: "Prism", skyline: "Skyline", horizon: "Horizon", orb: "Orb", tunnel: "Tunnel",
                                          halo: "Halo", scope: "Scope", nova: "Nova",
                                          ridge: "Ridge", ink: "Ink", abyss: "Abyss", aurora: "Aurora",
-                                         lens: "Lens", gyre: "Gyre", nebula: "Nebula", inferno: "Inferno" })
+                                         lens: "Lens", gyre: "Gyre", nebula: "Nebula", inferno: "Inferno",
+                                         teletype: "Teletype", storm: "Storm", sanctum: "Sanctum", quasar: "Quasar" })
   // Your own shaders, compiled by orpheusd (orpheusd/shaders.py) and listed by
   // GET /shaders. A user style is "@" + its file name, so it can never collide
   // with a builtin. Only styles with a build join the list: one that has never

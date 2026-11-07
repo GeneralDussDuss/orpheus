@@ -38,6 +38,8 @@ layout(std140, binding = 0) uniform buf {
     float build;          // 0..1 tension of a build-up (rising energy and hats, sub-bass gone)
     float drop;           // 0..1 pulse when a build resolves on a downbeat: 1 at the drop, ~1.5 s release
     float section;        // 0 intro, 1 build, 2 drop, 3 breakdown, 4 steady (whole numbers)
+    float anticipate;     // 0..1 wind-up over the last 8 beats before a mapped drop (the drop
+                          // map knows it is coming): charge up with it, release on `drop`
 };
 
 // 32 cava bands packed as 8 vec4s; band(x) samples them smoothly over 0..1.
