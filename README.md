@@ -27,7 +27,7 @@
 ```
  ORPHEUS BIOS v0.1                       (c) the underworld, all rights reversed
  CPU ........ OK          MEM ........ OK
- DSP ........ OK          GLSL ....... 21 STYLES LOADED
+ DSP ........ OK          GLSL ....... 23 STYLES LOADED
  MPV ........ OK          EQ ......... 10 BANDS, FLAT
  TIDAL LINK . ▮           MODE ....... HI-RES / LOSSLESS
  > insert cassette, press play_
@@ -121,7 +121,7 @@ Colours come from the active Omarchy theme, so it changes when your desktop does
 | **Cassette deck** | Press `t` in the visualizer: reels at tape speed, vu needles, the queue as a j-card, all in the theme. Drag a reel to scrub. No album art. |
 | **The widget** | A desktop widget that cycles styles inline — no popout. Five layer modes: `top`, `reserve`, `desktop`, `tile`, `float`. |
 | **The bar** | A tiny always-on spectrum in the Omarchy bar. Click for the stage, scroll for the next style. |
-| **Twenty-one styles** | Prism, Skyline, Horizon, Orb, Tunnel, Halo, Scope, Nova, Ridge, Ink, Abyss, Aurora, Lens, Gyre, Nebula, Inferno, Teletype, Storm, Sanctum, Quasar and Grid — plus `mini` for bar-sized surfaces, and a GPU spectrum-history pass that several of them build terrain, text and accretion from. |
+| **Twenty-three styles** | Prism, Skyline, Horizon, Orb, Tunnel, Halo, Scope, Nova, Ridge, Ink, Abyss, Aurora, Lens, Gyre, Nebula, Inferno, Teletype, Storm, Sanctum, Quasar, Grid, Aether and Wyrm — plus `mini` for bar-sized surfaces, and a GPU spectrum-history pass that several of them build terrain, text and accretion from. |
 | **Hi-res** | Up to FLAC hi-res through the PKCE sign-in, lossless otherwise. The player shows which you got. |
 | **More than TIDAL** | Section `8` searches YouTube and SoundCloud through `yt-dlp`, and anime through `ani-cli` (on Windows, `c` opens Curd). Videos play in their own window; YouTube and SoundCloud also play as audio through the same queue, equalizer and visualizer. None of it needs a TIDAL sign-in. |
 | **Your own shaders** | drop a Shadertoy-style .frag in your shader folder, or paste a shadertoy link in the Ctrl+K palette; it compiles on save, hot-reloads while you edit, and joins the style list. |

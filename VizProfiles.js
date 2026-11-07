@@ -61,7 +61,11 @@ var styles = {
   // Frame drag: everything the disk shines smears a little around the hole.
   quasar:  { zoom: 1.003, zoomK: 0.008, rot: 0.0018, swirl: 0.02, swirlK: 0.04, decay: 0.93, shift: 0.06, gain: 0.85, cx: 0.5, cy: 0.5 },
   // Speed: the lights streak toward the camera, hardest when the cycles run.
-  grid:    { zoom: 1.006, zoomK: 0.02, zoomS: 0.004, decay: 0.90, shift: 0.05, gain: 0.7, cx: 0.5, cy: 0.62 }
+  grid:    { zoom: 1.006, zoomK: 0.02, zoomS: 0.004, decay: 0.90, shift: 0.05, gain: 0.7, cx: 0.5, cy: 0.62 },
+  // Slipstream: the lit vapour trails past and up, a little harder on kicks.
+  aether:  { zoom: 1.006, zoomK: 0.014, zoomS: 0.004, dy: 0.0007, turb: 0.0009, decay: 0.92, shift: 0.05, gain: 0.7, cx: 0.5, cy: 0.5 },
+  // Dust in the wake: bone-light lingers and settles as you pass.
+  wyrm:    { zoom: 1.005, zoomK: 0.012, zoomS: 0.003, turb: 0.0006, decay: 0.93, shift: 0.04, gain: 0.65, cx: 0.5, cy: 0.5 }
 }
 
 function of(name) {
