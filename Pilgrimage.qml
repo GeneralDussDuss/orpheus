@@ -62,10 +62,12 @@ QtObject {
   onStylesChanged: if (enabled && style && styles.length && styles.indexOf(style) < 0) skip()
 
   function idle() { landMs = -1; morphMs = -1; kind = -1; style = "" }
+  // A track change: start the journey over, and ask for the new track's leg
+  // at once (live mode carries it until the new map is ready).
   function reset() {
     armedIdx = -1; detourIdx = -2; ordCount = {}; lastLegAt = -1e9
     syncMarks()
-    if (enabled) style = ""
+    if (enabled) { style = ""; if (!hidden) requestCurrent() }
   }
   function syncMarks() { lastSec = sectionCode; lastIdx = secIdx }
 
@@ -100,8 +102,15 @@ QtObject {
 
     if (mapDriven) {
       if (secIdx !== lastIdx) {
-        // A boundary passed. A detour ends here and the route resumes.
-        if (detourIdx !== -2 && secIdx !== detourIdx) {
+        if (secIdx < lastIdx || secIdx - lastIdx > 1) {
+          // A seek: the leg is recomputed from the new index and boundaries
+          // ahead may arm again — the same song replays the same journey.
+          // Nothing is armed retroactively (skipped sections stay skipped).
+          armedIdx = secIdx
+          detourIdx = -2
+          if (!transitioning) requestCurrent()
+        } else if (detourIdx !== -2 && secIdx !== detourIdx) {
+          // A boundary passed. A detour ends here and the route resumes.
           detourIdx = -2
           if (!transitioning) requestCurrent()
         }

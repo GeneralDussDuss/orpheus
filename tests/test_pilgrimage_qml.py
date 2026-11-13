@@ -57,6 +57,7 @@ QtObject {
   property Connections rec: Connections {
     target: w.p
     function onStyleChanged() {
+      if (!w.p.style) return             // reset() clears the leg; not a request
       w.requests.push({ t: w.song(), style: w.p.style, landMs: w.p.landMs, morphMs: w.p.morphMs, kind: w.p.kind })
     }
   }
@@ -179,6 +180,25 @@ QtObject {
     return { n: requests.length, styles: requests.map(function(x) { return x.style }) }
   }
 
+  function seekReplay() {
+    fresh(); d.playing = true; anchor(0); p.enabled = true
+    step(Math.round(30 / 0.016))                 // through build (12) and drop (28)
+    var before = requests.length
+    anchor(5); step(Math.round(9 / 0.016))       // seek back into steady 0-12, run to ~14
+    var organ = requests.filter(function(x) { return x.style === "@organ" })
+    return { replayed: requests.length - before, organN: organ.length }
+  }
+
+  function trackChange() {
+    p.map = null; p.sectionCode = 4; p.beatPeriod = 0
+    p.enabled = true
+    step(Math.round(2 / 0.016))
+    var before = requests.length
+    p.trackId = "2"
+    step(10)
+    return { before: before, after: requests.length }
+  }
+
   function removedLeg() {
     fresh(); d.playing = true; anchor(0); p.enabled = true
     step(Math.round(5 / 0.016))
@@ -288,6 +308,17 @@ class PilgrimageTest(unittest.TestCase):
         self.assertGreaterEqual(r["n"], 3)            # enable + a walk at ~40 s and ~80 s
         for s in r["styles"]:
             self.assertIn(s, ("@cathedral", "@rosewindow", "horizon"))
+
+    def test_seek_back_replays_the_journey(self):
+        r = self.run_js("seekReplay")
+        # The seek recomputes the leg from the new index, and the build
+        # boundary arms again on the way back through: deterministic replay.
+        self.assertGreaterEqual(r["replayed"], 2)
+        self.assertEqual(r["organN"], 2)
+
+    def test_track_change_requests_a_fresh_leg(self):
+        r = self.run_js("trackChange")
+        self.assertEqual(r["after"] - r["before"], 1)
 
     def test_removed_style_on_screen_skips(self):
         r = self.run_js("removedLeg")
