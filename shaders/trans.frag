@@ -7,6 +7,10 @@
 //   3 chroma split   both views tear into their colour channels and cross over
 //   4 melt           the old view softens and drips away down a domain-warped,
 //                    ragged front with a thin hot edge in the palette
+//   5 veil           a luminance-keyed crossfade for long morphs: the incoming
+//                    world's bright structure emerges first through the old
+//                    world's darks (Pilgrimage's; not reachable from the
+//                    user `//! transition:` pragma, which stays 0..4)
 // Only runs while a transition is in flight.
 
 layout(location = 0) in vec2 qt_TexCoord0;
@@ -103,6 +107,24 @@ void main() {
         o = mix(tap(a, uv - push), tap(b, uv), w);
         float front = exp(-pow((r - R) / 0.012, 2.0)) * smoothstep(0.0, 0.1, p) * smoothstep(1.0, 0.85, p);
         o = lightUp(o, mix(c1.rgb, c2.rgb, n), front * 0.8);
+    } else if (kind > 4.5) {
+        // ---- veil ----
+        // The new world shows through wherever it is bright, earliest in its
+        // own lights: the key is its luminance plus a soft noise grain, and a
+        // threshold sweeps from above 1 to below 0 so both ends are pinned.
+        vec2 c = vec2(0.5);
+        float sa = 1.0 + 0.05 * p;                                   // the old view drifts outward
+        float sb = 0.96 + 0.04 * smoothstep(0.0, 1.0, p);            // the new one settles in
+        vec4 A = tap(a, c + (uv - c) / sa);
+        vec4 B = tap(b, c + (uv - c) / sb);
+        float n = fbm(uv * asp * 3.0 + vec2(seed * 0.173, seed * 0.091));
+        float key = 0.6 * dot(B.rgb, vec3(0.299, 0.587, 0.114)) + 0.4 * n;
+        float T = 1.05 - 1.25 * p;
+        float w = smoothstep(T, T + 0.06, key);
+        o = mix(A, B, w);
+        // A faint palette edge right on the threshold, gone at both ends.
+        float front = exp(-pow((key - T - 0.03) / 0.03, 2.0)) * mid;
+        o = lightUp(o, mix(c1.rgb, c2.rgb, n), front * 0.35);
     } else if (kind > 3.5) {
         // ---- melt ----
         // The old view slides down like something molten, each column at its
