@@ -165,6 +165,9 @@ class AnalysisTest(unittest.IsolatedAsyncioTestCase):
                 k = an.key_of(t)
                 self.assertEqual((self.a._state[k], self.a._reason[k]), ("none", why), t)
         self.assertEqual(self.a.skip_reason(track(dur=0)), "nodur")
+        # Navidrome streams are stable with exact durations: analysed like TIDAL's.
+        self.assertIsNone(self.a.skip_reason(track(provider="navidrome")))
+        self.assertEqual(self.a.skip_reason(track(provider="soundcloud")), "provider")
         self.assertEqual(self.make(FAKE, ffmpeg=None).skip_reason(track()), "unavailable")
         self.cfg_path.write_text(json.dumps({"dropMap": False}))
         self.a.config.refresh(force=True)

@@ -127,7 +127,10 @@ class Analysis:
             return "off"
         if not self.available:
             return "unavailable"
-        if track.get("provider"):
+        # Navidrome's streams are stable URLs with exact durations, so its
+        # tracks get drop maps (and Pilgrimage) like TIDAL's; other providers
+        # (yt-dlp sources) stay out - their URLs expire mid-analysis.
+        if track.get("provider") not in (None, "", "navidrome"):
             return "provider"
         if track.get("live"):
             return "live"
