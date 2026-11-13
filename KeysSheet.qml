@@ -38,6 +38,7 @@ Item {
     ["search box", [["type", "search as you type"], ["↓  esc", "to the results"], ["⏎", "open the selected result"]]],
     ["visualizer", [["v", "cycle the player rail"], ["V", "open / close the visualizer window"], ["t", "cassette deck on / off"]]],
     ["in the visualizer window", [["l h  → ←", "next / previous style · in the deck: shuttle ± 10 s"], ["1-9  0  ⇧1-9", "pick a style (leaves the deck)"],
+                                  ["g", "pilgrimage on / off"], ["n", "next leg · pilgrimage"],
                                   ["t", "cassette deck / visualizer"], ["e", "eject · cassette deck only"], ["f", "fullscreen show / window"],
                                   ["p", "mini player on / off"], ["space", "play / pause"], ["esc", "close it"]]],
     ["mouse · player", [["click row", "select it"], ["dbl-click row", "play or open it"], ["right-click", "menu: queue, radio, link"],

@@ -178,12 +178,14 @@ Item {
         })(looks[lk])
       var flags = [["trackTitle", "toggle title card"], ["lyricsOverViz", "toggle lyrics over visualizer"],
                    ["director", "toggle song structure"], ["beatLock", "toggle beat lock"], ["autoStyle", "toggle style switch on drops"],
-                   ["dropMap", "toggle drop map"]]
+                   ["pilgrimage", "toggle pilgrimage"], ["dropMap", "toggle drop map"]]
       for (var g = 0; g < flags.length; g++)
         (function(fl) {
           if (typeof e[fl[0]] !== "boolean") return
           add("viz." + fl[0], "visuals", fl[1], "", onOff(e[fl[0]]), function() { e.setStageFlag(fl[0], "toggle") })
         })(flags[g])
+      if (e.pilgrimage === true && e.nextLeg)
+        add("viz.pilgrimage.next", "visuals", "pilgrimage · next leg", "n", "", function() { e.nextLeg() })
 
       // sound
       if (a) {

@@ -78,7 +78,7 @@ Item {
   // art there instead. Prism is the default because it measured as the cheapest
   // style by a wide margin (+0.7% shell CPU, against +13 to +20 for the others).
   readonly property var defaults: ({ style: "prism", railViz: "prism", miniPlayer: true, placement: "overlay", fps: 60, syncViz: true,
-                                     showMonitor: "", autoStyle: false, trackTitle: true, lyricsOverViz: false,
+                                     showMonitor: "", autoStyle: false, pilgrimage: false, trackTitle: true, lyricsOverViz: false,
                                      autoQuality: true, showFps: false, bloom: "subtle",
                                      endless: true, crossfade: 0, remote: "off",
                                      director: true, beatLock: true, lookaheadMs: 85, feedback: "subtle", dropMap: true, dropMapLeadMs: 30,
@@ -106,6 +106,10 @@ Item {
   readonly property string scene: scenes.indexOf(config.scene) >= 0 ? config.scene : "viz"
   readonly property string showMonitor: typeof config.showMonitor === "string" ? config.showMonitor : ""  // "" = focused
   readonly property bool autoStyle: config.autoStyle === true          // switch style on big drops
+  // Pilgrimage: the stage travels between styles by section (Pilgrimage.qml).
+  // While it is on, autoStyle is ignored; config.style stays the home style.
+  readonly property bool pilgrimage: config.pilgrimage === true
+  readonly property var pilgrimRoute: config.pilgrimRoute && typeof config.pilgrimRoute === "object" ? config.pilgrimRoute : null
   readonly property bool trackTitle: config.trackTitle !== false       // title card when the track changes
   readonly property bool lyricsOverViz: config.lyricsOverViz === true  // karaoke line over the stage
   readonly property bool autoQuality: config.autoQuality !== false     // drop render scale when frames drop
@@ -787,6 +791,13 @@ Item {
   readonly property bool mapLocked: directorCore.mapOn              // the phases come from the map
   readonly property real armedDrop: directorCore.armedDrop          // song time of the drop 1.5 s ahead, -1 = none (Stage pre-arms on it)
   readonly property real dropMapped: directorCore.dropMapped        // 1 while the drop pulse came from the map
+  readonly property int secIdx: directorCore.secIdx                 // the mapped section on now, -1 = map untrusted
+  readonly property real nextSecIn: directorCore.nextSecIn          // s to the next section boundary, -1 = none
+  readonly property int nextSecCode: directorCore.nextSecCode       // that section's code, -1 = none
+  readonly property var dropMapData: dropMapSrc.map                 // the raw map (sections), for Pilgrimage
+  // The palette's "next leg" reaches the stage's Pilgrimage through this counter.
+  property int pilgrimageSkips: 0
+  function nextLeg() { pilgrimageSkips++; return statusText() }
 
   // `beat` is the onset envelope, or with beatLock and a confident grid, a
   // pulse fired by the grid's predicted phase: it peaks on the beat instead of
@@ -956,7 +967,7 @@ Item {
   }
   // The stage's on/off switches: autoStyle, trackTitle, lyricsOverViz, autoQuality, showFps.
   function setStageFlag(key, on) {
-    var keys = ["autoStyle", "trackTitle", "lyricsOverViz", "autoQuality", "showFps", "director", "beatLock", "dropMap"]
+    var keys = ["autoStyle", "pilgrimage", "trackTitle", "lyricsOverViz", "autoQuality", "showFps", "director", "beatLock", "dropMap"]
     if (keys.indexOf(key) < 0) return "unknown setting: " + key + " (" + keys.join("|") + ")"
     var v = on === "toggle" ? !root[key] : (on === true || on === "on" || on === "true" || on === "1")
     updateConfig(function(c) { c[key] = v })
@@ -1036,7 +1047,7 @@ Item {
                             peakLag: peakLag, peakCorr: Math.round(peakCorr * 100) / 100,
                             onsetRate: Math.round(onsetRate * 100) / 100, densityBpm: Math.round(densityBpm * 100) / 100,
                             candLags: candLags,
-                            director: director, beatLock: beatLock, section: section,
+                            director: director, beatLock: beatLock, section: section, pilgrimage: pilgrimage,
                             beatConfidence: Math.round(beatConfidence * 100) / 100, build: Math.round(build * 100) / 100,
                             flowTarget: Math.round(flowTarget * 100) / 100, flow: Math.round(flow * 100) / 100,
                             map: mapState, mapWeight: Math.round(mapWeight * 100) / 100,
@@ -1065,6 +1076,8 @@ Item {
     function cassette(): string { return root.toggleCassette() }
     function showMonitor(name: string): string { return root.setShowMonitor(name) }
     function autoStyle(on: string): string { return root.setStageFlag("autoStyle", on) }
+    function pilgrimage(on: string): string { return root.setStageFlag("pilgrimage", on) }
+    function pilgrimNext(): string { return root.nextLeg() }
     function trackTitle(on: string): string { return root.setStageFlag("trackTitle", on) }
     function lyricsOverViz(on: string): string { return root.setStageFlag("lyricsOverViz", on) }
     function autoQuality(on: string): string { return root.setStageFlag("autoQuality", on) }

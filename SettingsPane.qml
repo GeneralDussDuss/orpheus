@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import qs.Commons
 import "Tui.js" as Tui
+import "Pilgrim.js" as Pilgrim
 
 // Settings, as a page of the player: everything the tray menu and config.json
 // used to be the only way to reach.
@@ -130,6 +131,20 @@ Rectangle {
                desc: "flashes land on a predicted beat grid instead of a detection late" })
       r.push({ kind: "toggle", id: "autoStyle", label: "switch styles on drops", def: d.autoStyle,
                desc: "jump to another visualizer style when a big drop lands" })
+      r.push({ kind: "toggle", id: "pilgrimage", label: "pilgrimage", def: d.pilgrimage,
+               desc: "travel between styles with the song · each section morphs into its own world" })
+      if (e) {
+        var pr = Pilgrim.resolve(e.pilgrimRoute, e.styles), missing = [], seenMiss = {}
+        for (var pk = 0; pk < Pilgrim.CODES.length; pk++) {
+          var want = (e.pilgrimRoute && Array.isArray(e.pilgrimRoute[Pilgrim.CODES[pk]]))
+                     ? e.pilgrimRoute[Pilgrim.CODES[pk]] : Pilgrim.DEFAULT_ROUTE[Pilgrim.CODES[pk]]
+          for (var pi = 0; pi < want.length; pi++)
+            if (typeof want[pi] === "string" && e.styles.indexOf(want[pi]) < 0 && !seenMiss[want[pi]]) {
+              seenMiss[want[pi]] = true; missing.push(want[pi])
+            }
+        }
+        if (missing.length) r.push({ kind: "note", label: "route styles not installed · " + missing.join(" ") + " · their legs fall back" })
+      }
       r.push({ kind: "toggle", id: "dropMap", label: "drop map", def: d.dropMap,
                desc: "analyse each track ahead of time so beats, builds and drops land exactly · needs ffmpeg" })
       var an = api && api.status ? api.status.analysis : null
@@ -468,7 +483,7 @@ Rectangle {
       return
     }
     if ((r.kind === "toggle" || r.kind === "choice") && engine.setStageFlag && typeof engine[r.id] === "boolean"
-        && ["autoStyle", "trackTitle", "lyricsOverViz", "autoQuality", "showFps", "director", "beatLock", "dropMap"].indexOf(r.id) >= 0) {
+        && ["autoStyle", "pilgrimage", "trackTitle", "lyricsOverViz", "autoQuality", "showFps", "director", "beatLock", "dropMap"].indexOf(r.id) >= 0) {
       engine.setStageFlag(r.id, v ? "on" : "off"); return
     }
     engine.updateConfig(function(c) { c[r.id] = v })

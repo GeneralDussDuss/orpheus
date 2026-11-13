@@ -126,6 +126,7 @@ Colours come from the active Omarchy theme, so it changes when your desktop does
 | **More than TIDAL** | Section `8` searches YouTube and SoundCloud through `yt-dlp`, and anime through `ani-cli` (on Windows, `c` opens Curd). Videos play in their own window; YouTube and SoundCloud also play as audio through the same queue, equalizer and visualizer. None of it needs a TIDAL sign-in. |
 | **Your own shaders** | drop a Shadertoy-style .frag in your shader folder, or paste a shadertoy link in the Ctrl+K palette; it compiles on save, hot-reloads while you edit, and joins the style list. |
 | **Drop map** | Each TIDAL track is analysed ahead of time so builds, drops and beats land exactly: the picture winds up over the last bars, blacks out on the last beat and bursts on the drop; drop marks on the seek bar. Needs ffmpeg. |
+| **Pilgrimage** | A stage mode (`g`): the song travels between styles by section — the build in one world, the drop diving into another — each morph landing on the boundary itself when the drop map knows it ahead of time. `n` skips to the next leg; a manual pick is a detour until the next section. Route in `config.json` under `pilgrimRoute`. |
 | **AutoEQ** | Press `A` on the equalizer page and type your headphones: AutoEq's measured correction is fetched on request and stacked under the ten bands, with its curve drawn beneath them. |
 | **Desktop integration** | MPRIS, so your bar, your media keys and the rest of the desktop see the track. Favourites from anywhere in the UI. The queue and position survive a service restart. |
 
@@ -320,6 +321,7 @@ In the player: `v` cycles the visualizer plane, `V` opens the stage, `1`–`9` s
 
 `t` toggles the cassette deck. In the visualizer window `t` swaps the visualizer and the deck; under the deck
 `←`/`→` shuttle ± 10 s, `e` ejects (and closes), and a reel drags to scrub (one turn is 30 s).
+Also on the stage: `g` toggles pilgrimage (the journey between styles) and `n` skips to its next leg.
 
 A tape-deck key is yours to bind, e.g. `o.bind("SUPER + CTRL + T", "Music tape deck", "omarchy-shell -q orpheus cassette")`, or `orpheus tape`.
 
