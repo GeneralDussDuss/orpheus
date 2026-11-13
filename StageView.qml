@@ -85,8 +85,17 @@ Item {
       engine: view.engine
       styleName: view.styleName
       renderScale: view.scale_
+      landMs: view.landMs
+      morphMs: view.morphMs
+      morphKind: view.morphKind
     }
   }
+  // Pilgrimage's morph inputs, passed through to the visualizer (-1 = none),
+  // and whether a style transition is in flight right now.
+  property real landMs: -1
+  property real morphMs: -1
+  property int morphKind: -1
+  readonly property bool morphing: vizLoader.item ? vizLoader.item.transitioning === true : false
   Loader {
     id: deckLoader
     anchors.fill: parent
@@ -153,7 +162,9 @@ Item {
     sampledAt = now
     if (!engine || !engine.autoQuality) { step = 0; low = 0; good = 0; return }
 
-    if (fps < target * 0.85) { low++; good = 0 } else { low = 0 }
+    // A morph renders two styles at once on purpose; its dip must not move
+    // the resolution (and so rebuild buffers) right at the boundary.
+    if (fps < target * 0.85) { if (!morphing) low++; good = 0 } else { low = 0 }
     if (fps >= target * 0.95) good++
 
     if (low >= 3) {

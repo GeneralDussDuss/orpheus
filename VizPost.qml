@@ -22,6 +22,10 @@ Item {
 
   property var source: null
   property size sourceSize: Qt.size(width, height)
+  // The trail buffer's base size (Viz passes width·dpr·renderScale, without
+  // the style's own userScale): a style change between different `//! scale:`
+  // values then keeps the buffer, instead of rebuilding it mid-morph.
+  property size fbBase: Qt.size(0, 0)
 
   // ---- transition --------------------------------------------------------
   property bool transitioning: false
@@ -108,8 +112,8 @@ Item {
   // instead the buffer is torn down when the wanted size changes and built
   // fresh once the size has held still for a moment; meanwhile the frame
   // shows without trails.
-  readonly property size fbWant: Qt.size(Math.max(1, Math.round(sourceSize.width * fbScale)),
-                                         Math.max(1, Math.round(sourceSize.height * fbScale)))
+  readonly property size fbWant: Qt.size(Math.max(1, Math.round((fbBase.width > 0 ? fbBase.width : sourceSize.width) * fbScale)),
+                                         Math.max(1, Math.round((fbBase.width > 0 ? fbBase.height : sourceSize.height) * fbScale)))
   property size fbSize           // the size the live buffer was built at
   property bool fbReady: false   // built in Component.onCompleted, once sizes are in
   onFbWantChanged: {

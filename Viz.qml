@@ -97,6 +97,8 @@ ShaderEffect {
     id: postComponent
     VizPost {
       sourceSize: fx.layer.textureSize
+      fbBase: Qt.size(Math.max(1, Math.round(fx.width * fx.dpr * fx.renderScale)),
+                      Math.max(1, Math.round(fx.height * fx.dpr * fx.renderScale)))
       bloomOn: fx.bloomOn
       intensity: fx.bloomIntensity
       kick: fx.kick
