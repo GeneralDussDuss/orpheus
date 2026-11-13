@@ -39,7 +39,7 @@ from .tidal import QUALITIES, Tidal
 from .video import Video
 from .soundcloud import SoundCloud
 from .system import CACHE_DIR, RUNTIME_DIR, STATE_DIR, WINDOWS, curd_path
-from .navidrome import Navidrome, search_all
+from .navidrome import Navidrome, route_scrobble, search_all
 from .youtube import YouTube, YouTubeError
 
 log = logging.getLogger("orpheus")
@@ -97,7 +97,13 @@ class App:
         # ---- listening: endless play, history, scrobbling, remote, sleep ----
         self.history = History(STATE_DIR)
         self.scrobbler = Scrobbler(self.config, self.history, STATE_DIR)
-        self.tracker = Tracker(self.history, self.scrobbler.now_playing, self.scrobbler.scrobble)
+        # Navidrome plays scrobble to the Navidrome server (its play counts,
+        # and whatever relays the user set up there); everything else takes
+        # the LB/Last.fm path exactly as before (orpheusd/navidrome.py).
+        self.tracker = Tracker(
+            self.history,
+            lambda track, *a: route_scrobble(self.navidrome, self.scrobbler.now_playing, track, *a, submission=False),
+            lambda track, *a: route_scrobble(self.navidrome, self.scrobbler.scrobble, track, *a, submission=True))
         self.remote = Remote(self, self.config)
         self.sleep: dict | None = None
         self._sleep_task = None
@@ -207,7 +213,7 @@ class App:
         asyncio.create_task(self._liked_loop())
         try:
             for d in await asyncio.to_thread(self.history.close_dangling):
-                self.scrobbler.scrobble(d["track"], d["started"])
+                route_scrobble(self.navidrome, self.scrobbler.scrobble, d["track"], d["started"], submission=True)
         except Exception as e:
             log.warning("history: %s", e)
         self.scrobbler.start()
