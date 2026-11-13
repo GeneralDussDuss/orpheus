@@ -96,13 +96,13 @@ QtObject {
   // Convenience controls.
   function control(action, body) { post("/control/" + action, body) }
   function play(item, index, extra) {
-    var b = { kind: item.kind, id: item.id, index: index || 0 }
+    var b = { kind: item.kind, id: item.id, index: index || 0, provider: item.provider }
     if (item.kind === "track") b.track = item
     if (extra) for (var k in extra) b[k] = extra[k]
     post("/play", b)
   }
   function playTracks(tracks, index, context) { post("/play", { tracks: tracks, index: index || 0, context: context || {} }) }
-  function enqueue(item, next) { post("/enqueue", { kind: item.kind, id: item.id, track: item.kind === "track" ? item : undefined, next: !!next }) }
+  function enqueue(item, next) { post("/enqueue", { kind: item.kind, id: item.id, provider: item.provider, track: item.kind === "track" ? item : undefined, next: !!next }) }
 
   // ---- the video section -----------------------------------------------
   //

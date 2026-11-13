@@ -55,7 +55,8 @@ class Navidrome:
         self._user = (user or "").strip()
         self._password = password or ""
         self._session: aiohttp.ClientSession | None = None
-        self._ping: tuple[float, bool] | None = None
+        self._ping: tuple[tuple, float, bool] | None = None
+        self._pinging: asyncio.Future | None = None
 
     @classmethod
     def from_config(cls, config) -> "Navidrome":
@@ -88,7 +89,7 @@ class Navidrome:
 
     def last_ping(self) -> bool | None:
         """The most recent ping result without waiting for one; None = never."""
-        return self._ping[1] if self._ping else None
+        return self._ping[2] if self._ping else None
 
     async def close(self):
         if self._session:
@@ -123,27 +124,40 @@ class Navidrome:
 
     # ---- entries ------------------------------------------------------------
 
+    # The entries speak tidal.py's vocabulary exactly (track_dict/album_dict/
+    # artist_dict): the UI, MPRIS, history and the player read those names.
+
     def _cover(self, art_id) -> str:
         return self.rest_url("getCoverArt", id=art_id, size=640) if art_id else ""
 
+    @staticmethod
+    def _quality(s: dict) -> str:
+        suffix = (s.get("suffix") or "").lower()
+        return "LOSSLESS" if suffix in LOSSLESS else (suffix.upper() if suffix else "")
+
     def _track(self, s: dict) -> dict:
-        names = [a.get("name", "") for a in s.get("artists", []) if a.get("name")] or \
+        names = [a.get("name", "") for a in s.get("artists") or [] if a.get("name")] or \
                 ([s.get("artist")] if s.get("artist") else [])
         return {"kind": "track", "provider": "navidrome", "id": str(s.get("id", "")),
-                "title": s.get("title", ""), "artist": s.get("artist", ""), "artists": names,
+                "title": s.get("title", ""), "artists": names,
+                "artistId": str(s.get("artistId", "") or ""),
                 "album": s.get("album", ""), "albumId": str(s.get("albumId", "") or ""),
-                "duration": int(s.get("duration") or 0), "hires": False,
-                "cover": self._cover(s.get("coverArt"))}
+                "duration": int(s.get("duration") or 0), "explicit": False,
+                "quality": self._quality(s), "hires": False,
+                "art": self._cover(s.get("coverArt")), "popularity": -1, "isrc": ""}
 
     def _album(self, a: dict) -> dict:
         return {"kind": "album", "provider": "navidrome", "id": str(a.get("id", "")),
-                "title": a.get("name") or a.get("title", ""), "artist": a.get("artist", ""),
-                "artistId": str(a.get("artistId", "") or ""), "year": a.get("year"),
-                "cover": self._cover(a.get("coverArt"))}
+                "title": a.get("name") or a.get("title", ""),
+                "artists": [a.get("artist")] if a.get("artist") else [],
+                "artistId": str(a.get("artistId", "") or ""),
+                "tracks": int(a.get("songCount") or 0), "duration": int(a.get("duration") or 0),
+                "year": str(a.get("year") or ""), "explicit": False,
+                "art": self._cover(a.get("coverArt"))}
 
     def _artist(self, a: dict) -> dict:
         return {"kind": "artist", "provider": "navidrome", "id": str(a.get("id", "")),
-                "name": a.get("name", ""), "cover": self._cover(a.get("coverArt"))}
+                "title": a.get("name", ""), "art": self._cover(a.get("coverArt"))}
 
     # ---- the source surface (Player._resolve) --------------------------------
 
@@ -152,7 +166,8 @@ class Navidrome:
         song = body.get("song") or {}
         suffix = (song.get("suffix") or "").lower()
         quality = "LOSSLESS" if suffix in LOSSLESS else (suffix.upper() if suffix else "")
-        return {"url": self.rest_url("stream", id=track_id, format="raw"),
+        # Player._load reads info["source"]; "dash" False keeps the mpv path simple.
+        return {"source": self.rest_url("stream", id=track_id, format="raw"), "dash": False,
                 "quality": quality, "codec": suffix or None, "bitDepth": None, "sampleRate": None}
 
     def forget(self, track_id: str) -> None:
@@ -163,33 +178,61 @@ class Navidrome:
     async def search(self, query: str) -> dict:
         body = await self._get("search3", query=query, songCount=20, albumCount=20, artistCount=20)
         res = body.get("searchResult3") or {}
-        return {"tracks": [self._track(s) for s in res.get("song", [])],
+        return {"top": None,
+                "tracks": [self._track(s) for s in res.get("song", [])],
                 "albums": [self._album(a) for a in res.get("album", [])],
                 "artists": [self._artist(a) for a in res.get("artist", [])],
                 "playlists": []}
 
+    # The pages are flat, like tidal.py's album()/artist(): the entry dict
+    # itself plus "items" (and "albums"/"singles" for artists).
+
     async def album(self, album_id: str) -> dict:
         body = await self._get("getAlbum", id=album_id)
         a = body.get("album") or {}
-        return {"album": self._album(a), "tracks": [self._track(s) for s in a.get("song", [])]}
+        d = self._album(a)
+        d["items"] = [self._track(s) for s in a.get("song") or []]
+        return d
 
     async def artist(self, artist_id: str) -> dict:
         body = await self._get("getArtist", id=artist_id)
         a = body.get("artist") or {}
-        return {"artist": self._artist(a), "albums": [self._album(al) for al in a.get("album", [])]}
+        d = self._artist(a)
+        d["albums"] = [self._album(al) for al in a.get("album") or []]
+        d["singles"] = []
+        d["items"] = []
+        if d["title"]:
+            try:
+                top = await self._get("getTopSongs", artist=d["title"], count=10)
+                d["items"] = [self._track(s) for s in (top.get("topSongs") or {}).get("song") or []]
+            except NavidromeError:
+                pass                       # a page without top songs still works
+        return d
 
     # ---- health and scrobbling ------------------------------------------------
 
     async def ping(self) -> bool:
-        if self._ping and time.monotonic() - self._ping[0] < PING_TTL:
-            return self._ping[1]
+        key = (self.url, self.user, self.password)
+        if self._ping and self._ping[0] == key and time.monotonic() - self._ping[1] < PING_TTL:
+            return self._ping[2]
+        if self._pinging is not None and not self._pinging.done():
+            return await asyncio.shield(self._pinging)
+
+        async def probe() -> bool:
+            try:
+                await self._get("ping")
+                ok = True
+            except Exception:                 # any failure means unreachable
+                ok = False
+            self._ping = (key, time.monotonic(), ok)
+            return ok
+
+        self._pinging = asyncio.ensure_future(probe())
         try:
-            await self._get("ping")
-            ok = True
-        except NavidromeError:
-            ok = False
-        self._ping = (time.monotonic(), ok)
-        return ok
+            return await asyncio.shield(self._pinging)
+        finally:
+            if self._pinging.done():
+                self._pinging = None
 
     async def scrobble(self, track_id: str, submission: bool) -> None:
         """Fire-and-forget: the server's play counts (and its own Last.fm /
@@ -202,11 +245,23 @@ class Navidrome:
 
 # ---- helpers the routes use --------------------------------------------------
 
+# Library shows the first 10/8/6 of each list (plus the "top" hit), so a
+# plain append would hide every Navidrome result behind TIDAL's twenty.
+# Each list keeps TIDAL first but folds a few Navidrome entries into that
+# visible window; nothing from either side is dropped.
+_VISIBLE = {"tracks": (10, 3), "albums": (8, 3), "artists": (6, 2)}
+
+
 def merge_search(base: dict, extra: dict) -> dict:
-    """TIDAL's lists first, Navidrome's appended; tolerant of missing keys."""
-    out = {k: list(base.get(k) or []) for k in ("tracks", "albums", "artists", "playlists")}
-    for k in ("tracks", "albums", "artists"):
-        out[k] += list(extra.get(k) or [])
+    """TIDAL's result with Navidrome's folded in; every base key survives."""
+    out = dict(base)
+    out.setdefault("top", None)
+    out.setdefault("playlists", [])
+    for k, (cap, reserve) in _VISIBLE.items():
+        a, b = list(base.get(k) or []), list(extra.get(k) or [])
+        keep = min(len(b), reserve) if a else 0
+        head = a[: cap - keep] if keep else a[:cap]
+        out[k] = head + b[:keep] + a[len(head):] + b[keep:]
     return out
 
 
@@ -217,16 +272,34 @@ async def search_all(tidal_search, navidrome, query: str) -> dict:
 
     async def side(coro_factory):
         if coro_factory is None:
-            return empty
+            return empty, None
         try:
-            return await coro_factory(query)
+            return await coro_factory(query), None
         except Exception as e:
             log.warning("search: %s", e)
-            return empty
+            return empty, e
 
     nd_search = navidrome.search if navidrome is not None and navidrome.available else None
-    tidal_out, nd_out = await asyncio.gather(side(tidal_search), side(nd_search))
+    (tidal_out, tidal_err), (nd_out, nd_err) = await asyncio.gather(side(tidal_search), side(nd_search))
+    # With nothing of Navidrome's to show, a TIDAL failure must still reach
+    # the UI the way it always did (an expired session says "sign in", not
+    # "no results").
+    if tidal_err is not None and (nd_err is not None or nd_search is None):
+        raise tidal_err
     return merge_search(tidal_out, nd_out)
+
+
+async def tracks_for_navidrome(navidrome, kind: str, item_id: str, first_track) -> tuple[list, dict]:
+    """What /play and /enqueue hand the player for a Navidrome item. A track
+    plays as itself (no radio); albums and artists hand over their items."""
+    if kind == "track":
+        track = first_track
+        if not track:
+            info = await navidrome._get("getSong", id=item_id)
+            track = navidrome._track(info.get("song") or {})
+        return [track], {"kind": "track", "id": item_id, "title": track.get("title", "")}
+    data = await getattr(navidrome, kind)(item_id)
+    return data.get("items", []), {"kind": kind, "id": item_id, "title": data.get("title", "")}
 
 
 def route_scrobble(navidrome, fallback, track: dict, *args, submission: bool) -> None:

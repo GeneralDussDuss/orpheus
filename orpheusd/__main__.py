@@ -39,7 +39,7 @@ from .tidal import QUALITIES, Tidal
 from .video import Video
 from .soundcloud import SoundCloud
 from .system import CACHE_DIR, RUNTIME_DIR, STATE_DIR, WINDOWS, curd_path
-from .navidrome import Navidrome, route_scrobble, search_all
+from .navidrome import Navidrome, route_scrobble, search_all, tracks_for_navidrome
 from .youtube import YouTube, YouTubeError
 
 log = logging.getLogger("orpheus")
@@ -506,13 +506,16 @@ class App:
 
         @r.get("/search")
         async def search(req):
-            # TIDAL and Navidrome at once, either side degrading to nothing;
-            # signed out with a Navidrome configured, its library still answers.
+            # Without a Navidrome the route is exactly what it always was.
+            # With one, both sides answer at once: a failing side contributes
+            # nothing, signed out its library still answers, and a TIDAL
+            # error with no Navidrome results to show surfaces as before.
+            q = req.query.get("q", "").strip()
             if not self.navidrome.available:
                 need_login()
-            q = req.query.get("q", "").strip()
+                return J(await self.tidal.search(q) if q else {"tracks": [], "albums": [], "artists": [], "playlists": []})
             if not q:
-                return J({"tracks": [], "albums": [], "artists": [], "playlists": []})
+                return J({"top": None, "tracks": [], "albums": [], "artists": [], "playlists": []})
             tidal_search = self.tidal.search if self.tidal.signed_in else None
             return J(await search_all(tidal_search, self.navidrome, q))
 
@@ -638,21 +641,42 @@ class App:
                 raise web.HTTPNotFound(text="no such preset")
             return J({"ok": True})
 
+        def nd_body(b) -> bool:
+            """A play/enqueue body that stays inside Navidrome (so it needs
+            no TIDAL login): a navidrome item, or a list of navidrome tracks."""
+            if not self.navidrome.available:
+                return False
+            if b.get("tracks"):
+                return all((t or {}).get("provider") == "navidrome" for t in b["tracks"])
+            return ((b.get("track") or {}).get("provider") or b.get("provider")) == "navidrome"
+
         @r.post("/play")
         async def play(req):
-            need_login()
             b = await body(req)
-            tracks, ctx = await self.tracks_for(b)
+            if nd_body(b):
+                if b.get("tracks"):
+                    tracks, ctx = b["tracks"], b.get("context") or {}
+                else:
+                    tracks, ctx = await tracks_for_navidrome(self.navidrome, b.get("kind"),
+                                                             str(b.get("id", "")), b.get("track"))
+            else:
+                need_login()
+                tracks, ctx = await self.tracks_for(b)
             await self.player.play_list(tracks, int(b.get("index", 0)), ctx)
             return J(self.status())
 
         @r.post("/enqueue")
         async def enqueue(req):
-            need_login()
             b = await body(req)
             if b.get("kind") == "track" and b.get("track"):
+                if not nd_body(b):
+                    need_login()
                 tracks = [b["track"]]
+            elif nd_body(b):
+                tracks, _ = await tracks_for_navidrome(self.navidrome, b.get("kind"),
+                                                       str(b.get("id", "")), b.get("track"))
             else:
+                need_login()
                 tracks, _ = await self.tracks_for(b)
             await self.player.enqueue(tracks, next_up=bool(b.get("next")))
             return J(self.status())

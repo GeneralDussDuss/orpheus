@@ -8,13 +8,14 @@ from urllib.parse import parse_qs, urlparse
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from orpheusd.navidrome import Navidrome, NavidromeError, merge_search, route_scrobble, search_all
+from orpheusd.navidrome import (Navidrome, NavidromeError, merge_search, route_scrobble,
+                                search_all, tracks_for_navidrome)
 
 SONG = {"id": "s1", "title": "Ferryman", "artist": "Styx Crew", "artistId": "a1",
         "album": "Across", "albumId": "al1", "duration": 212, "suffix": "flac",
         "bitRate": 1024, "coverArt": "c1"}
 ALBUM = {"id": "al1", "name": "Across", "artist": "Styx Crew", "artistId": "a1",
-         "year": 2024, "coverArt": "c2"}
+         "year": 2024, "songCount": 1, "duration": 212, "coverArt": "c2"}
 ARTIST = {"id": "a1", "name": "Styx Crew", "coverArt": "c3"}
 
 
@@ -29,6 +30,7 @@ class FakeSubsonic:
         self.calls = []            # (endpoint, {param: [values]})
         self.fail = None           # (code, message) -> every endpoint fails
         self.scrobble_status = 200
+        self.delay = 0.0           # seconds each request sleeps first
         app = web.Application()
         app.router.add_get("/rest/{endpoint}", self.handle)
         self.server = TestServer(app)
@@ -36,6 +38,8 @@ class FakeSubsonic:
     async def handle(self, req):
         endpoint = req.match_info["endpoint"].replace(".view", "")
         self.calls.append((endpoint, {k: req.query.getall(k) for k in req.query}))
+        if self.delay:
+            await asyncio.sleep(self.delay)
         if self.fail:
             code, msg = self.fail
             return web.json_response({"subsonic-response": {
@@ -50,6 +54,8 @@ class FakeSubsonic:
             return web.json_response(ok({"album": dict(ALBUM, song=[SONG])}))
         if endpoint == "getArtist":
             return web.json_response(ok({"artist": dict(ARTIST, album=[ALBUM])}))
+        if endpoint == "getTopSongs":
+            return web.json_response(ok({"topSongs": {"song": [SONG]}}))
         if endpoint == "getSong":
             return web.json_response(ok({"song": SONG}))
         if endpoint == "scrobble":
@@ -121,44 +127,61 @@ class NavidromeTest(unittest.IsolatedAsyncioTestCase):
 
     # ---- mapping ---------------------------------------------------------------
 
-    async def test_search_maps_and_tags(self):
+    async def test_search_maps_to_the_tidal_vocabulary(self):
+        # The UI and daemon read tidal.py's field names: title, artists (a
+        # list of names), artistId, art, hires, quality. Not cover/name/artist.
         out = await self.nd.search("ferry")
         t = out["tracks"][0]
         self.assertEqual((t["kind"], t["provider"], t["id"], t["title"]), ("track", "navidrome", "s1", "Ferryman"))
-        self.assertEqual(t["artist"], "Styx Crew")
         self.assertEqual(t["artists"], ["Styx Crew"])
+        self.assertEqual(t["artistId"], "a1")
         self.assertEqual((t["album"], t["albumId"], t["duration"]), ("Across", "al1", 212))
         self.assertFalse(t["hires"])
+        self.assertFalse(t["explicit"])
+        self.assertEqual(t["quality"], "LOSSLESS")
+        self.assertIn("/rest/getCoverArt", t["art"])
         a = out["albums"][0]
-        self.assertEqual((a["kind"], a["provider"], a["title"], a["artistId"], a["year"]),
-                         ("album", "navidrome", "Across", "a1", 2024))
+        self.assertEqual((a["kind"], a["provider"], a["title"], a["artistId"]), ("album", "navidrome", "Across", "a1"))
+        self.assertEqual(a["artists"], ["Styx Crew"])
+        self.assertEqual((a["year"], a["tracks"]), ("2024", 1))
+        self.assertIn("/rest/getCoverArt", a["art"])
         ar = out["artists"][0]
-        self.assertEqual((ar["kind"], ar["provider"], ar["name"]), ("artist", "navidrome", "Styx Crew"))
+        self.assertEqual((ar["kind"], ar["provider"], ar["title"]), ("artist", "navidrome", "Styx Crew"))
         self.assertEqual(out["playlists"], [])
+        self.assertIsNone(out["top"])
 
     async def test_cover_url_carries_auth(self):
         t = (await self.nd.search("x"))["tracks"][0]
-        q = parse_qs(urlparse(t["cover"]).query)
+        q = parse_qs(urlparse(t["art"]).query)
         self.assertEqual(q["id"], ["c1"])
         self.assertIn("t", q)
         self.assertIn("s", q)
-        self.assertIn("/rest/getCoverArt", t["cover"])
+        self.assertIn("/rest/getCoverArt", t["art"])
 
-    async def test_album_and_artist_shapes(self):
+    async def test_album_and_artist_pages_are_flat_like_tidals(self):
+        # Library reads pageData.title/.art/.artists/.items (and .albums/
+        # .singles for artists) - tidal.py's album()/artist() shapes.
         al = await self.nd.album("al1")
-        self.assertEqual(al["album"]["id"], "al1")
-        self.assertEqual([t["id"] for t in al["tracks"]], ["s1"])
-        self.assertEqual(al["tracks"][0]["provider"], "navidrome")
+        self.assertEqual((al["kind"], al["id"], al["title"]), ("album", "al1", "Across"))
+        self.assertEqual(al["artists"], ["Styx Crew"])
+        self.assertIn("/rest/getCoverArt", al["art"])
+        self.assertEqual([t["id"] for t in al["items"]], ["s1"])
+        self.assertEqual(al["items"][0]["provider"], "navidrome")
         ar = await self.nd.artist("a1")
-        self.assertEqual(ar["artist"]["name"], "Styx Crew")
+        self.assertEqual((ar["kind"], ar["title"]), ("artist", "Styx Crew"))
+        self.assertEqual([t["id"] for t in ar["items"]], ["s1"])     # top songs
         self.assertEqual([a["id"] for a in ar["albums"]], ["al1"])
+        self.assertEqual(ar["singles"], [])
 
     # ---- stream ----------------------------------------------------------------
 
-    async def test_stream_url_and_quality(self):
+    async def test_stream_source_and_quality(self):
+        # Player._load reads info["source"] (player.py:740), as tidal.py and
+        # youtube.py both return; "url" never plays.
         s = await self.nd.stream("s1")
-        self.assertIn("/rest/stream", s["url"])
-        q = parse_qs(urlparse(s["url"]).query)
+        self.assertIn("/rest/stream", s["source"])
+        self.assertFalse(s["dash"])
+        q = parse_qs(urlparse(s["source"]).query)
         self.assertEqual(q["id"], ["s1"])
         self.assertEqual(q["format"], ["raw"])
         self.assertIn("t", q)
@@ -210,14 +233,22 @@ class ConfigBackedTest(unittest.IsolatedAsyncioTestCase):
 
 
 class MergeAndRoutingTest(unittest.IsolatedAsyncioTestCase):
-    def test_merge_search(self):
-        base = {"tracks": [1], "albums": [2], "artists": [3], "playlists": [9]}
-        extra = {"tracks": [4], "albums": [5], "artists": [6], "playlists": []}
+    def test_merge_keeps_top_and_reserves_visible_slots(self):
+        # Library shows only the first 10/8/6 of each list, and keeps the
+        # "top" hit: the merge must leave both sides visible inside that
+        # window and never drop a key TIDAL returned.
+        base = {"top": {"id": "hit"}, "tracks": list(range(20)), "albums": list(range(20)),
+                "artists": list(range(20)), "playlists": [9]}
+        extra = {"tracks": ["n0", "n1", "n2", "n3"], "albums": ["a0"], "artists": ["r0"], "playlists": []}
         out = merge_search(base, extra)
-        self.assertEqual(out["tracks"], [1, 4])
-        self.assertEqual(out["albums"], [2, 5])
-        self.assertEqual(out["artists"], [3, 6])
+        self.assertEqual(out["top"], {"id": "hit"})
         self.assertEqual(out["playlists"], [9])
+        self.assertIn("n0", out["tracks"][:10])          # navidrome visible in the UI window
+        self.assertIn(0, out["tracks"][:10])             # tidal still leads
+        self.assertIn("a0", out["albums"][:8])
+        self.assertIn("r0", out["artists"][:6])
+        self.assertEqual(sorted(x for x in out["tracks"] if isinstance(x, int)), list(range(20)))
+        self.assertEqual([x for x in out["tracks"] if isinstance(x, str)], ["n0", "n1", "n2", "n3"])
         self.assertEqual(merge_search({}, {"tracks": [7]})["tracks"], [7])
 
     async def test_search_degrades_per_side(self):
@@ -243,6 +274,64 @@ class MergeAndRoutingTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out["tracks"], ["nd"])
         out = await search_all(tidal_ok, FailND(), "x")
         self.assertEqual(out["tracks"], ["td"])
+
+    async def test_tidal_error_surfaces_when_navidrome_has_nothing(self):
+        # With no Navidrome results to show, a TIDAL failure must reach the
+        # route (and so the UI), exactly as it did before this feature.
+        class FailND:
+            available = True
+            async def search(self, q):
+                raise NavidromeError("down")
+
+        async def tidal_boom(q):
+            raise RuntimeError("tidal session expired")
+
+        with self.assertRaises(RuntimeError):
+            await search_all(tidal_boom, FailND(), "x")
+
+    async def test_tracks_for_navidrome(self):
+        fake = FakeSubsonic()
+        await fake.server.start_server()
+        nd = Navidrome(str(fake.server.make_url("")), "u", "p")
+        # a track with its dict attached plays as itself, no radio lookup
+        tracks, ctx = await tracks_for_navidrome(nd, "track", "s1", {"id": "s1", "title": "Ferryman", "provider": "navidrome"})
+        self.assertEqual([t["id"] for t in tracks], ["s1"])
+        self.assertEqual(ctx["kind"], "track")
+        # without the dict, getSong rebuilds it
+        tracks, _ = await tracks_for_navidrome(nd, "track", "s1", None)
+        self.assertEqual(tracks[0]["title"], "Ferryman")
+        self.assertEqual(tracks[0]["provider"], "navidrome")
+        # albums and artists hand back their items
+        tracks, ctx = await tracks_for_navidrome(nd, "album", "al1", None)
+        self.assertEqual([t["id"] for t in tracks], ["s1"])
+        self.assertEqual(ctx["title"], "Across")
+        tracks, ctx = await tracks_for_navidrome(nd, "artist", "a1", None)
+        self.assertEqual([t["id"] for t in tracks], ["s1"])
+        await nd.close()
+        await fake.server.close()
+
+    async def test_ping_single_flight_and_cache_invalidation(self):
+        fake = FakeSubsonic()
+        await fake.server.start_server()
+        fake.delay = 0.3
+        class Cfg:
+            def __init__(self, d):
+                self.d = d
+            def text(self, k):
+                return self.d.get(k, "")
+        cfg = Cfg({"navidromeUrl": str(fake.server.make_url("")), "navidromeUser": "u", "navidromePass": "p"})
+        nd = Navidrome.from_config(cfg)
+        # two concurrent pings while the first is in flight: one request
+        r = await asyncio.gather(nd.ping(), nd.ping())
+        self.assertEqual(r, [True, True])
+        self.assertEqual(len([1 for ep, _ in fake.calls if ep == "ping"]), 1)
+        # changed credentials invalidate the cached answer
+        fake.delay = 0
+        cfg.d["navidromeUrl"] = "http://127.0.0.1:1"      # nothing listens there
+        self.assertFalse(await nd.ping())
+        # and a transport blow-up degrades to False, never an unhandled task error
+        await nd.close()
+        await fake.server.close()
 
     async def test_route_scrobble(self):
         sent, fell = [], []
