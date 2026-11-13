@@ -40,7 +40,7 @@ QtObject {
   property Director plain: Director { }
   property var clock: 1000000
   readonly property var fields: ["beatPhase", "barPhase", "downbeat", "beatConfidence", "build", "drop", "sectionCode",
-                                 "drops", "phasePulse", "lockWeight"]
+                                 "drops", "phasePulse", "lockWeight", "secIdx", "nextSecIn", "nextSecCode"]
 
   function fresh(conf) {
     var m = JSON.parse(mapJson)
@@ -60,6 +60,8 @@ QtObject {
       var t = song(), tl = t + d.mapLead
       if (d.mapOn && out.onAt < 0) out.onAt = t
       if (Math.abs(t - 3) < 0.009) out.w3 = d.mapWeight
+      if (Math.abs(t - 6) < 0.009) out.sec6 = { idx: d.secIdx, nin: d.nextSecIn, code: d.nextSecCode, tl: tl }
+      if (Math.abs(t - 20) < 0.009) out.sec20 = { idx: d.secIdx, nin: d.nextSecIn, code: d.nextSecCode, tl: tl }
       if (d.mapOn && d.beatPhase < pb - 0.5) out.beatWraps.push(tl)
       if (d.mapOn && d.barPhase < pr - 0.5) out.barWraps++
       pb = d.beatPhase; pr = d.barPhase
@@ -73,6 +75,13 @@ QtObject {
     })
     out.dropsEnd = d.drops
     return out
+  }
+
+  function secTail() {
+    // Inside the last section (44-60) there is no boundary ahead.
+    fresh(); d.playing = true; anchor(45)
+    step(Math.round(4 / 0.016))
+    return { on: d.mapOn, idx: d.secIdx, nin: d.nextSecIn, code: d.nextSecCode }
   }
 
   function seekPast() {
@@ -138,7 +147,12 @@ QtObject {
     // A low-confidence map must leave every output as a Director without one.
     fresh(0.3); d.playing = true; anchor(0)
     var rows = drive([d, plain], 30)
-    return { diffs: sameAs(rows), drops: plain.drops, conf: plain.beatConfidence, weight: d.mapWeight }
+    var mi = -1, mn = -1, mc = -1
+    for (var i = 0; i < rows.length; i++) {
+      mi = Math.max(mi, rows[i][0][10]); mn = Math.max(mn, rows[i][0][11]); mc = Math.max(mc, rows[i][0][12])
+    }
+    return { diffs: sameAs(rows), drops: plain.drops, conf: plain.beatConfidence, weight: d.mapWeight,
+             secIdx: mi, nextSecIn: mn, nextSecCode: mc }
   }
   function nullMap() {
     d.map = null; d.playing = true; anchor(0)
@@ -204,6 +218,26 @@ class DirectorMapTest(unittest.TestCase):
         self.assertEqual(f["section"], 2)
         self.assertAlmostEqual(r["after"]["drop"], 2.718281828 ** (-r["after"]["dt"] / 1.5), delta=0.02)
         self.assertEqual(r["dropsEnd"], 1)
+        # The section ahead: inside steady 0-12 the next boundary is the build at 12.
+        self.assertEqual(r["sec6"]["idx"], 0)
+        self.assertAlmostEqual(r["sec6"]["nin"], 12 - r["sec6"]["tl"], delta=0.02)
+        self.assertEqual(r["sec6"]["code"], 1)
+        # Inside the build 12-28 the next boundary is the drop at 28.
+        self.assertEqual(r["sec20"]["idx"], 1)
+        self.assertAlmostEqual(r["sec20"]["nin"], 28 - r["sec20"]["tl"], delta=0.02)
+        self.assertEqual(r["sec20"]["code"], 2)
+    def test_no_section_ahead_past_the_last_boundary(self):
+        r = self.run_js("secTail")
+        self.assertTrue(r["on"])
+        self.assertEqual(r["idx"], 3)
+        self.assertEqual(r["nin"], -1)
+        self.assertEqual(r["code"], -1)
+
+    def test_untrusted_map_hides_sections_ahead(self):
+        r = self.run_js("regression")
+        self.assertEqual(r["secIdx"], -1)
+        self.assertEqual(r["nextSecIn"], -1)
+        self.assertEqual(r["nextSecCode"], -1)
 
     def test_seek_past_a_drop_does_not_fire(self):
         self.assertEqual(self.run_js("seekPast")["drops"], 0)

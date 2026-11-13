@@ -79,6 +79,9 @@ QtObject {
   property bool mapOn: false             // the switched state: phases come from the map
   property real armedDrop: -1            // song time of the drop whose 1.5 s window has begun (changes once per drop)
   property real dropMapped: 0            // 1 while the current drop pulse came from the map, else 0
+  property int secIdx: -1                // index of the current mapped section, -1 while the map is untrusted
+  property real nextSecIn: -1            // s of presented time to the next section boundary, -1 = none
+  property int nextSecCode: -1           // the next section's code, -1 = none
 
   // ---- grid state (analysis clock, seconds) ----
   property real gridA: 0                 // the time of beat number gridN
@@ -418,6 +421,7 @@ QtObject {
   onMapChanged: {
     firedIdx = -1; songOff = NaN; agreeP = 0; agreeT = 0; agreeOff = false; crossAt = -1; lastTl = -1
     mapWeight = 0; mapOn = false; anticipate = 0; dropIn = -1; armedDrop = -1; dropMapped = 0
+    secIdx = -1; nextSecIn = -1; nextSecCode = -1
     bi = 0; ri = 0; di = 0; si = 0; mBuild = 0
     var m = map
     if (m && m.beats && m.beats.length > 1 && m.bpm > 0) {
@@ -458,6 +462,9 @@ QtObject {
       if (anticipate !== 0) anticipate = 0
       if (dropIn !== -1) dropIn = -1
       if (armedDrop !== -1) armedDrop = -1
+      if (secIdx !== -1) secIdx = -1
+      if (nextSecIn !== -1) nextSecIn = -1
+      if (nextSecCode !== -1) nextSecCode = -1
       return
     }
     var t = songTime(ms)
@@ -530,6 +537,16 @@ QtObject {
     if (anticipate !== ant) anticipate = ant
     var arm = mapOn && din > 0 && din <= 1.5 && dropS[kd] >= 0.35 ? dropT[kd] : -1
     if (armedDrop !== arm) armedDrop = arm
+
+    // The section ahead, for Pilgrimage: only while the map drives.
+    var sIdx = -1, sIn = -1, sCode = -1
+    if (mapOn) {
+      sIdx = si - 1
+      if (si < secStart.length) { sIn = secStart[si] - tl; sCode = secCode[si] }
+    }
+    if (secIdx !== sIdx) secIdx = sIdx
+    if (nextSecIn !== sIn) nextSecIn = sIn
+    if (nextSecCode !== sCode) nextSecCode = sCode
 
     // Fire the drop the playhead just passed, on the map's own time: the
     // pulse's age is 0 exactly when the presented song time reaches it.
