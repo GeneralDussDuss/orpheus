@@ -409,7 +409,12 @@ class UserShaders:
         q = system.qsb_path()
         if not q:
             return 127, NO_QSB
-        rc, text = system.run_quiet([q, "--qt6", "-o", str(out), str(glsl)], timeout=30)
+        # Modern targets only, not --qt6: its GLSL 120/100es variants have no
+        # uint type, so the uint hashes all over modern Shadertoy (PCG etc.)
+        # fail to bake ("Tried to convert uint literal into int"). SPIR-V,
+        # GL 3.3 / GLES 3.0, HLSL and MSL cover every RHI backend Orpheus meets.
+        rc, text = system.run_quiet([q, "--glsl", "300es,330", "--hlsl", "50", "--msl", "12",
+                                     "-o", str(out), str(glsl)], timeout=30)
         if rc == 0 and system.WINDOWS:
             # Bake DXBC in (orpheusd/dxbc.py): without it D3D11 compiles the HLSL on
             # the render thread at first draw, seconds for a raymarcher, a frozen

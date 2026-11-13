@@ -316,6 +316,29 @@ class FolderTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(u2.styles["b"].error, "no shader compiler (qsb)")
             self.assertEqual(u2.styles["b"].url, "")
 
+    async def test_compile_targets_skip_legacy_glsl(self):
+        """uint hashes (PCG and friends, all over modern Shadertoy) cannot be
+        represented in --qt6's GLSL 120/100es variants: qsb dies with "Tried
+        to convert uint literal into int". The baker must request modern
+        targets only."""
+        from orpheusd import system
+        u = self.make(compiler=None)
+        seen = {}
+
+        def capture(argv, **kw):
+            seen.setdefault("argv", argv)
+            return 0, ""
+
+        with mock.patch.dict(os.environ, {"ORPHEUS_QSB": __file__}), \
+             mock.patch.object(system, "run_quiet", side_effect=capture):
+            u._compile_blocking(Path("x.glsl"), Path("x.qsb"))
+        argv = seen["argv"]
+        self.assertNotIn("--qt6", argv)
+        self.assertIn("--glsl", argv)
+        self.assertEqual(argv[argv.index("--glsl") + 1], "300es,330")
+        self.assertIn("--hlsl", argv)
+        self.assertIn("--msl", argv)
+
     async def test_manifest_round_trip(self):
         u = self.make()
         self.write("a.frag", "//! name: Alpha\n//! scale: 0.5\n//! transition: 2\n" + PLAIN)
