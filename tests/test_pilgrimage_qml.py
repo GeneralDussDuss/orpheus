@@ -41,6 +41,7 @@ QtObject {
   property string result: ""
   property var clock: 1000000
   property var requests: []
+  property int empties: 0
 
   property Director d: Director { }
   property Pilgrimage p: Pilgrimage {
@@ -57,7 +58,7 @@ QtObject {
   property Connections rec: Connections {
     target: w.p
     function onStyleChanged() {
-      if (!w.p.style) return             // reset() clears the leg; not a request
+      if (!w.p.style) { w.empties++; return }   // a "" leg would flash the home style
       w.requests.push({ t: w.song(), style: w.p.style, landMs: w.p.landMs, morphMs: w.p.morphMs, kind: w.p.kind })
     }
   }
@@ -196,7 +197,31 @@ QtObject {
     var before = requests.length
     p.trackId = "2"
     step(10)
-    return { before: before, after: requests.length }
+    var last = requests[requests.length - 1]
+    return { before: before, after: requests.length, empties: empties, land: last ? last.landMs : -99 }
+  }
+
+  function unhideStable() {
+    p.map = null; p.sectionCode = 4; p.beatPeriod = 0
+    p.enabled = true
+    step(10)
+    var leg = p.style
+    p.hidden = true
+    step(10)
+    p.hidden = false
+    step(10)
+    return { n: requests.length, same: p.style === leg }
+  }
+
+  function removedOnlyEntry() {
+    p.map = null; p.sectionCode = 4; p.beatPeriod = 0
+    p.enabled = true
+    step(Math.round(17 / 0.016))
+    p.sectionCode = 1                    // build: its route list is just @organ
+    step(10)
+    var name = p.style
+    p.styles = %(styles)s.filter(function(s) { return s !== name })
+    return { removed: name, after: p.style }
   }
 
   function removedLeg() {
@@ -319,6 +344,18 @@ class PilgrimageTest(unittest.TestCase):
     def test_track_change_requests_a_fresh_leg(self):
         r = self.run_js("trackChange")
         self.assertEqual(r["after"] - r["before"], 1)
+        self.assertEqual(r["empties"], 0)         # never flashes the home style through ""
+        self.assertEqual(r["land"], -1)           # and carries no stale landing time
+
+    def test_unhide_keeps_the_current_leg(self):
+        r = self.run_js("unhideStable")
+        self.assertEqual(r["n"], 1)               # re-syncing to the same leg is not a morph
+        self.assertTrue(r["same"])
+
+    def test_removed_only_entry_falls_back(self):
+        r = self.run_js("removedOnlyEntry")
+        self.assertEqual(r["removed"], "@organ")
+        self.assertEqual(r["after"], "tunnel")    # the build list empties -> its fallback
 
     def test_removed_style_on_screen_skips(self):
         r = self.run_js("removedLeg")

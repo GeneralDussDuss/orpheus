@@ -49,8 +49,11 @@ QtObject {
   property int lastIdx: -1               // last mapped secIdx seen
   property real nowMs: 0
 
-  readonly property var resolved: Pilgrim.resolve(route, styles)
-  readonly property int seed: Pilgrim.seedOf(trackId)
+  // Resolved on use, never cached: a change handler (onStylesChanged) can run
+  // before a binding on `styles` would have updated, and a stale route then
+  // hands back the very style that was just removed.
+  function routeNow() { return Pilgrim.resolve(route, styles) }
+  function seedNow() { return Pilgrim.seedOf(trackId) }   // same reason: onTrackIdChanged runs first
   readonly property var secOrds: Pilgrim.ordinals(map && map.sections ? map.sections : null)
   readonly property bool mapDriven: mapLocked && !!map && !!map.sections && map.sections.length > 0
 
@@ -63,11 +66,14 @@ QtObject {
 
   function idle() { landMs = -1; morphMs = -1; kind = -1; style = "" }
   // A track change: start the journey over, and ask for the new track's leg
-  // at once (live mode carries it until the new map is ready).
+  // at once (live mode carries it until the new map is ready). The old leg
+  // stays on screen until the new one lands — clearing `style` would flash
+  // the home style through, and a stale landMs would snap-morph into it.
   function reset() {
     armedIdx = -1; detourIdx = -2; ordCount = {}; lastLegAt = -1e9
     syncMarks()
-    if (enabled) { style = ""; if (!hidden) requestCurrent() }
+    kind = -1; morphMs = -1; landMs = -1
+    if (enabled && !hidden) requestCurrent()
   }
   function syncMarks() { lastSec = sectionCode; lastIdx = secIdx }
 
@@ -89,11 +95,14 @@ QtObject {
   }
 
   // The current section's leg, as a plain downbeat-gated transition: used on
-  // enable, on coming back from hidden, and when a detour's section ends.
+  // enable, on coming back from hidden, after a seek or a track change, and
+  // when a detour's section ends. It re-syncs to the route, so the leg is
+  // computed with no "current" to step past: when the right style is already
+  // on screen, nothing moves.
   function requestCurrent() {
     var code = currentCode()
     var t = Pilgrim.timing(code, beatPeriod, false)
-    request(Pilgrim.leg(resolved, code, ordinalFor(code, secIdx), style, banned, seed), -1, t.ms, t.kind)
+    request(Pilgrim.leg(routeNow(), code, ordinalFor(code, secIdx), "", banned, seedNow()), -1, t.ms, t.kind)
   }
 
   function tick(ms) {
@@ -134,7 +143,7 @@ QtObject {
               armedIdx = bIdx          // a section under 4 bars keeps the style (drops excepted)
             } else if (intoCur >= bar) {
               armedIdx = bIdx
-              request(Pilgrim.leg(resolved, nextSecCode, ordinalFor(nextSecCode, bIdx), style, banned, seed),
+              request(Pilgrim.leg(routeNow(), nextSecCode, ordinalFor(nextSecCode, bIdx), style, banned, seedNow()),
                       Math.round(nextSecIn * 1000), -1, tm.kind)
             }                          // else: not a bar into this section yet; try next tick
           }
@@ -150,14 +159,14 @@ QtObject {
           if (!transitioning && ms - lastLegAt >= 16000) {
             var t = Pilgrim.timing(code, beatPeriod, false)
             var o = ordCount[code] || 0
-            if (request(Pilgrim.leg(resolved, code, o, style, banned, seed), -1, t.ms, t.kind))
+            if (request(Pilgrim.leg(routeNow(), code, o, style, banned, seedNow()), -1, t.ms, t.kind))
               ordCount[code] = o + 1
           }
         }
       } else if (ms - lastLegAt >= 40000) {
         // No director, no sections: walk the steady list.
         var o4 = ordCount[4] || 0
-        if (request(Pilgrim.leg(resolved, 4, o4, style, banned, seed), -1, 2000, 5))
+        if (request(Pilgrim.leg(routeNow(), 4, o4, style, banned, seedNow()), -1, 2000, 5))
           ordCount[4] = o4 + 1
       }
     }
@@ -169,7 +178,7 @@ QtObject {
     var code = currentCode()
     var o = ordinalFor(code, secIdx) + 1
     var bar = beatPeriod > 0 ? Math.round(4000 * beatPeriod) : 2000
-    var nm = request(Pilgrim.leg(resolved, code, o, style, banned, seed),
+    var nm = request(Pilgrim.leg(routeNow(), code, o, style, banned, seedNow()),
                      Math.max(300, Math.min(5000, bar)), -1, Pilgrim.timing(code, beatPeriod, false).kind)
     if (nm && !mapDriven) ordCount[code] = (ordCount[code] || 0) + 1
     return nm
