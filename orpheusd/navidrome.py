@@ -56,6 +56,15 @@ class Navidrome:
     def available(self) -> bool:
         return bool(self.url and self.user and self.password.strip())
 
+    @property
+    def host(self) -> str:
+        from urllib.parse import urlparse
+        return urlparse(self.url).netloc or self.url
+
+    def last_ping(self) -> bool | None:
+        """The most recent ping result without waiting for one; None = never."""
+        return self._ping[1] if self._ping else None
+
     async def close(self):
         if self._session:
             await self._session.close()

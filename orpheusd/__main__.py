@@ -39,6 +39,7 @@ from .tidal import QUALITIES, Tidal
 from .video import Video
 from .soundcloud import SoundCloud
 from .system import CACHE_DIR, RUNTIME_DIR, STATE_DIR, WINDOWS, curd_path
+from .navidrome import Navidrome, search_all
 from .youtube import YouTube, YouTubeError
 
 log = logging.getLogger("orpheus")
@@ -72,6 +73,13 @@ class App:
         self.tidal = Tidal(STATE_DIR, None)
         self.youtube = YouTube()
         self.sources = {"youtube": self.youtube, "soundcloud": SoundCloud()}
+        # A self-hosted Navidrome library (orpheusd/navidrome.py): three
+        # config.json keys make it a source; without them, nothing changes.
+        # Credentials are read once - restart orpheusd after editing them.
+        self.navidrome = Navidrome(self.config.text("navidromeUrl"), self.config.text("navidromeUser"),
+                                   self.config.text("navidromePass"))
+        if self.navidrome.available:
+            self.sources["navidrome"] = self.navidrome
         self.anime = Anime(RUNTIME_DIR)
         # The drop map: each resolved TIDAL track is analysed ahead, at idle.
         self.analysis = Analysis(CACHE_DIR, RUNTIME_DIR, self.config, self._changed)
@@ -228,7 +236,9 @@ class App:
                 "analysis": self.analysis.state(),
                 "shaders": self.shaders.status(),
                 "providers": {"youtube": True, "soundcloud": True, "anime": self.anime.available,
-                              "curd": self.anime.curd},
+                              "curd": self.anime.curd, "navidrome": self.navidrome.available},
+                "navidromeOk": self.navidrome.last_ping(),
+                "navidromeHost": self.navidrome.host if self.navidrome.available else "",
                 "likedVersion": self.tidal.liked_version,
                 "listening": {"endless": self.config.endless, "crossfade": self.config.crossfade,
                               "sleep": self.sleep_state(),
@@ -443,6 +453,9 @@ class App:
             since = req.query.get("since")
             if since is not None:
                 await self.wait_change(int(since), 25)
+            if self.navidrome.available:
+                # Refresh reachability in the background; the client caches it.
+                asyncio.get_running_loop().create_task(self.navidrome.ping())
             return J(self.status())
 
         @r.post("/quit")
@@ -487,14 +500,25 @@ class App:
 
         @r.get("/search")
         async def search(req):
-            need_login()
+            # TIDAL and Navidrome at once, either side degrading to nothing;
+            # signed out with a Navidrome configured, its library still answers.
+            if not self.navidrome.available:
+                need_login()
             q = req.query.get("q", "").strip()
-            return J(await self.tidal.search(q) if q else {"tracks": [], "albums": [], "artists": [], "playlists": []})
+            if not q:
+                return J({"tracks": [], "albums": [], "artists": [], "playlists": []})
+            tidal_search = self.tidal.search if self.tidal.signed_in else None
+            return J(await search_all(tidal_search, self.navidrome, q))
 
         @r.get("/{kind:album|playlist|mix|artist}/{id}")
         async def item(req):
+            kind = req.match_info["kind"]
+            if req.query.get("provider") == "navidrome" and kind in ("album", "artist"):
+                if not self.navidrome.available:
+                    raise web.HTTPNotFound(text="navidrome is not configured")
+                return J(await getattr(self.navidrome, kind)(req.match_info["id"]))
             need_login()
-            return J(await self.fetch(req.match_info["kind"], req.match_info["id"]))
+            return J(await self.fetch(kind, req.match_info["id"]))
 
         @r.get("/collection/{what}")
         async def collection(req):
