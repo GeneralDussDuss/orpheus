@@ -49,6 +49,9 @@ ShaderEffect {
   // Orpheus style. Bloom and trails still key off renderScale alone.
   readonly property real userScale: userMeta && userMeta.scale > 0 ? userMeta.scale : 1
   readonly property real effScale: renderScale * userScale
+  // The outgoing style's own scale, for oldSrc: a 4 s morph must not shade a
+  // 0.65-scale style at the incoming style's pixel count (or the other way).
+  readonly property real oldUserScale: oldMeta && oldMeta.scale > 0 ? oldMeta.scale : 1
   // Drop effects ride in VizPost too, so with them on the chain stays built even
   // with bloom and trails off (no layer toggle, and so no hitch, on the drop).
   readonly property bool dropFxOn: !!engine && engine.dropFx === true && styleName !== "mini" && Math.min(width, height) >= 48
@@ -380,6 +383,13 @@ ShaderEffect {
   // render for two beats (0.8-1.5 s) and trans.frag blends them: glitch
   // slices, a zoom through, a radial dissolve or a chroma split, chosen by the
   // style being entered. oldFx renders only for that time.
+  // Pilgrimage's morph inputs (StageView passes them through; -1 = none).
+  // landMs: begin at once and land in that long. morphMs: the duration a
+  // normal downbeat-gated transition uses. morphKind: overrides the kind.
+  property real landMs: -1
+  property real morphMs: -1
+  property int morphKind: -1
+
   property string oldStyle: ""
   property string pendingStyle: ""
   property bool transitioning: false
@@ -398,6 +408,8 @@ ShaderEffect {
     }
     if (styleName === shownStyle) { downbeatWait.stop(); pendingStyle = ""; return }
     pendingStyle = styleName
+    // Pilgrimage hands an exact landing: start now, complete on the boundary.
+    if (landMs >= 300 && landMs <= 5000) { beginTransition(Math.round(landMs)); return }
     // A mapped drop is on its way (Stage pre-arms 1.5 s ahead): stretch the
     // transition so it completes on the drop frame itself.
     if (engine && engine.mapLocked && engine.dropIn > 0.3 && engine.dropIn < 3) { beginTransition(Math.round(1000 * engine.dropIn)); return }
@@ -422,11 +434,14 @@ ShaderEffect {
     pendingStyle = ""
     // A user style may name its own way in (`//! transition:`); otherwise a random one.
     var um = engine && engine.userStyle ? engine.userStyle(shownStyle) : null
-    tkind = kinds[shownStyle] !== undefined ? kinds[shownStyle]
+    tkind = morphKind >= 0 ? Math.min(5, morphKind)
+          : kinds[shownStyle] !== undefined ? kinds[shownStyle]
           : (um && um.transition >= 0 ? um.transition : Math.floor(Math.random() * 4))
     tseed = Math.floor(Math.random() * 1000)
     tprog = 0
-    transAnim.duration = durationMs > 0 ? durationMs : Math.round(1000 * Math.max(0.8, Math.min(1.5, 1 / Math.max(0.3, tempo))))
+    transAnim.duration = durationMs > 0 ? durationMs
+                       : morphMs >= 300 && morphMs <= 5000 ? Math.round(morphMs)
+                       : Math.round(1000 * Math.max(0.8, Math.min(1.5, 1 / Math.max(0.3, tempo))))
     transitioning = true
     transAnim.restart()
   }
@@ -512,6 +527,8 @@ ShaderEffect {
     live: fx.transitioning
     smooth: true
     format: ShaderEffectSource.RGBA16F
-    textureSize: fx.layer.textureSize
+    // The outgoing style at its own scale (safe: oldSrc is not recursive).
+    textureSize: Qt.size(Math.max(1, Math.round(fx.width * fx.dpr * fx.renderScale * fx.oldUserScale)),
+                         Math.max(1, Math.round(fx.height * fx.dpr * fx.renderScale * fx.oldUserScale)))
   }
 }
