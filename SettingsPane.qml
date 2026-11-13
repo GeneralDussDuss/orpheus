@@ -256,6 +256,17 @@ Rectangle {
         else r.push({ kind: "action", id: "lastfmConnect", label: "connect last.fm", hint: "opens the browser",
                       desc: "approve orpheus on last.fm in the browser, then come back and finish" })
       }
+      r.push({ kind: "header", label: "navidrome" })
+      var ndOn = api && api.status && api.status.providers && api.status.providers.navidrome
+      var ndOk = api && api.status ? api.status.navidromeOk : null
+      var ndHost = api && api.status ? (api.status.navidromeHost || "") : ""
+      r.push({ kind: "text", id: "navidromeUrl", label: "navidrome server", def: "",
+               hint: ndOn ? (ndOk === false ? "✕ " + ndHost + " unreachable" : "● " + ndHost) : "",
+               desc: "your self-hosted server, e.g. http://music.local:4533 · its library joins the search" })
+      r.push({ kind: "text", id: "navidromeUser", label: "navidrome user", def: "",
+               desc: "the navidrome account to browse and scrobble as" })
+      r.push({ kind: "text", id: "navidromePass", label: "navidrome password", secret: true, def: "",
+               desc: "kept in config.json; only a per-request token goes on the wire" })
       if (hasGame) {
         r.push({ kind: "header", label: "discord" })
         r.push({ kind: "text", id: "discordClientId", label: "discord application id", def: "",

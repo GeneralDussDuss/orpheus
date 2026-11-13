@@ -236,7 +236,7 @@ FloatingWindow {
     var c = trackCols(cols)
     var heart = api && api.isLiked("track", it.id) ? "󰋑 " : "  "
     return num + " " + heart + (it.explicit ? win.explicitMark : "") + pad(it.title, c.tw - 2 - (it.explicit ? 2 : 0)) + pad(artists(it.artists), c.aw)
-         + pad(c.album ? it.album : "", c.bw) + (it.hires ? " HR " : "    ") + lpad(clockText(it.duration), 6)
+         + pad(c.album ? it.album : "", c.bw) + (it.hires ? " HR " : it.provider === "navidrome" ? " nd " : "    ") + lpad(clockText(it.duration), 6)
   }
   function headerLine(cols) {
     var c = trackCols(cols)
@@ -526,7 +526,7 @@ FloatingWindow {
     } else if (p.type === "video") {
       loadVideo(p)
     } else if (p.type === "detail") {
-      api.get("/" + p.kind + "/" + p.id, function(ok, d, code) {
+      api.get("/" + p.kind + "/" + p.id + (p.provider ? "?provider=" + p.provider : ""), function(ok, d, code) {
         if (page !== p) return
         if (!ok || !d) { failed(d, code); return }
         pageData = d
@@ -604,7 +604,7 @@ FloatingWindow {
     if (!r || !r.item) return
     var it = r.item
     if (page.type === "video") { videoActivate(it); return }
-    if (it.kind !== "track") { go({ type: "detail", kind: it.kind, id: it.id, title: it.title }); return }
+    if (it.kind !== "track") { go({ type: "detail", kind: it.kind, id: it.id, title: it.title, provider: it.provider }); return }
     var p = page
     if (p.type === "detail" && p.kind !== "artist") api.play({ kind: p.kind, id: p.id }, r.trackIndex)
     else if (p.type === "search") api.play(it)
@@ -687,7 +687,7 @@ FloatingWindow {
       add("add to the end of the queue", "", function() { queueItem(it, false) })
       add("start radio from this track", "", function() { a.play(it); say("radio ╱╱ " + it.title) })
     } else {
-      add("open", "⏎", function() { go({ type: "detail", kind: kind, id: it.id, title: it.title }) })
+      add("open", "⏎", function() { go({ type: "detail", kind: kind, id: it.id, title: it.title, provider: it.provider }) })
       if (kind !== "artist") {
         add("play", "", function() { a.play({ kind: kind, id: it.id }, 0) })
         add("play next", "a", function() { queueItem(it, true) })
@@ -700,9 +700,9 @@ FloatingWindow {
       add(liked ? "unlike" : "like", "f", function() { a.toggleLike(kind, it.id); say((liked ? "unliked ╱╱ " : "liked ╱╱ ") + it.title) })
     }
     if (kind === "track" && it.albumId)
-      add("go to the album", "", function() { go({ type: "detail", kind: "album", id: it.albumId, title: it.album || "album" }) })
+      add("go to the album", "", function() { go({ type: "detail", kind: "album", id: it.albumId, title: it.album || "album", provider: it.provider }) })
     if ((kind === "track" || kind === "album") && it.artistId)
-      add("go to the artist", "", function() { go({ type: "detail", kind: "artist", id: it.artistId, title: artists(it.artists) || "artist" }) })
+      add("go to the artist", "", function() { go({ type: "detail", kind: "artist", id: it.artistId, title: artists(it.artists) || "artist", provider: it.provider }) })
     if (e && e.shareUrl(kind, it.id, false)) {
       sep()
       add("copy link", "y", function() { shareItem(it, false) })
@@ -1785,7 +1785,7 @@ FloatingWindow {
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                 onClicked: function(m) {
                   if (m.button === Qt.RightButton) win.trackMenu(win.track, tileMouse, m.x, m.y)
-                  else if (win.track.albumId) win.go({ type: "detail", kind: "album", id: win.track.albumId, title: win.track.album })
+                  else if (win.track.albumId) win.go({ type: "detail", kind: "album", id: win.track.albumId, title: win.track.album, provider: win.track.provider })
                 }
                 TuiTip { text: "go to the album · right-click for more" }
               }
@@ -1830,7 +1830,7 @@ FloatingWindow {
                   acceptedButtons: Qt.LeftButton | Qt.RightButton
                   onClicked: function(m) {
                     if (m.button === Qt.RightButton) win.trackMenu(win.track, artistMouse, m.x, m.y)
-                    else if (win.track.artistId) win.go({ type: "detail", kind: "artist", id: win.track.artistId, title: win.track.artists[0] })
+                    else if (win.track.artistId) win.go({ type: "detail", kind: "artist", id: win.track.artistId, title: win.track.artists[0], provider: win.track.provider })
                   }
                 }
                }
@@ -1850,7 +1850,7 @@ FloatingWindow {
                   acceptedButtons: Qt.LeftButton | Qt.RightButton
                   onClicked: function(m) {
                     if (m.button === Qt.RightButton) win.trackMenu(win.track, albumMouse, m.x, m.y)
-                    else if (win.track.albumId) win.go({ type: "detail", kind: "album", id: win.track.albumId, title: win.track.album })
+                    else if (win.track.albumId) win.go({ type: "detail", kind: "album", id: win.track.albumId, title: win.track.album, provider: win.track.provider })
                   }
                 }
               }

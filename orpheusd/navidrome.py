@@ -41,16 +41,41 @@ class NavidromeError(RuntimeError):
     pass
 
 
+def _clean_url(url: str) -> str:
+    url = (url or "").strip().rstrip("/")
+    if url.endswith("/rest"):
+        url = url[: -len("/rest")]
+    return url
+
+
 class Navidrome:
     def __init__(self, url: str, user: str, password: str):
-        url = (url or "").strip().rstrip("/")
-        if url.endswith("/rest"):
-            url = url[: -len("/rest")]
-        self.url = url
-        self.user = (user or "").strip()
-        self.password = password or ""
+        self._cfg = None
+        self._url = _clean_url(url)
+        self._user = (user or "").strip()
+        self._password = password or ""
         self._session: aiohttp.ClientSession | None = None
         self._ping: tuple[float, bool] | None = None
+
+    @classmethod
+    def from_config(cls, config) -> "Navidrome":
+        """Read navidromeUrl/User/Pass from config on every use, so edits in
+        the settings page apply without an orpheusd restart."""
+        nd = cls("", "", "")
+        nd._cfg = config
+        return nd
+
+    @property
+    def url(self) -> str:
+        return _clean_url(self._cfg.text("navidromeUrl")) if self._cfg else self._url
+
+    @property
+    def user(self) -> str:
+        return (self._cfg.text("navidromeUser") if self._cfg else self._user).strip()
+
+    @property
+    def password(self) -> str:
+        return self._cfg.text("navidromePass") if self._cfg else self._password
 
     @property
     def available(self) -> bool:

@@ -187,6 +187,28 @@ class NavidromeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.fake.last("scrobble")["submission"], ["false"])
 
 
+class ConfigBackedTest(unittest.IsolatedAsyncioTestCase):
+    async def test_reads_config_live(self):
+        class Cfg:
+            def __init__(self):
+                self.d = {}
+            def text(self, k):
+                return self.d.get(k, "")
+        cfg = Cfg()
+        nd = Navidrome.from_config(cfg)
+        self.assertFalse(nd.available)
+        fake = FakeSubsonic()
+        await fake.server.start_server()
+        cfg.d = {"navidromeUrl": str(fake.server.make_url("")) + "/",
+                 "navidromeUser": "ferry", "navidromePass": "pw"}
+        self.assertTrue(nd.available)          # picked up without a restart
+        self.assertTrue(await nd.ping())
+        q = fake.last("ping")
+        self.assertEqual(q["u"], ["ferry"])
+        await nd.close()
+        await fake.server.close()
+
+
 class MergeAndRoutingTest(unittest.IsolatedAsyncioTestCase):
     def test_merge_search(self):
         base = {"tracks": [1], "albums": [2], "artists": [3], "playlists": [9]}

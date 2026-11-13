@@ -75,11 +75,11 @@ class App:
         self.sources = {"youtube": self.youtube, "soundcloud": SoundCloud()}
         # A self-hosted Navidrome library (orpheusd/navidrome.py): three
         # config.json keys make it a source; without them, nothing changes.
-        # Credentials are read once - restart orpheusd after editing them.
-        self.navidrome = Navidrome(self.config.text("navidromeUrl"), self.config.text("navidromeUser"),
-                                   self.config.text("navidromePass"))
-        if self.navidrome.available:
-            self.sources["navidrome"] = self.navidrome
+        # Credentials are read on every use, so settings edits apply live;
+        # the source is registered unconditionally and only ever reached by
+        # tracks that already carry provider "navidrome".
+        self.navidrome = Navidrome.from_config(self.config)
+        self.sources["navidrome"] = self.navidrome
         self.anime = Anime(RUNTIME_DIR)
         # The drop map: each resolved TIDAL track is analysed ahead, at idle.
         self.analysis = Analysis(CACHE_DIR, RUNTIME_DIR, self.config, self._changed)
