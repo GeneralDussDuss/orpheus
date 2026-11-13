@@ -89,12 +89,48 @@ PanelWindow {
   // autoStyle changes style on the stage only (config and the widget keep the
   // chosen one); any manual pick takes over again.
   property string liveStyle: ""
-  readonly property string current: engine ? (engine.autoStyle && liveStyle ? liveStyle : engine.style) : "skyline"
+  // Pilgrimage first (its leg), then autoStyle's random pick, then the home style.
+  readonly property string current: engine ? (engine.pilgrimage && pilgrim.style ? pilgrim.style
+                                              : engine.autoStyle && liveStyle ? liveStyle : engine.style) : "skyline"
+
+  // The journey between styles (Pilgrimage.qml): mapped boundaries come from
+  // the Director's section-ahead outputs, the clock from the timer below.
+  property Pilgrimage pilgrim: Pilgrimage {
+    enabled: !!win.engine && win.engine.pilgrimage === true
+    styles: win.engine ? win.engine.styles : []
+    route: win.engine ? win.engine.pilgrimRoute : null
+    map: win.engine ? win.engine.dropMapData : null
+    mapLocked: !!win.engine && win.engine.mapLocked === true
+    secIdx: win.engine ? win.engine.secIdx : -1
+    nextSecIn: win.engine ? win.engine.nextSecIn : -1
+    nextSecCode: win.engine ? win.engine.nextSecCode : -1
+    sectionCode: win.engine ? win.engine.sectionCode : 4
+    beatPeriod: win.engine && win.engine.beatConfidence > 0.35 ? 60 / Math.max(40, win.engine.paceBpm) : 0
+    transitioning: win.bleed ? (showView.item ? showView.item.morphing : false)
+                             : (cardView.item ? cardView.item.morphing : false)
+    hidden: !win.visible
+    director: !!win.engine && win.engine.director === true
+    trackId: win.engine && win.engine.api && win.engine.api.track ? String(win.engine.api.track.id) : ""
+  }
+  Timer {
+    interval: 250
+    repeat: true
+    running: win.pilgrim.enabled && win.visible
+    onTriggered: win.pilgrim.tick(Date.now())
+  }
 
   // Every manual change says what it changed to (VizLabel over the visuals).
   signal picked(string name)
   // Picking a style from the deck goes back to the visualizer to show it.
   function pick(name) {
+    // While pilgrimage is on a pick is a detour: the stage shows it until the
+    // next section boundary, and the home style (widget, rail) stays put.
+    if (engine.pilgrimage) {
+      pilgrim.detour(name)
+      if (deck && engine.setScene) engine.setScene("viz")
+      picked(engine.styleLabels[name] || name)
+      return
+    }
     liveStyle = ""
     engine.setStyle(name)
     if (deck && engine.setScene) engine.setScene("viz")
@@ -112,12 +148,23 @@ PanelWindow {
     target: win.engine
     ignoreUnknownSignals: true
     function onDropsChanged() { if (win.engine.autoStyle && win.engine.director) win.switchOnDrop() }
+    // The palette's "pilgrimage · next leg" (and IPC pilgrimNext) land here.
+    function onPilgrimageSkipsChanged() {
+      if (!win.engine.pilgrimage) return
+      var nm = win.pilgrim.skip()
+      if (nm) win.picked(win.engine.styleLabels[nm] || nm)
+    }
+    // A style that failed on the GPU or was removed leaves the journey.
+    function onShaderEvent(kind, name, text) {
+      if (kind === "gpu" || kind === "removed") win.pilgrim.ban("@" + name)
+    }
     // A drop the map sees coming: switch 1.5 s early so the transition lands on it
     // (Viz stretches the blend to dropIn); the drop's own onDropsChanged then
     // falls inside the 20 s cooldown.
     function onArmedDropChanged() { var e = win.engine; if (e.armedDrop >= 0 && e.autoStyle && e.director) win.switchOnDrop() }
   }
   function switchOnDrop() {
+    if (engine.pilgrimage) return      // the journey owns the stage; autoStyle stands down
     var now = Date.now()
     if (now - lastSwitch < cooldownMs) return
     lastSwitch = now
@@ -192,6 +239,8 @@ PanelWindow {
     else if (deck && e.text === "e") deckEject()
     else if (e.key === Qt.Key_Right || e.text === "l") stepStyle(1)
     else if (e.key === Qt.Key_Left || e.text === "h") stepStyle(-1)
+    else if (e.text === "g") { picked(engine.pilgrimage ? "pilgrimage off" : "pilgrimage"); engine.setStageFlag("pilgrimage", "toggle") }
+    else if (e.text === "n" && engine.pilgrimage) { var leg = pilgrim.skip(); if (leg) picked(engine.styleLabels[leg] || leg) }
     else if (e.text === "p" && !bleed) engine.setMiniPlayer(!engine.miniPlayer)
     else if (e.text === "f") leave(toggleShow)
     else if (e.text >= "1" && e.text <= "9" && Number(e.text) <= engine.styles.length) pick(engine.styles[Number(e.text) - 1])
@@ -280,6 +329,9 @@ PanelWindow {
       sourceComponent: StageView {
         engine: win.engine
         styleName: win.current
+        landMs: win.engine && win.engine.pilgrimage ? win.pilgrim.landMs : -1
+        morphMs: win.engine && win.engine.pilgrimage ? win.pilgrim.morphMs : -1
+        morphKind: win.engine && win.engine.pilgrimage ? win.pilgrim.kind : -1
         cursorHidden: win.show && !win.awake
         onSceneMoved: win.wake()
         onSceneLeave: if (win.show) win.leave(function() { win.engine.setPlacement("overlay") })
@@ -444,6 +496,20 @@ PanelWindow {
                           TuiTip { text: win.engine.styleLabels[modelData].toLowerCase(); key: String(index + 1) } }
             }
           }
+          // The last tab is the mode, not a style: the journey between them.
+          Text {
+            readonly property bool on: !!win.engine && win.engine.pilgrimage === true
+            text: (on ? "[" : " ") + "~ pilgrimage" + (on ? "]" : " ")
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+            font.bold: on
+            color: on || pilTabMouse.containsMouse ? win.accentText : win.dim
+            font.underline: pilTabMouse.containsMouse && !on
+            Behavior on color { ColorAnimation { duration: Tui.STATE; easing.type: Easing.InOutCubic } }
+            MouseArea { id: pilTabMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                        onClicked: win.engine.setStageFlag("pilgrimage", "toggle")
+                        TuiTip { text: "pilgrimage · travel between styles with the song"; key: "g" } }
+          }
         }
         // Under the deck the tabs give way to the side of the tape that is playing.
         Text {
@@ -478,6 +544,9 @@ PanelWindow {
         sourceComponent: StageView {
           engine: win.engine
           styleName: win.current
+          landMs: win.engine && win.engine.pilgrimage ? win.pilgrim.landMs : -1
+          morphMs: win.engine && win.engine.pilgrimage ? win.pilgrim.morphMs : -1
+          morphKind: win.engine && win.engine.pilgrimage ? win.pilgrim.kind : -1
           cursorHidden: false
           onSceneEjected: win.leave(win.close)
 
