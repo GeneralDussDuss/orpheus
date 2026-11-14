@@ -351,7 +351,7 @@ That is what makes it safe for a `.desktop` entry, which a launcher may fire twi
 | key | values |
 |---|---|
 | `enabled` | `on` · `off` · `toggle` |
-| `style` | `compact` · `full` |
+| `style` | `compact` · `full` · `cassette` |
 | `corner` | `top-left` · `top-right` · `bottom-left` · `bottom-right` |
 | `layer` | `top` · `reserve` · `desktop` · `tile` · `float` |
 | `viz` | `prism` · `skyline` · `horizon` · `tunnel` · `orb` · `halo` · `scope` · `nova` · `ridge` · `ink` · `abyss` · `aurora` |

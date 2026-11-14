@@ -989,7 +989,7 @@ Item {
   }
   function setWidget(key, value) {
     if (key === "viz" && syncViz && styles.indexOf(value) >= 0) return setStyle(value)
-    var allowed = { enabled: ["on", "off", "toggle"], style: ["compact", "full"], corner: ["top-left", "top-right", "bottom-left", "bottom-right"],
+    var allowed = { enabled: ["on", "off", "toggle"], style: ["compact", "full", "cassette"], corner: ["top-left", "top-right", "bottom-left", "bottom-right"],
                     layer: ["top", "reserve", "desktop", "tile", "float"] }
     if (key === "viz" && styles.indexOf(value) < 0) return "unknown viz: " + value + " (" + styles.join("|") + ")"
     if (allowed[key] && allowed[key].indexOf(value) < 0) return "unknown " + key + ": " + value + " (" + allowed[key].join("|") + ")"

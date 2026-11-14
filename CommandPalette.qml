@@ -227,7 +227,7 @@ Item {
       // behaviour
       var w = e.widget
       add("widget.toggle", "behaviour", "toggle widget", "", onOff(w.enabled !== false), function() { e.setWidget("enabled", "toggle") })
-      var wstyles = ["compact", "full"]
+      var wstyles = ["compact", "full", "cassette"]
       for (var ws = 0; ws < wstyles.length; ws++)
         (function(s) { add("widget.style." + s, "behaviour", "set widget style · " + s, "", w.style === s ? "● now" : "", function() { e.setWidget("style", s) }) })(wstyles[ws])
       var corners = ["top-left", "top-right", "bottom-left", "bottom-right"]
