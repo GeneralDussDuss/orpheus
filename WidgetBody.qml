@@ -93,7 +93,15 @@ TuiBox {
   // Color.* is undefined for a beat while the window's context is built.
   background: Color.background !== undefined ? Qt.rgba(Color.background.r, Color.background.g, Color.background.b, fill ? (Color.glass === true ? 0 : 1) : 0.82) : "#000000"
   title: full ? "orpheus · " + (engine ? (engine.styleLabels[engine.widgetViz] || "") : "").toLowerCase() : "now playing"
-  keyHint: player && player.isPlaying ? "▶" : "‖"
+  // The play/pause glyph, plus a close button -- the corner widget has no window
+  // chrome, so this is its only on-screen way out. Closing turns the widget off
+  // (persisted to config); the command palette's "toggle widget", settings, or
+  // `orpheus widget enabled on` bring it back. The tiled/floating window modes
+  // also close from their own titlebar, which lands in the same place.
+  hintItems: [
+    { k: player && player.isPlaying ? "▶" : "‖" },
+    { k: "✕", run: function() { if (box.engine) box.engine.setWidget("enabled", "off") }, tip: "close the widget" }
+  ]
   clock: engine ? engine.time : -1
 
   // MPRIS position doesn't tick by itself.
