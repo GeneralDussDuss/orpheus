@@ -74,6 +74,7 @@ Rectangle {
     else if (k === Qt.Key_PageDown) { Tui.scrollTo(flick, flick.contentY + flick.height * 0.8); e.accepted = true }
     else if (k === Qt.Key_PageUp) { Tui.scrollTo(flick, flick.contentY - flick.height * 0.8); e.accepted = true }
     else if (t === "g") { Tui.scrollTo(flick, 0); e.accepted = true }
+    else if (t === "G") { Tui.scrollTo(flick, flick.contentHeight); e.accepted = true }
     else if (t === "w") { range = "wrapped"; e.accepted = true }
     else if (t === "r") { load(); e.accepted = true }
     else e.accepted = host.handleKey(e)
@@ -107,8 +108,8 @@ Rectangle {
     return m < 60 ? m + " min" : Math.floor(m / 60) + " h " + (m % 60 ? (m % 60) + " min" : "")
   }
   function pct(x) { return Math.round((x || 0) * 100) + "%" }
-  function pad(s, n) { s = String(s); while (s.length < n) s += " "; return s.length > n ? s.slice(0, n - 1) + "…" : s }
-  function lpad(s, n) { s = String(s); while (s.length < n) s = " " + s; return s }
+  function pad(s, n) { return Tui.pad(s, n, false) }
+  function lpad(s, n) { return Tui.lpad(s, n) }
   function who(a) { return (a || []).slice(0, 2).join(", ") }
   readonly property var days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
@@ -416,14 +417,27 @@ Rectangle {
     }
   }
 
-  Text {
+  Row {
     id: footer
     anchors.bottom: parent.bottom
     width: parent.width
-    elide: Text.ElideRight
-    textFormat: Text.StyledText
-    text: Tui.hints([["⇥", "range"], ["w", "wrapped"], ["j/k", "scroll"], ["r", "reload"], ["esc", "back"]], host.accentText, pane.dim)
-          + (pane.loading ? '&nbsp;&nbsp;&nbsp;<font color="' + Tui.hex(pane.dim) + '">·</font>&nbsp;' + '<font color="' + Tui.hex(pane.dim) + '">' + Tui.busy(host.clock, "reading", Tui.hex(host.accentText)) + '</font>' : "")
-    font.family: host.family; font.pixelSize: Style.font.caption
+    spacing: pane.cw * 2
+    HintBar {
+      anchors.verticalCenter: parent.verticalCenter
+      keyColor: host.accentText; labelColor: pane.dim; hoverColor: host.accentText
+      items: [{ k: "⇥", l: "range", run: function() { pane.step(1) }, tip: "next time range" },
+              { k: "w", l: "wrapped", run: function() { pane.range = "wrapped" }, tip: "this calendar month" },
+              { k: "j/k", l: "scroll" },
+              { k: "r", l: "reload", run: function() { pane.load() }, tip: "read the history again" },
+              { k: "esc", l: "back", run: function() { host.back() } }]
+    }
+    Text {
+      visible: pane.loading
+      anchors.verticalCenter: parent.verticalCenter
+      textFormat: Text.StyledText
+      text: '<font color="' + Tui.hex(pane.dim) + '">·</font>&nbsp;' + Tui.busy(host.clock, "reading", Tui.hex(host.accentText))
+      font.family: host.family; font.pixelSize: Style.font.caption
+      color: pane.dim
+    }
   }
 }

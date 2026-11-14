@@ -606,9 +606,11 @@ Rectangle {
               // only answered the keyboard would teach two different lessons in one
               // window.
               MouseArea {
+                id: bandMouse
                 anchors.fill: parent
                 cursorShape: Qt.SizeVerCursor
                 acceptedButtons: Qt.LeftButton | Qt.MiddleButton
+                property real wheelAcc: 0
                 onPressed: function(m) {
                   pane.forceActiveFocus()
                   if (m.button === Qt.MiddleButton) { pane.sel = parent.index; pane.resetBand() }
@@ -619,7 +621,8 @@ Rectangle {
                 }
                 onWheel: function(w) {
                   pane.sel = parent.index
-                  pane.nudge(w.angleDelta.y > 0 ? pane.step : -pane.step)
+                  var n = Tui.notches(bandMouse, w.angleDelta.y)
+                  if (n) pane.nudge(n * pane.step)
                 }
               }
             }
@@ -682,8 +685,8 @@ Rectangle {
           width: pane.colW * pane.bands.length
           font.family: host.family; font.pixelSize: Style.font.body
           color: host.fg
-          selectionColor: Tui.mix(host.accent, host.bg, 0.5)
-          cursorDelegate: Rectangle { width: host.cw; color: host.accent; opacity: 0.7 }
+          selectionColor: Tui.alpha(Color.accent, Tui.A.select)
+          cursorDelegate: TuiCaret { host: pane.host; visible: aeInput.activeFocus }
           onTextEdited: aeDebounce.restart()
           Keys.onPressed: function(e) {
             var k = e.key, ctrl = e.modifiers & Qt.ControlModifier
@@ -742,7 +745,7 @@ Rectangle {
           width: parent.width
           Repeater {
             model: Math.max(0, Math.min(pane.aeVis, pane.aeResults.length - pane.aeTop))
-            Text {
+            Item {
               id: aeRow
               required property int index
               readonly property int i: pane.aeTop + index
@@ -750,19 +753,32 @@ Rectangle {
               readonly property bool cur: i === pane.aeCur
               width: picker.width
               height: picker.rowH
-              verticalAlignment: Text.AlignVCenter
-              elide: Text.ElideRight
-              textFormat: Text.StyledText
-              text: (cur ? pane.accTag("▸&nbsp;") : "&nbsp;&nbsp;")
-                    + '<font color="' + Tui.hex(cur ? host.accentText : host.fg) + '">' + Tui.esc(r.name || "") + '</font>'
-                    + "&nbsp;&nbsp;" + pane.dimTag(Tui.esc(r.source || "") + (r.rig ? " · " + Tui.esc(r.rig) : "")
-                                         + (r.form ? " · " + Tui.esc(r.form) : ""))
-                    + (pane.autoeq && r.path === pane.autoeq.path ? pane.accTag(" ●") : "")
-              font.family: host.family; font.pixelSize: Style.font.body
-              color: host.fg
-              MouseArea {
+              Rectangle {
+                z: -1
                 anchors.fill: parent
+                color: Tui.alpha(Color.accent, aeMouse.pressed ? Tui.A.press : aeRow.cur ? Tui.A.cursor : Tui.A.hover)
+                opacity: aeMouse.pressed || aeRow.cur || aeMouse.containsMouse ? 1 : 0
+                Behavior on opacity { enabled: !aeMouse.pressed; NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+              }
+              Text {
+                anchors.fill: parent
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+                textFormat: Text.StyledText
+                text: (aeRow.cur ? pane.accTag("▸&nbsp;") : "&nbsp;&nbsp;")
+                      + '<font color="' + Tui.hex(aeRow.cur ? host.accentText : host.fg) + '">' + Tui.esc(aeRow.r.name || "") + '</font>'
+                      + "&nbsp;&nbsp;" + pane.dimTag(Tui.esc(aeRow.r.source || "") + (aeRow.r.rig ? " · " + Tui.esc(aeRow.r.rig) : "")
+                                           + (aeRow.r.form ? " · " + Tui.esc(aeRow.r.form) : ""))
+                      + (pane.autoeq && aeRow.r.path === pane.autoeq.path ? pane.accTag(" ●") : "")
+                font.family: host.family; font.pixelSize: Style.font.body
+                color: host.fg
+              }
+              MouseArea {
+                id: aeMouse
+                anchors.fill: parent
+                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
+                onPositionChanged: if (pane.aeCur !== aeRow.i) pane.aeCur = aeRow.i
                 onClicked: { pane.aeCur = aeRow.i; aeInput.forceActiveFocus(); pane.aeApply() }
               }
             }
@@ -779,9 +795,14 @@ Rectangle {
         }
 
         MouseArea {
+          id: aeWheelMouse
           anchors.fill: parent
           acceptedButtons: Qt.NoButton
-          onWheel: function(w) { pane.moveCur(w.angleDelta.y > 0 ? -3 : 3) }
+          property real wheelAcc: 0
+          onWheel: function(w) {
+            var n = Tui.notches(aeWheelMouse, w.angleDelta.y)
+            if (n) pane.moveCur(-n * 3)
+          }
         }
       }
 
@@ -848,7 +869,10 @@ Rectangle {
 
     Text {
       visible: !pane.loaded
-      text: pane.waited ? "the player service isn't answering · esc goes back" : "waiting for the player service…"
+      textFormat: Text.StyledText
+      text: pane.waited
+            ? '<font color="' + Tui.hex(Tui.ensure(Color.urgent, host.bg, 4.5)) + '">✕</font> the player service isn\'t answering · esc goes back'
+            : Tui.busy(host.clock, "waiting for the player service", Tui.hex(host.accentText))
       font.family: host.family; font.pixelSize: Style.font.caption
       color: host.dim
     }

@@ -378,6 +378,7 @@ Item {
                 { k: "esc", l: "close", run: function() { pal.close() } }]
     footer: (input.text.trim() ? pal.hits.length + " of " + pal.all.length : pal.all.length + " commands")
     focused: true
+    flickable: results
     clock: host.clock
 
     MouseArea { anchors.fill: parent }   // keep clicks inside from closing it
@@ -489,7 +490,8 @@ Item {
             anchors.right: nowText.left; anchors.rightMargin: host.cw
             anchors.verticalCenter: parent.verticalCenter
             elide: Text.ElideRight
-            text: hit.c.label || ""
+            textFormat: Text.StyledText
+            text: input.text.trim() ? Tui.highlight(hit.c.label || "", input.text, Tui.hex(host.accentText)) : Tui.esc(hit.c.label || "")
             font.family: host.family; font.pixelSize: Style.font.body
             color: hit.isCursor ? host.fg : Tui.mix(host.fg, host.dim, 0.35)
           }

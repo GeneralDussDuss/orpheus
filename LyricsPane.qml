@@ -140,6 +140,10 @@ Rectangle {
     // three lines a step, eased by each view's contentY Behavior
     else if (k === Qt.Key_Down || t === "j") { var f = list.visible ? list : plainFlick; Tui.scrollTo(f, f.contentY + (host ? host.ch * 3 : 48)); e.accepted = true }
     else if (k === Qt.Key_Up || t === "k") { var g = list.visible ? list : plainFlick; Tui.scrollTo(g, g.contentY - (host ? host.ch * 3 : 48)); e.accepted = true }
+    else if (k === Qt.Key_PageDown) { var fd = list.visible ? list : plainFlick; Tui.scrollTo(fd, fd.contentY + fd.height * 0.8); e.accepted = true }
+    else if (k === Qt.Key_PageUp) { var fu = list.visible ? list : plainFlick; Tui.scrollTo(fu, fu.contentY - fu.height * 0.8); e.accepted = true }
+    else if (t === "g") { var ft = list.visible ? list : plainFlick; Tui.scrollTo(ft, 0); e.accepted = true }
+    else if (t === "G") { var fb = list.visible ? list : plainFlick; Tui.scrollTo(fb, fb.contentHeight); e.accepted = true }
     else e.accepted = host.handleKey(e)
   }
 
@@ -228,6 +232,31 @@ Rectangle {
 
       width: ListView.view.width
       height: flow.implicitHeight + pad * 2
+
+      Rectangle {
+        z: -1
+        anchors.fill: parent
+        color: Tui.alpha(Color.accent, rowArea.pressed ? Tui.A.press : Tui.A.hover)
+        opacity: !row.gap && (rowArea.pressed || (rowArea.containsMouse && !row.isNow)) ? 1 : 0
+        Behavior on opacity { enabled: !rowArea.pressed; NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+      }
+
+      MouseArea {
+        id: rowArea
+        anchors.fill: parent
+        enabled: !row.gap && pane.synced && !!pane.api && row.modelData.t !== undefined
+        hoverEnabled: true
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+        onClicked: {
+          var to = Math.max(0, row.modelData.t)
+          pane.api.control("seek", { position: to })
+          pane.api.posBase = to
+          pane.api.posAt = Date.now()
+          pane.api.position = to
+          pane.clockPos = to
+        }
+        TuiTip { text: !row.gap && pane.synced && pane.host && row.modelData.t !== undefined ? "jump to " + pane.host.clockText(row.modelData.t) : "" }
+      }
 
       Flow {
         id: flow
@@ -360,24 +389,14 @@ Rectangle {
                                     : loading ? "asking the lyrics sources"
                                     : instrumental ? "nothing to sing along to"
                                     : "nobody has shared any yet · they'll show if they turn up"
-  Column {
+  TuiEmpty {
     anchors.centerIn: parent
-    spacing: host ? host.ch * 0.4 : 6
-    opacity: pane.emptyTitle !== "" ? 1 : 0
-    visible: opacity > 0
-    Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.InOutCubic } }
-    Text {
-      anchors.horizontalCenter: parent.horizontalCenter
-      text: pane.emptyTitle
-      font.family: host.family; font.pixelSize: Style.font.body
-      color: Tui.mix(host.fg, host.bg, 0.25)
-    }
-    Text {
-      anchors.horizontalCenter: parent.horizontalCenter
-      text: pane.emptyNote
-      font.family: host.family; font.pixelSize: Style.font.caption
-      color: host.dim
-    }
+    width: Math.min(parent.width - (host ? host.cw * 6 : 24), host ? host.cw * 60 : 480)
+    host: pane.host
+    shown: pane.emptyTitle !== ""
+    kind: pane.loading && !!pane.track ? "busy" : "empty"
+    title: pane.loading && !!pane.track ? "looking for lyrics" : pane.emptyTitle
+    reason: pane.emptyNote
   }
 
   // the keys, each one a button too

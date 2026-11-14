@@ -34,8 +34,12 @@ TuiBox {
   readonly property real position: ours ? (engine.api.position || 0) : mprisPos
 
   onPlayerChanged: { mprisBase = 0; mprisAt = Date.now(); mprisPos = 0 }
-  readonly property color fg: Tui.ensure(Color.foreground, Color.background, 7)
-  readonly property color dim: Tui.muted(Color.foreground, Color.background, 4.5)
+  readonly property color baseBg: Color.background !== undefined ? Color.background : "#000000"
+  readonly property color bg: Qt.rgba(baseBg.r, baseBg.g, baseBg.b, 1)
+  readonly property color fg: Tui.ensure(Color.foreground, bg, 7)
+  readonly property color dim: Tui.muted(Color.foreground, bg, 4.5)
+  readonly property color accent: Tui.ensure(Color.accent, bg, 3)
+  readonly property color accentText: Tui.ensure(Color.accent, bg, 4.5)
   // Glow on the accents only: the play key on the beat, a faint halo on the
   // seek line and a liked heart.
   readonly property real bloom: Tui.bloom(engine)
@@ -207,11 +211,13 @@ TuiBox {
           property bool scrubbing: false
           property real scrubFrac: 0
           readonly property real frac: scrubbing ? scrubFrac : box.position / Math.max(1, box.length)
-          text: Tui.meter(frac, cells, "━", "─", "●") + " " + box.clock(scrubbing ? scrubFrac * box.length : box.position)
+          textFormat: Text.StyledText
+          text: Tui.meterRich(frac, cells, box.accent, Tui.mix(box.dim, box.bg, 0.4))
+                + ' <font color="' + Tui.hex(box.dim) + '">' + box.clock(scrubbing ? scrubFrac * box.length : box.position) + '</font>'
           font.family: Style.font.family; font.pixelSize: Style.font.caption
-          color: Color.accent !== undefined ? Color.accent : "#000000"
+          color: box.accent
           // the line's own width, measured in its font (the old maths scaled the body cell)
-          TextMetrics { id: seekLine; font: seek.font; text: Tui.meter(0, seek.cells, "━", "─", "●") }
+          TextMetrics { id: seekLine; font: seek.font; text: Tui.meter(0, seek.cells, "━", "─", "╸") }
           MouseArea {
             id: seekMouse
             width: seekLine.advanceWidth

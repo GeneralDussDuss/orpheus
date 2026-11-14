@@ -208,14 +208,8 @@ FloatingWindow {
   }
   // Fit `s` to n cells. A cut keeps one blank cell at its end, so a cut
   // column never runs into the next ("Everything In Its R…Radiohead").
-  function pad(s, n) {
-    s = String(s || "")
-    if (n <= 0) return ""
-    if (s.length >= n) return s.slice(0, Math.max(0, n - 2)) + (n >= 2 ? "… " : " ")
-    while (s.length < n) s += " "
-    return s
-  }
-  function lpad(s, n) { s = String(s || ""); while (s.length < n) s = " " + s; return s }
+  function pad(s, n) { return Tui.pad(s, n, true) }
+  function lpad(s, n) { return Tui.lpad(s, n) }
   function artists(a) { return (a || []).join(", ") }
 
   // Track table columns, shared by the header row and every track row.
@@ -1049,12 +1043,23 @@ FloatingWindow {
         if (win.page.type === "settings")
           return [h("/", "search", function() { if (settingsLoader.item) settingsLoader.item.startSearch() }, "find a setting"),
                   h("d", "default", null, "reset the selected setting"), h("esc", "back", win.back)]
-        if (win.page.type === "stats") return [h("⇥", "range"), h("w", "wrapped")]
+        if (win.page.type === "stats")
+          return [h("⇥", "range", function() { if (statsLoader.item) statsLoader.item.step(1) }, "next time range"),
+                  h("w", "wrapped", function() { if (statsLoader.item) statsLoader.item.range = "wrapped" }, "this calendar month"),
+                  h("r", "reload", function() { if (statsLoader.item) statsLoader.item.load() }, "read the history again"),
+                  h("esc", "back", win.back)]
         if (win.page.type === "search") return [h("/", "search", function() { searchInput.forceActiveFocus() }), h("⏎", "play", act)]
         return [h("⏎", "open", act, "open or play the row"), h("a", "next", function() { win.queueItem(win.cursorItem(), true) }, "play the row next"),
                 h("f", "♥ like", win.likeCursor, "like the row"), h("P", "play all", function() { win.playPage(false) }, "play this page")]
       }
-      footer: win.history.length ? "esc back" : ""
+      footer: {
+        var bits = []
+        if (!list.covered && win.rows.length > 0 && win.pageTracks.length > 0)
+          bits.push(win.pageTracks.length + (win.pageTracks.length === 1 ? " track" : " tracks"))
+        if (win.history.length) bits.push("esc back")
+        return bits.join(" · ")
+      }
+      flickable: list.covered ? null : list
       focused: list.activeFocus || searchInput.activeFocus || (settingsLoader.item && settingsLoader.item.activeFocus)
                || (statsLoader.item && statsLoader.item.activeFocus) || false
       clock: win.clock
@@ -1891,6 +1896,7 @@ FloatingWindow {
         height: parent.height - y
         title: "up next"
         keyHint: win.st.context && win.st.context.title ? win.st.context.title : ""
+        flickable: upNextList
         clock: win.clock
         background: win.boxFill
         // Nothing queued and nothing to continue: say so, and what to do,

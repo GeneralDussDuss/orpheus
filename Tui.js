@@ -109,6 +109,27 @@ function fit(s, n) {
   return s.slice(0, i) + "…"
 }
 
+// Right-pad `s` to `n` terminal cells (CJK/wide = 2 cells, surrogate-safe).
+// With `gutter` true, a truncated or exact-width string leaves 1 trailing space
+// so adjacent table columns never run into each other.
+function pad(s, n, gutter) {
+  s = String(s === undefined || s === null ? "" : s)
+  if (n <= 0) return ""
+  var c = cells(s)
+  if (c > n || (gutter && c === n)) {
+    if (gutter && n < 2) return " ".repeat(n)
+    var f = fit(s, gutter ? n - 1 : n)
+    return f + " ".repeat(Math.max(0, n - cells(f)))
+  }
+  return s + " ".repeat(n - c)
+}
+
+function lpad(s, n) {
+  s = String(s === undefined || s === null ? "" : s)
+  var c = cells(s)
+  return (c < n ? " ".repeat(n - c) : "") + s
+}
+
 // Braille spectrum: `levels` (0..1) drawn as `rows` lines of braille, each
 // cell holding 2 bands x 4 dots, bars growing from the bottom line up.
 var DOTS_L = [0x1, 0x2, 0x4, 0x40]
@@ -144,6 +165,42 @@ function hex(c) {
 }
 
 function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
+
+// Highlight matched characters of `query` inside `text` using `<font color="matchHex"><b>...</b></font>`.
+function highlight(text, query, matchHex) {
+  text = String(text || "")
+  var q = String(query || "").trim().toLowerCase()
+  if (!q) return esc(text)
+  var low = text.toLowerCase()
+  var hit = {}
+  var subAt = low.indexOf(q)
+  if (subAt >= 0) {
+    for (var k = 0; k < q.length; k++) hit[subAt + k] = true
+  } else {
+    var at = 0
+    for (var i = 0; i < q.length; i++) {
+      var ch = q.charAt(i)
+      if (ch === " ") continue
+      var j = low.indexOf(ch, at)
+      if (j < 0) return esc(text)
+      hit[j] = true
+      at = j + 1
+    }
+  }
+  var out = "", on = false, run = ""
+  function flush() {
+    if (!run) return
+    out += on ? '<font color="' + matchHex + '"><b>' + esc(run) + '</b></font>' : esc(run)
+    run = ""
+  }
+  for (var m = 0; m < text.length; m++) {
+    var want = !!hit[m]
+    if (want !== on) { flush(); on = want }
+    run += text.charAt(m)
+  }
+  flush()
+  return out
+}
 
 // Keycap hints as styled text: [["space", "play"], ["n/p", "skip"]] ->
 // keys in the accent colour, labels muted.

@@ -24,8 +24,10 @@ Item {
   property color text: Color.foreground
   property real clock: -1               // engine heartbeat (seconds), for callers that animate content
   property real glow: 0                 // bloom budget (Tui.bloom) for the focused edge; 0 = none (menus, sheets)
+  property Flickable flickable: null
   default property alias content: inner.data
 
+  readonly property color opaqueBg: Qt.rgba(background.r, background.g, background.b, 1)
   readonly property real cw: fm.advanceWidth("M")
   readonly property real ch: fm.height
   // Focused: the border breathes toward the accent on the shared clock.
@@ -107,7 +109,7 @@ Item {
       font.family: Style.font.family
       font.pixelSize: Style.font.body
       font.bold: box.focused
-      color: box.focused ? Color.accent : box.text
+      color: box.focused ? Tui.ensure(Color.accent, box.opaqueBg, 4.5) : Tui.ensure(box.text, box.opaqueBg, 4.5)
     }
   }
 
@@ -134,10 +136,9 @@ Item {
       x: hintPad.advanceWidth
       anchors.verticalCenter: parent.verticalCenter
       items: box.hintItems
-      readonly property color opaque: Qt.rgba(box.background.r, box.background.g, box.background.b, 1)
-      keyColor: Tui.ensure(Color.accent, opaque, 4.5)
-      labelColor: Tui.muted(Color.foreground, opaque, 4.5)
-      hoverColor: Tui.ensure(Color.accent, opaque, 4.5)
+      keyColor: Tui.ensure(Color.accent, box.opaqueBg, 4.5)
+      labelColor: Tui.muted(Color.foreground, box.opaqueBg, 4.5)
+      hoverColor: Tui.ensure(Color.accent, box.opaqueBg, 4.5)
     }
   }
 
@@ -155,7 +156,7 @@ Item {
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
       anchors.verticalCenter: parent.verticalCenter
-      color: box.focused ? Color.accent : Tui.muted(Color.foreground, Color.background, 4.5)
+      color: box.focused ? Tui.ensure(Color.accent, box.opaqueBg, 4.5) : Tui.muted(Color.foreground, box.opaqueBg, 4.5)
     }
   }
 
@@ -174,8 +175,23 @@ Item {
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
       anchors.verticalCenter: parent.verticalCenter
-      color: Tui.muted(Color.foreground, Color.background, 4.5)
+      color: Tui.muted(Color.foreground, box.opaqueBg, 4.5)
     }
+  }
+
+  Rectangle {
+    id: scrollThumb
+    readonly property real trackTop: box.ch / 2 + 2
+    readonly property real trackH: Math.max(0, box.height - trackTop - 2)
+    readonly property real ratio: box.flickable ? Math.max(0.08, Math.min(1, box.flickable.visibleArea.heightRatio)) : 1
+    readonly property real pos: box.flickable ? Math.max(0, Math.min(1 - ratio, box.flickable.visibleArea.yPosition)) : 0
+    visible: !!box.flickable && box.flickable.visible && box.flickable.contentHeight > box.flickable.height + 1
+    x: box.width - 2
+    y: Math.round(trackTop + pos * trackH)
+    width: 2
+    height: Math.max(Math.round(box.ch * 0.8), Math.round(ratio * trackH))
+    color: box.focused ? Tui.ensure(Color.accent, box.opaqueBg, 3) : Tui.mix(box.line, Color.accent, 0.45)
+    opacity: 0.85
   }
 
   Item {

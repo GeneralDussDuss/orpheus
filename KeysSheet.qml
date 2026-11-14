@@ -59,9 +59,9 @@ Item {
                    ["drag  scroll", "set a band"], ["middle-click", "zero a band"], ["right-click", "bypass"]]],
     ["autoeq picker", [["type", "filter"], ["⏎", "apply"], ["↑ ↓", "move"], ["pgup pgdn", "page"],
                        ["ctrl+r", "refresh the index"], ["esc", "back to the bars"]]],
-    ["lyrics", [["]  [", "sync later / earlier"], ["\\", "reset the sync"], ["m", "entrance: wave, rain, plain"], ["j k  ↓ ↑", "scroll"]]],
+    ["lyrics", [["]  [", "sync later / earlier"], ["\\", "reset the sync"], ["m", "entrance: wave, rain, plain"], ["j k  ↓ ↑", "scroll"], ["g  G", "top / bottom"], ["click a line", "seek to that line"]]],
     ["stats", [["⇥ ⇧⇥  ] [", "next / previous range"], ["l h  → ←", "the same"], ["w", "wrapped"], ["r", "reload"],
-               ["j k  ↓ ↑", "scroll"], ["pgdn pgup", "scroll a page"], ["g", "top"]]],
+               ["j k  ↓ ↑", "scroll"], ["pgdn pgup", "scroll a page"], ["g  G", "top / bottom"]]],
     ["settings", [["⇥  ⇧⇥  ] [", "section"], ["j k  ↓ ↑", "move"], ["pgdn pgup", "move 8"], ["g G  home end", "first / last"],
                   ["l h  → ←", "change a value"], ["⏎", "set, edit or rebind"],
                   ["d", "back to the default"], ["x  del", "hotkey off / clear a text"], ["/  ctrl+f", "search every setting"], ["esc", "clear the search, then back"],
@@ -115,6 +115,7 @@ Item {
     title: "keys"
     hintItems: [{ k: "j/k", l: "scroll" }, { k: "esc", l: "close", run: function() { sheet.close() } }]
     focused: true
+    flickable: flick
     clock: host.clock
 
     MouseArea { anchors.fill: parent }
