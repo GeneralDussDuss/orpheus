@@ -1,0 +1,4 @@
+{
+  "note": "QML plugin + Python daemon. The venv must be built with the desktop extras or qsb shader tooling breaks.",
+  "postSync": ["uv sync --extra desktop", "uv pip install pyside6-addons"]
+}
