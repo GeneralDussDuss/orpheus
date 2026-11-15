@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 import "Eq.js" as Eq
 
@@ -25,13 +26,13 @@ Rectangle {
   property var host: null
   readonly property var api: host ? host.api : null
 
-  // Color.background carries alpha; binding it straight through makes the pane
+  // Commons.Color.background carries alpha; binding it straight through makes the pane
   // translucent and whatever is behind the window reads through the bars.
-  // Color.background can arrive as a string, and `.r`/`.g`/`.b` on a string are
+  // Commons.Color.background can arrive as a string, and `.r`/`.g`/`.b` on a string are
   // undefined, so Qt.rgba() built from them yields a transparent fill and the
   // window behind reads straight through the pane. Declaring it as a `color`
   // property forces the coercion first, after which the components are real.
-  readonly property color base: Color.background
+  readonly property color base: Commons.Color.background
   color: Qt.rgba(base.r, base.g, base.b, 1)
   focus: true
 
@@ -685,7 +686,7 @@ Rectangle {
           width: pane.colW * pane.bands.length
           font.family: host.family; font.pixelSize: Style.font.body
           color: host.fg
-          selectionColor: Tui.alpha(Color.accent, Tui.A.select)
+          selectionColor: Tui.alpha(Commons.Color.accent, Tui.A.select)
           cursorDelegate: TuiCaret { host: pane.host; visible: aeInput.activeFocus }
           onTextEdited: aeDebounce.restart()
           Keys.onPressed: function(e) {
@@ -756,7 +757,7 @@ Rectangle {
               Rectangle {
                 z: -1
                 anchors.fill: parent
-                color: Tui.alpha(Color.accent, aeMouse.pressed ? Tui.A.press : aeRow.cur ? Tui.A.cursor : Tui.A.hover)
+                color: Tui.alpha(Commons.Color.accent, aeMouse.pressed ? Tui.A.press : aeRow.cur ? Tui.A.cursor : Tui.A.hover)
                 opacity: aeMouse.pressed || aeRow.cur || aeMouse.containsMouse ? 1 : 0
                 Behavior on opacity { enabled: !aeMouse.pressed; NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
               }
@@ -871,7 +872,7 @@ Rectangle {
       visible: !pane.loaded
       textFormat: Text.StyledText
       text: pane.waited
-            ? '<font color="' + Tui.hex(Tui.ensure(Color.urgent, host.bg, 4.5)) + '">✕</font> the player service isn\'t answering · esc goes back'
+            ? '<font color="' + Tui.hex(Tui.ensure(Commons.Color.urgent, host.bg, 4.5)) + '">✕</font> the player service isn\'t answering · esc goes back'
             : Tui.busy(host.clock, "waiting for the player service", Tui.hex(host.accentText))
       font.family: host.family; font.pixelSize: Style.font.caption
       color: host.dim

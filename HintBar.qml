@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // Key hints that are also buttons: `space play  n next  q close`. Each item is
@@ -10,8 +11,8 @@ Row {
   id: bar
 
   property var items: []
-  property color keyColor: Color.accent
-  property color labelColor: Color.foreground
+  property color keyColor: Commons.Color.accent
+  property color labelColor: Commons.Color.foreground
   property color hoverColor: keyColor
   property int pixelSize: Style.font.caption
   property bool interactive: true

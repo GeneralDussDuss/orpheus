@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // Lyrics, following the track, lit word by word.
@@ -21,9 +22,9 @@ Rectangle {
   readonly property var track: host ? host.track : null
   readonly property var st: host ? host.st : ({})
 
-  // Color.background can arrive as a string, and `.r` on a string is undefined,
+  // Commons.Color.background can arrive as a string, and `.r` on a string is undefined,
   // which makes Qt.rgba() transparent. Coerce first.
-  readonly property color base: Color.background
+  readonly property color base: Commons.Color.background
   color: Qt.rgba(base.r, base.g, base.b, 1)
   focus: true
 
@@ -236,7 +237,7 @@ Rectangle {
       Rectangle {
         z: -1
         anchors.fill: parent
-        color: Tui.alpha(Color.accent, rowArea.pressed ? Tui.A.press : Tui.A.hover)
+        color: Tui.alpha(Commons.Color.accent, rowArea.pressed ? Tui.A.press : Tui.A.hover)
         opacity: !row.gap && (rowArea.pressed || (rowArea.containsMouse && !row.isNow)) ? 1 : 0
         Behavior on opacity { enabled: !rowArea.pressed; NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
       }

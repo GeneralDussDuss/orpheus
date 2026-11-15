@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // A tooltip in the TUI's own terms: a square 1px chip in the theme colours,
@@ -32,12 +33,12 @@ Item {
   readonly property bool want: text !== "" && (force || hovered)
   property bool shown: false
 
-  // Color.* is undefined for a beat while the window's context is built.
-  readonly property color bgc: Color.background !== undefined ? Color.background : "#000000"
+  // Commons.Color.* is undefined for a beat while the window's context is built.
+  readonly property color bgc: Commons.Color.background !== undefined ? Commons.Color.background : "#000000"
   readonly property color bg: Qt.rgba(bgc.r, bgc.g, bgc.b, 1)
-  readonly property color fg: Tui.ensure(Color.foreground, bg, 7)
-  readonly property color keyColor: Tui.ensure(Color.accent, bg, 4.5)
-  readonly property color line: Tui.ensure(Tui.mix(Color.foreground, bg, 0.6), bg, 2)
+  readonly property color fg: Tui.ensure(Commons.Color.foreground, bg, 7)
+  readonly property color keyColor: Tui.ensure(Commons.Color.accent, bg, 4.5)
+  readonly property color line: Tui.ensure(Tui.mix(Commons.Color.foreground, bg, 0.6), bg, 2)
 
   Timer { id: wait; interval: Math.max(1, tip.delay); onTriggered: tip.shown = tip.want }
   onWantChanged: {

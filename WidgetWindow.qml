@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // The widget as a real window, so it snaps into the user's Hyprland layout
@@ -22,7 +23,7 @@ FloatingWindow {
 
   title: floating ? (cassette ? "Orpheus Widget [float][tall]" : "Orpheus Widget [float]")
                   : "Orpheus Widget"
-  color: Color.background
+  color: Commons.Color.background
   implicitWidth: Math.round(cw * (cassette ? 30 : 48))
   implicitHeight: Math.round(ch * (cassette ? 44 : 18))
   minimumSize: cassette ? Qt.size(Math.round(cw * 22), Math.round(ch * 24))

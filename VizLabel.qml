@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // The name of the visualizer, centred over it for a moment after a change,
@@ -11,9 +12,9 @@ Item {
   property int pixelSize: Style.font.body + 2
   property string text: ""
 
-  readonly property color bgc: Color.background
+  readonly property color bgc: Commons.Color.background
   readonly property color bg: Qt.rgba(bgc.r, bgc.g, bgc.b, 1)
-  readonly property color accentText: Tui.ensure(Color.accent, bg, 4.5)
+  readonly property color accentText: Tui.ensure(Commons.Color.accent, bg, 4.5)
 
   function flash(name) {
     text = String(name || "").toLowerCase()
@@ -40,7 +41,7 @@ Item {
       font.pixelSize: lbl.pixelSize
       font.bold: true
       font.letterSpacing: 1
-      color: Tui.ensure(Color.foreground, lbl.bg, 7)
+      color: Tui.ensure(Commons.Color.foreground, lbl.bg, 7)
     }
   }
 

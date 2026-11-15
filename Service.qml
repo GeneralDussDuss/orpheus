@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Hyprland
 import Quickshell.Services.Mpris
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // Orpheus: music visualizers that look like the rest of Omarchy.
@@ -188,12 +189,12 @@ Item {
   // active-border gradient stops, then colors.toml's palette only to fill gaps.
   property var filePalette: ({})
   readonly property var borderStops: {
-    var raw = Color.shellValues["hyprland.active-border"] || ""
+    var raw = Commons.Color.shellValues["hyprland.active-border"] || ""
     var out = []
     var parts = String(raw).split(/\s+/)
     for (var i = 0; i < parts.length; i++) {
       if (!parts[i] || /deg$/.test(parts[i])) continue
-      var c = Color.flatColor(parts[i], "")
+      var c = Commons.Color.flatColor(parts[i], "")
       if (c !== "") out.push(c)
     }
     return out
@@ -212,21 +213,21 @@ Item {
     }
     return avoid[avoid.length - 1]
   }
-  readonly property color liveC1: Color.accent
+  readonly property color liveC1: Commons.Color.accent
   readonly property color liveC2: pickAfter(borderStops.concat([filePalette.magenta, filePalette.blue, filePalette.bright_magenta]), [liveC1])
-  readonly property color liveC3: pickAfter(borderStops.slice(1).concat([filePalette.cyan, filePalette.bright_cyan, filePalette.green, Color.foreground]), [liveC1, liveC2])
+  readonly property color liveC3: pickAfter(borderStops.slice(1).concat([filePalette.cyan, filePalette.bright_cyan, filePalette.green, Commons.Color.foreground]), [liveC1, liveC2])
 
   property color c1: liveC1
   property color c2: liveC2
   property color c3: liveC3
-  // Solid under glass mode too (Color.background then carries the window tint's
+  // Solid under glass mode too (Commons.Color.background then carries the window tint's
   // alpha), or the visualizers would turn see-through.
-  property color bg: Color.glass === true ? Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 1) : Color.background
-  property color fg: Color.foreground
-  readonly property bool lightTheme: (0.2126 * Color.background.r + 0.7152 * Color.background.g + 0.0722 * Color.background.b) > 0.5
+  property color bg: Commons.Color.glass === true ? Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, 1) : Commons.Color.background
+  property color fg: Commons.Color.foreground
+  readonly property bool lightTheme: (0.2126 * Commons.Color.background.r + 0.7152 * Commons.Color.background.g + 0.0722 * Commons.Color.background.b) > 0.5
 
   // Linux: locked to the shell's 420 ms wallpaper reveal (Tui.PAGE); retargets
-  // mid-flight. Windows: shims.py already glides Color.* in OKLab over
+  // mid-flight. Windows: shims.py already glides Commons.Color.* in OKLab over
   // Tui.GLIDE (650 ms, eased), so a second ease here would trail the UI's
   // palette by a frame or more: the visualizer takes the glide as it comes.
   Behavior on c1 { enabled: !root.windows; ColorAnimation { duration: Tui.PAGE; easing.type: Tui.EASE } }

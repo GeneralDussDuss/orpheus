@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // `?`: every key the player answers to, and the global hotkeys this run
@@ -79,7 +80,7 @@ Item {
     MouseArea { anchors.fill: parent; onClicked: sheet.close() }
   }
 
-  readonly property color base: Color.background
+  readonly property color base: Commons.Color.background
   // As many columns as fit at a readable width (keys 13 cells, words ~25),
   // so a small window gets one long column rather than squeezed text.
   readonly property real gap: host.cw * 3
@@ -235,7 +236,7 @@ Item {
               Text {
                 text: modelData.state === "active" ? "" : modelData.state === "off" ? "switched off" : "none of its combos registered"
                 font.family: host.family; font.pixelSize: Style.font.caption
-                color: Color.urgent
+                color: Commons.Color.urgent
               }
             }
             Repeater {
@@ -245,7 +246,7 @@ Item {
                 leftPadding: host.cw * 2
                 text: "✕ " + modelData.combo + "  " + modelData.reason
                 font.family: host.family; font.pixelSize: Style.font.caption
-                color: Tui.mix(host.dim, Color.urgent, 0.35)
+                color: Tui.mix(host.dim, Commons.Color.urgent, 0.35)
               }
             }
           }

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // The widget's contents, shared by every mode (corner widget on a layer, or a
@@ -34,12 +35,12 @@ TuiBox {
   readonly property real position: ours ? (engine.api.position || 0) : mprisPos
 
   onPlayerChanged: { mprisBase = 0; mprisAt = Date.now(); mprisPos = 0 }
-  readonly property color baseBg: Color.background !== undefined ? Color.background : "#000000"
+  readonly property color baseBg: Commons.Color.background !== undefined ? Commons.Color.background : "#000000"
   readonly property color bg: Qt.rgba(baseBg.r, baseBg.g, baseBg.b, 1)
-  readonly property color fg: Tui.ensure(Color.foreground, bg, 7)
-  readonly property color dim: Tui.muted(Color.foreground, bg, 4.5)
-  readonly property color accent: Tui.ensure(Color.accent, bg, 3)
-  readonly property color accentText: Tui.ensure(Color.accent, bg, 4.5)
+  readonly property color fg: Tui.ensure(Commons.Color.foreground, bg, 7)
+  readonly property color dim: Tui.muted(Commons.Color.foreground, bg, 4.5)
+  readonly property color accent: Tui.ensure(Commons.Color.accent, bg, 3)
+  readonly property color accentText: Tui.ensure(Commons.Color.accent, bg, 4.5)
   // Glow on the accents only: the play key on the beat, a faint halo on the
   // seek line and a liked heart.
   readonly property real bloom: Tui.bloom(engine)
@@ -90,8 +91,8 @@ TuiBox {
   }
 
   implicitHeight: content.implicitHeight + ch * 2
-  // Color.* is undefined for a beat while the window's context is built.
-  background: Color.background !== undefined ? Qt.rgba(Color.background.r, Color.background.g, Color.background.b, fill ? (Color.glass === true ? 0 : 1) : 0.82) : "#000000"
+  // Commons.Color.* is undefined for a beat while the window's context is built.
+  background: Commons.Color.background !== undefined ? Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, fill ? (Commons.Color.glass === true ? 0 : 1) : 0.82) : "#000000"
   title: full ? "orpheus · " + (engine ? (engine.styleLabels[engine.widgetViz] || "") : "").toLowerCase() : "now playing"
   // The play/pause glyph, plus a close button -- the corner widget has no window
   // chrome, so this is its only on-screen way out. Closing turns the widget off
@@ -160,7 +161,7 @@ TuiBox {
         id: art
         width: box.ch * 4.4
         height: width
-        color: Tui.alpha(Color.accent, Tui.A.tint)
+        color: Tui.alpha(Commons.Color.accent, Tui.A.tint)
         // a placeholder mark until the cover arrives; then the cover fades in
         Text {
           anchors.centerIn: parent
@@ -269,8 +270,8 @@ TuiBox {
               // hover eases a scalar; a press shrinks in-frame, springs back
               property real hot: cm.containsMouse ? 1 : 0
               Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
-              color: modelData.a === "like" && box.liked ? Color.accent
-                     : Tui.mix(isPlay && box.playing ? Tui.mix(box.fg, Color.accent, 0.45 + 0.55 * box.beat) : box.fg, Color.accent, hot)
+              color: modelData.a === "like" && box.liked ? Commons.Color.accent
+                     : Tui.mix(isPlay && box.playing ? Tui.mix(box.fg, Commons.Color.accent, 0.45 + 0.55 * box.beat) : box.fg, Commons.Color.accent, hot)
               scale: cm.pressed ? 0.86 : 1
               Behavior on scale { enabled: !cm.pressed; SpringAnimation { spring: Tui.SPRING.spring; damping: Tui.SPRING.damping } }
               glowLive: box.bloom > 0 && ((isPlay && box.playing) || (modelData.a === "like" && box.liked))

@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Effects
 import QtQuick.Window
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // What the stage shows inside its frame (or full-bleed): the visualizer, at a
@@ -22,11 +23,11 @@ Item {
   readonly property bool deck: !!engine && engine.scene === "cassette"
   readonly property var deckItem: deckLoader.item
 
-  // Color.* is undefined for a beat while the window's context is built.
-  readonly property color bg: Color.background !== undefined ? Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 1) : "#000000"
-  readonly property color fg: Tui.ensure(Color.foreground, bg, 7)
-  readonly property color dim: Tui.muted(Color.foreground, bg, 4.5)
-  readonly property color accentText: Tui.ensure(Color.accent, bg, 4.5)
+  // Commons.Color.* is undefined for a beat while the window's context is built.
+  readonly property color bg: Commons.Color.background !== undefined ? Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, 1) : "#000000"
+  readonly property color fg: Tui.ensure(Commons.Color.foreground, bg, 7)
+  readonly property color dim: Tui.muted(Commons.Color.foreground, bg, 4.5)
+  readonly property color accentText: Tui.ensure(Commons.Color.accent, bg, 4.5)
   readonly property string family: Style.font.family
   readonly property real bloom: Tui.bloom(engine)
   readonly property bool titleFx: !!engine && engine.titleFx && !engine.gameMode

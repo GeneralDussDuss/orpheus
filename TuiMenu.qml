@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // A context menu in a box: right-click a row, or the switcher's name.
@@ -25,12 +26,12 @@ Item {
   Behavior on opacity { NumberAnimation { duration: Tui.HOVER; easing.type: menu.shown ? Tui.OUT : Tui.IN } }
   z: 60
 
-  readonly property color bgc: Color.background
+  readonly property color bgc: Commons.Color.background
   readonly property color bg: Qt.rgba(bgc.r, bgc.g, bgc.b, 1)
-  readonly property color fg: Tui.ensure(Color.foreground, bg, 7)
-  readonly property color dim: Tui.muted(Color.foreground, bg, 4.5)
-  readonly property color accent: Tui.ensure(Color.accent, bg, 3)
-  readonly property color accentText: Tui.ensure(Color.accent, bg, 4.5)
+  readonly property color fg: Tui.ensure(Commons.Color.foreground, bg, 7)
+  readonly property color dim: Tui.muted(Commons.Color.foreground, bg, 4.5)
+  readonly property color accent: Tui.ensure(Commons.Color.accent, bg, 3)
+  readonly property color accentText: Tui.ensure(Commons.Color.accent, bg, 4.5)
 
   FontMetrics { id: fm; font.family: Style.font.family; font.pixelSize: Style.font.body }
   readonly property real cw: fm.advanceWidth("M")
@@ -126,7 +127,7 @@ Item {
       y: at ? at.y : 0
       width: col.width + menu.cw
       height: at ? at.height : 0
-      color: Tui.alpha(Color.accent, Tui.A.cursor)
+      color: Tui.alpha(Commons.Color.accent, Tui.A.cursor)
       Behavior on y { enabled: menu.shown; NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
       Rectangle { width: Math.max(2, menu.cw * 0.3); height: parent.height; color: menu.accent }
     }
@@ -156,7 +157,7 @@ Item {
             visible: rowMouse.pressed
             anchors.fill: parent
             anchors.leftMargin: -menu.cw * 0.5; anchors.rightMargin: -menu.cw * 0.5
-            color: Tui.alpha(Color.accent, Tui.A.press)
+            color: Tui.alpha(Commons.Color.accent, Tui.A.press)
           }
           Text {
             visible: !row.modelData.sep

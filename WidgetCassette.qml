@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // The vertical "cassette" widget -- a standing Walkman tape, for people who run a
@@ -32,11 +33,15 @@ TuiBox {
   // How far through the tape we are, 0..1 -- drives the reels' winding.
   readonly property real frac: length > 0 ? Math.max(0, Math.min(1, position / length)) : 0
 
-  readonly property color baseBg: Color.background !== undefined ? Color.background : "#000000"
+  // The deck scales up with the window, so a big panel doesn't show a
+  // corner-sized mechanism floating in empty space.
+  readonly property real dscale: fill ? Math.max(1, Math.min(1.8, Math.min(width / (cw * 34), height / (ch * 40)))) : 1
+
+  readonly property color baseBg: Commons.Color.background !== undefined ? Commons.Color.background : "#000000"
   readonly property color bg: Qt.rgba(baseBg.r, baseBg.g, baseBg.b, 1)
-  readonly property color fg: Tui.ensure(Color.foreground, bg, 7)
-  readonly property color dim: Tui.muted(Color.foreground, bg, 4.5)
-  readonly property color accent: Tui.ensure(Color.accent, bg, 3)
+  readonly property color fg: Tui.ensure(Commons.Color.foreground, bg, 7)
+  readonly property color dim: Tui.muted(Commons.Color.foreground, bg, 4.5)
+  readonly property color accent: Tui.ensure(Commons.Color.accent, bg, 3)
   readonly property real bloom: Tui.bloom(engine)
   readonly property bool playing: !!(player && player.isPlaying)
   readonly property real beat: engine && playing ? Math.max(0, Math.min(1, engine.beat || 0)) : 0
@@ -93,7 +98,7 @@ TuiBox {
   implicitHeight: content.implicitHeight + ch * 2
   // A cassette reads as a solid object, so its shell is more opaque than the
   // horizontal card -- less desktop shows through the label and reels.
-  background: Color.background !== undefined ? Qt.rgba(Color.background.r, Color.background.g, Color.background.b, fill ? (Color.glass === true ? 0 : 1) : 0.92) : "#000000"
+  background: Commons.Color.background !== undefined ? Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, fill ? (Commons.Color.glass === true ? 0 : 1) : 0.92) : "#000000"
   title: "orpheus · " + (engine ? (engine.styleLabels[engine.widgetViz] || "") : "").toLowerCase()
   hintItems: [
     { k: player && player.isPlaying ? "▶" : "‖" },
@@ -128,8 +133,9 @@ TuiBox {
       width: parent.width
       // Sized to the width in the corner; when filling a bigger window (float,
       // tile, desktop) it swallows the spare height so the tape window is the
-      // part that grows, the mechanism and label staying put below.
-      height: box.fill ? Math.max(Math.round(parent.width * 0.5),
+      // part that grows. The deck below always keeps its seat: in a short or
+      // landscape window the tape yields rather than pushing it off the edge.
+      height: box.fill ? Math.max(box.ch * 5,
                                   box.height - box.ch * 2.4 - deck.height - content.spacing)
                        : Math.round(parent.width * 0.72)
       color: Qt.rgba(box.bg.r, box.bg.g, box.bg.b, 0.55)
@@ -169,50 +175,70 @@ TuiBox {
       width: parent.width
       spacing: box.ch * 0.55
 
-      // cover art, centred
+      // The label sticker: cover art and the track riding on the cassette's
+      // label, a tinted card so the deck has an anchor instead of loose rows.
       Rectangle {
-        id: art
+        id: label
         anchors.horizontalCenter: parent.horizontalCenter
-        width: box.ch * 6; height: width
-        color: Tui.alpha(Color.accent, Tui.A.tint)
+        width: labelCol.width + box.cw * 3
+        height: labelCol.height + box.ch * 0.9
+        radius: 3
+        color: Tui.alpha(Commons.Color.accent, Tui.A.tint)
         border.width: 1; border.color: Tui.mix(box.dim, box.bg, 0.4)
-        Text {
-          anchors.centerIn: parent; visible: !artImg.arrived
-          text: "╱╱╱"; font.family: Style.font.family; font.pixelSize: Style.font.body; color: box.dim
-        }
-        Image {
-          id: artImg
-          anchors.fill: parent; anchors.margins: 1
-          source: box.player && box.player.trackArtUrl ? box.player.trackArtUrl : ""
-          fillMode: Image.PreserveAspectCrop; asynchronous: true
-          sourceSize: Qt.size(art.width * 2, art.height * 2)
-          property bool arrived: false
-          onSourceChanged: arrived = false
-          onStatusChanged: if (status === Image.Ready) arrived = true
-          opacity: arrived ? 1 : 0
-          Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
-        }
-        MouseArea { anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                    onClicked: if (box.engine) box.engine.libraryOpen = true
-                    TuiTip { text: "open the player" } }
-      }
 
-      // title / artist, centred
-      Column {
-        width: parent.width
-        ScrambleText {
-          width: parent.width; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
-          textFormat: Text.PlainText
-          animate: box.titleFx; key: box.trackKey
-          target: box.player ? (box.player.trackTitle || "unknown track") : "nothing playing"
-          font.family: Style.font.family; font.pixelSize: Style.font.body; font.bold: true; color: box.fg
-        }
-        ScrambleText {
-          width: parent.width; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
-          textFormat: Text.PlainText
-          animate: box.titleFx; key: box.trackKey; duration: Tui.DECODE
-          target: box.player ? (box.player.trackArtist || "") : "pick something in the player" + (box.libraryKey ? " · " + box.libraryKey : "")
-          font.family: Style.font.family; font.pixelSize: Style.font.caption; color: box.dim
+        Column {
+          id: labelCol
+          anchors.centerIn: parent
+          spacing: box.ch * 0.45
+          width: Math.min(box.width - box.cw * 6, Math.round(box.cw * 30 * box.dscale))
+
+          // cover art, centred
+          Rectangle {
+            id: art
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: Math.round(box.ch * 6 * box.dscale); height: width
+            color: Tui.alpha(Commons.Color.accent, Tui.A.tint)
+            border.width: 1; border.color: Tui.mix(box.dim, box.bg, 0.4)
+            Text {
+              anchors.centerIn: parent; visible: !artImg.arrived
+              text: "╱╱╱"; font.family: Style.font.family; font.pixelSize: Style.font.body; color: box.dim
+            }
+            Image {
+              id: artImg
+              anchors.fill: parent; anchors.margins: 1
+              source: box.player && box.player.trackArtUrl ? box.player.trackArtUrl : ""
+              fillMode: Image.PreserveAspectCrop; asynchronous: true
+              sourceSize: Qt.size(art.width * 2, art.height * 2)
+              property bool arrived: false
+              onSourceChanged: arrived = false
+              onStatusChanged: if (status === Image.Ready) arrived = true
+              opacity: arrived ? 1 : 0
+              Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
+            }
+            MouseArea { anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                        onClicked: if (box.engine) box.engine.libraryOpen = true
+                        TuiTip { text: "open the player" } }
+          }
+
+          // title / artist, centred
+          Column {
+            width: parent.width
+            ScrambleText {
+              width: parent.width; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
+              textFormat: Text.PlainText
+              animate: box.titleFx; key: box.trackKey
+              target: box.player ? (box.player.trackTitle || "unknown track") : "nothing playing"
+              font.family: Style.font.family; font.pixelSize: Math.round(Style.font.body * box.dscale); font.bold: true; color: box.fg
+            }
+            ScrambleText {
+              id: artistRow
+              width: parent.width; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
+              textFormat: Text.PlainText
+              animate: box.titleFx; key: box.trackKey; duration: Tui.DECODE
+              target: box.player ? (box.player.trackArtist || "") : "pick something in the player" + (box.libraryKey ? " · " + box.libraryKey : "")
+              font.family: Style.font.family; font.pixelSize: Math.round(Style.font.caption * box.dscale); color: box.dim
+            }
+          }
         }
       }
 
@@ -221,7 +247,7 @@ TuiBox {
         width: parent.width
         horizontalAlignment: Text.AlignHCenter
         text: box.spectrum
-        font.family: Style.font.family; font.pixelSize: Tui.px("lead", Style.font.body)
+        font.family: Style.font.family; font.pixelSize: Math.round(Tui.px("lead", Style.font.body) * box.dscale)
         color: Tui.mix(box.accent, box.fg, 0.15)
         glowLive: box.bloom > 0 && box.playing
         glow: box.bloom * 0.5 * (0.5 + 0.5 * box.beat)
@@ -270,7 +296,7 @@ TuiBox {
       Row {
         id: controlsRow
         anchors.horizontalCenter: parent.horizontalCenter
-        spacing: box.cw * 2.5
+        spacing: box.cw * 2.5 * box.dscale
         topPadding: box.ch * 0.1
         Repeater {
           model: [
@@ -284,11 +310,11 @@ TuiBox {
             required property var modelData
             readonly property bool isPlay: modelData.a === "toggle"
             text: modelData.g
-            font.family: Style.font.family; font.pixelSize: Tui.px("lead", Style.font.body)
+            font.family: Style.font.family; font.pixelSize: Math.round(Tui.px("lead", Style.font.body) * box.dscale * 1.15)
             property real hot: cm.containsMouse ? 1 : 0
             Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
-            color: modelData.a === "like" && box.liked ? Color.accent
-                   : Tui.mix(isPlay && box.playing ? Tui.mix(box.fg, Color.accent, 0.45 + 0.55 * box.beat) : box.fg, Color.accent, hot)
+            color: modelData.a === "like" && box.liked ? Commons.Color.accent
+                   : Tui.mix(isPlay && box.playing ? Tui.mix(box.fg, Commons.Color.accent, 0.45 + 0.55 * box.beat) : box.fg, Commons.Color.accent, hot)
             scale: cm.pressed ? 0.86 : 1
             Behavior on scale { enabled: !cm.pressed; SpringAnimation { spring: Tui.SPRING.spring; damping: Tui.SPRING.damping } }
             glowLive: box.bloom > 0 && ((isPlay && box.playing) || (modelData.a === "like" && box.liked))

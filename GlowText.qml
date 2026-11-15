@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Effects
 import qs.Commons
+import qs.Commons as Commons
 
 // A Text with a soft halo in the accent, for light that means something: the
 // beat, what is playing, what is focused. Never body text, menus or settings.
@@ -14,7 +15,7 @@ Text {
   id: t
 
   property real glow: 0
-  property color glowColor: Color.accent || "transparent"   // (undefined while the app tears down)
+  property color glowColor: Commons.Color.accent || "transparent"   // (undefined while the app tears down)
   property int glowRadius: 10            // px; fixed per instance (changing it recompiles the blur)
   property bool glowLive: glow > 0.002
 

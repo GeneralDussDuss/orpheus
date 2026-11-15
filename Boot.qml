@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // The boot screen: ~1.4 s over the player window the first time it opens in a
@@ -100,11 +101,11 @@ Item {
 
   // ---- look -------------------------------------------------------------------
   readonly property var api: host && host.api ? host.api : (engine ? engine.api : null)
-  readonly property color bg: Color.background
-  readonly property color fg: host ? host.fg : Tui.ensure(Color.foreground, bg, 7)
-  readonly property color dim: host ? host.dim : Tui.muted(Color.foreground, bg, 4.5)
-  readonly property color acc: host ? host.accentText : Tui.ensure(Color.accent, bg, 4.5)
-  readonly property color accRaw: Color.accent
+  readonly property color bg: Commons.Color.background
+  readonly property color fg: host ? host.fg : Tui.ensure(Commons.Color.foreground, bg, 7)
+  readonly property color dim: host ? host.dim : Tui.muted(Commons.Color.foreground, bg, 4.5)
+  readonly property color acc: host ? host.accentText : Tui.ensure(Commons.Color.accent, bg, 4.5)
+  readonly property color accRaw: Commons.Color.accent
   readonly property color faint: Tui.mix(dim, bg, 0.55)
   readonly property string family: host && host.family ? host.family : Style.font.family
   readonly property bool light: Tui.lum(bg) > 0.4
@@ -133,7 +134,7 @@ Item {
 
   // ---- real state ---------------------------------------------------------------
   function themeLabel() {
-    var n = Color.name
+    var n = Commons.Color.name
     if (!n) return "omarchy"
     return (n === "album" ? "album art" : String(n).replace(/-/g, " ")) + (light ? " · light" : "")
   }

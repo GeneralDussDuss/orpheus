@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Hyprland
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // The big visualizer. Its placement is fixed for the life of the window (the
@@ -42,10 +43,10 @@ PanelWindow {
     return list.length ? list[0] : null
   }
 
-  // Opaque reference surface for contrast guards (Color.background carries alpha).
-  readonly property color bg: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 1)
-  readonly property color dim: Tui.muted(Color.foreground, bg, 4.5)
-  readonly property color accentText: Tui.ensure(Color.accent, bg, 4.5)
+  // Opaque reference surface for contrast guards (Commons.Color.background carries alpha).
+  readonly property color bg: Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, 1)
+  readonly property color dim: Tui.muted(Commons.Color.foreground, bg, 4.5)
+  readonly property color accentText: Tui.ensure(Commons.Color.accent, bg, 4.5)
   readonly property bool playing: !!(engine && engine.player && engine.player.isPlaying)
 
   FontMetrics { id: fm; font.family: Style.font.family; font.pixelSize: Style.font.body }
@@ -452,7 +453,7 @@ PanelWindow {
     footer: win.engine && !win.engine.hasCava ? "install cava to hear the music" : ""
     focused: !win.desktop
     clock: win.engine ? win.engine.time : -1
-    background: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, win.desktop ? 0.6 : 0.97)
+    background: Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, win.desktop ? 0.6 : 0.97)
 
     focus: !win.bleed
     Keys.onPressed: function(e) { e.accepted = win.handleKey(e) }

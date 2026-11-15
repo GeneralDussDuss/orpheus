@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // Orpheus: the TIDAL player window, built as a terminal app. Text panes in
@@ -51,13 +52,13 @@ FloatingWindow {
   // rule already asks for opacity 1, but that cannot fix a surface whose own
   // colour has alpha.
   //
-  // The coercion through `baseBg` is the part that matters. Color.background
+  // The coercion through `baseBg` is the part that matters. Commons.Color.background
   // can arrive as a STRING, and `.r`/`.g`/`.b` on a string are undefined, so
   // Qt.rgba() built straight from them returns a fully transparent colour --
   // which made the whole window see-through on exactly the themes this guard
   // was written for. Declaring it as a `color` property forces the conversion
   // first, after which the components are real numbers.
-  readonly property color baseBg: Color.background
+  readonly property color baseBg: Commons.Color.background
   color: Qt.rgba(baseBg.r, baseBg.g, baseBg.b, 1)
   onVisibleChanged: { if (!visible && engine) engine.libraryOpen = false; if (visible) maybeBoot() }
 
@@ -168,7 +169,7 @@ FloatingWindow {
   readonly property real capW: capCells.advanceWidth > 0 ? capCells.advanceWidth / 10 : cw * 0.85
   function colsIn(px) { return Math.max(1, Math.floor(px / colW)) }
   readonly property string family: Style.font.family
-  readonly property color bg: Color.background
+  readonly property color bg: Commons.Color.background
   // Ambient light (Ambient.qml) sits behind the panes, which let half of it
   // through. Text is held to its contrast against the brightest that light
   // gets inside a pane (the palette's colour at that strength), not against
@@ -176,15 +177,15 @@ FloatingWindow {
   readonly property real ambientSee: 0.5
   // Under glass the window already paints the tint; a full coat here would stack
   // back to near-opaque, so panes only lift it a little.
-  readonly property color boxFill: Color.glass === true ? Tui.alpha(bg, ambientLayer.on ? 0.15 : 0.25)
+  readonly property color boxFill: Commons.Color.glass === true ? Tui.alpha(bg, ambientLayer.on ? 0.15 : 0.25)
                                   : ambientLayer.on ? Tui.alpha(bg, 1 - ambientSee) : bg
   readonly property color textBg: ambientLayer.on
-                                  ? Tui.mix(bg, Tui.mix(Color.accent, Color.foreground, 0.3), ambientLayer.strength * ambientSee)
+                                  ? Tui.mix(bg, Tui.mix(Commons.Color.accent, Commons.Color.foreground, 0.3), ambientLayer.strength * ambientSee)
                                   : bg
-  readonly property color fg: Tui.ensure(Color.foreground, textBg, 7)
-  readonly property color dim: Tui.muted(Color.foreground, textBg, 4.5)
-  readonly property color accent: Tui.ensure(Color.accent, bg, 3)
-  readonly property color accentText: Tui.ensure(Color.accent, textBg, 4.5)
+  readonly property color fg: Tui.ensure(Commons.Color.foreground, textBg, 7)
+  readonly property color dim: Tui.muted(Commons.Color.foreground, textBg, 4.5)
+  readonly property color accent: Tui.ensure(Commons.Color.accent, bg, 3)
+  readonly property color accentText: Tui.ensure(Commons.Color.accent, textBg, 4.5)
   // UI pulse: the few accents that mean "now" (the playing row, the playhead,
   // the focused pane's halo) lift with the kick. Light only, never layout, and
   // only through the glow, so light themes (no glow) and a hidden window or a
@@ -193,9 +194,9 @@ FloatingWindow {
                                   && win.visible && st.playing === true
   property real pulse: pulseOn ? Math.min(1, engine.kick || 0) : 0
   Behavior on pulse { NumberAnimation { duration: 90; easing.type: Easing.OutQuad } }
-  readonly property color cursorFill: Tui.alpha(Color.accent, Tui.A.cursor)
-  readonly property color pressFill: Tui.alpha(Color.accent, Tui.A.press)     // under a held button: the click landed
-  readonly property color hoverFill: Tui.alpha(Color.accent, Tui.A.hover)
+  readonly property color cursorFill: Tui.alpha(Commons.Color.accent, Tui.A.cursor)
+  readonly property color pressFill: Tui.alpha(Commons.Color.accent, Tui.A.press)     // under a held button: the click landed
+  readonly property color hoverFill: Tui.alpha(Commons.Color.accent, Tui.A.hover)
   // Glow, only where light means something: the play key on the beat, the
   // playhead, the playing row, the focused pane, and the cover's own light.
   readonly property real bloom: Tui.bloom(engine)
@@ -1003,7 +1004,7 @@ FloatingWindow {
               : win.api.signedIn ? "● " + win.maskAccount(win.api.login.user) + (win.api.login.hires ? " · hi-res" : "")
               : "○ signed out"
           font.family: win.family; font.pixelSize: Style.font.caption
-          color: acct.containsMouse ? win.accentText : win.api && win.api.signedIn ? win.dim : Color.urgent
+          color: acct.containsMouse ? win.accentText : win.api && win.api.signedIn ? win.dim : Commons.Color.urgent
           MouseArea { id: acct; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: win.go({ type: "login", title: "sign in" })
                       TuiTip { text: "account and sign-in" } }
         }
@@ -1083,7 +1084,7 @@ FloatingWindow {
           spacing: win.cw * 2
           Rectangle {
             width: win.ch * 8; height: width
-            color: Tui.alpha(Color.accent, Tui.A.tint)
+            color: Tui.alpha(Commons.Color.accent, Tui.A.tint)
             // a mark until the cover arrives, then the cover fades in over it
             Text { anchors.centerIn: parent; visible: !detailArt.arrived; text: "╱╱╱"
                    font.family: win.family; font.pixelSize: Style.font.body; color: win.dim }
@@ -1192,7 +1193,7 @@ FloatingWindow {
             font.family: win.family
             font.pixelSize: Style.font.body
             color: win.fg
-            selectionColor: Tui.alpha(Color.accent, Tui.A.select)
+            selectionColor: Tui.alpha(Commons.Color.accent, Tui.A.select)
             cursorDelegate: TuiCaret { host: win; visible: searchInput.activeFocus }
             text: win.videoPage ? win.vquery : win.query
             onTextEdited: {
@@ -1672,7 +1673,7 @@ FloatingWindow {
                     : width
             // opaque: the ambient light behind the panes must not show through
             // the visualizer's own clear parts and print the picture twice
-            color: Tui.mix(win.bg, Color.accent, 0.1)
+            color: Tui.mix(win.bg, Commons.Color.accent, 0.1)
             Behavior on height { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
             clip: true
             // a mark until the cover arrives, then the cover fades in over it
@@ -1764,7 +1765,7 @@ FloatingWindow {
               clip: true
               width: Math.round(win.ch * 7 * artIn)
               height: width
-              color: Tui.alpha(Color.accent, Tui.A.tint)
+              color: Tui.alpha(Commons.Color.accent, Tui.A.tint)
               Text { anchors.centerIn: parent; visible: !tileArt.arrived; text: "╱╱╱"
                      font.family: win.family; font.pixelSize: Style.font.caption; color: win.dim }
               Image {
@@ -1985,7 +1986,7 @@ FloatingWindow {
     Rectangle {
       id: flashBox
       readonly property bool bad: win.flashKind === "error"
-      readonly property color tone: bad ? Tui.ensure(Color.urgent, win.bg, 3) : win.accent
+      readonly property color tone: bad ? Tui.ensure(Commons.Color.urgent, win.bg, 3) : win.accent
       property real shownK: win.flash ? 1 : 0
       Behavior on shownK { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
       // a toast that replaces another dips, so the change reads as a change

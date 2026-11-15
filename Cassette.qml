@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 import "Cassette.js" as Deck
 
@@ -37,15 +38,15 @@ Item {
   signal ejected()
 
   // Colours, the house derivation (StageView, MiniPlayer). Nothing else paints.
-  readonly property color bg: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 1)
-  readonly property color fg: Tui.ensure(Color.foreground, bg, 7)
-  readonly property color dim: Tui.muted(Color.foreground, bg, 4.5)
-  readonly property color accent: Tui.ensure(Color.accent, bg, 3)
-  readonly property color accentText: Tui.ensure(Color.accent, bg, 4.5)
-  readonly property color line: Tui.ensure(Tui.mix(Color.foreground, bg, 0.72), bg, 1.6)
-  readonly property color redText: Tui.ensure(engine ? engine.c3 : Color.accent, bg, 3)
+  readonly property color bg: Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, 1)
+  readonly property color fg: Tui.ensure(Commons.Color.foreground, bg, 7)
+  readonly property color dim: Tui.muted(Commons.Color.foreground, bg, 4.5)
+  readonly property color accent: Tui.ensure(Commons.Color.accent, bg, 3)
+  readonly property color accentText: Tui.ensure(Commons.Color.accent, bg, 4.5)
+  readonly property color line: Tui.ensure(Tui.mix(Commons.Color.foreground, bg, 0.72), bg, 1.6)
+  readonly property color redText: Tui.ensure(engine ? engine.c3 : Commons.Color.accent, bg, 3)
   readonly property bool light: !!engine && engine.lightTheme
-  readonly property bool glassy: typeof Color.glass !== "undefined" && Color.glass === true
+  readonly property bool glassy: typeof Commons.Color.glass !== "undefined" && Commons.Color.glass === true
   readonly property string family: Style.font.family
   readonly property real bloom: Tui.bloom(engine)
 

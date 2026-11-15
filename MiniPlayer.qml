@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // Now-playing strip under the big visualizer, terminal style:
@@ -25,13 +26,13 @@ Item {
   FontMetrics { id: fm; font.family: Style.font.family; font.pixelSize: Style.font.body }
   readonly property real cw: fm.advanceWidth("M")
   readonly property real ch: fm.height
-  // Opaque reference surface for every contrast guard (Color.background carries alpha).
-  readonly property color bg: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 1)
-  readonly property color fg: Tui.ensure(Color.foreground, bg, 7)
-  readonly property color dim: Tui.muted(Color.foreground, bg, 4.5)
-  readonly property color accent: Tui.ensure(Color.accent, bg, 3)
-  readonly property color accentText: Tui.ensure(Color.accent, bg, 4.5)
-  readonly property color line: Tui.ensure(Tui.mix(Color.foreground, bg, 0.72), bg, 1.6)
+  // Opaque reference surface for every contrast guard (Commons.Color.background carries alpha).
+  readonly property color bg: Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, 1)
+  readonly property color fg: Tui.ensure(Commons.Color.foreground, bg, 7)
+  readonly property color dim: Tui.muted(Commons.Color.foreground, bg, 4.5)
+  readonly property color accent: Tui.ensure(Commons.Color.accent, bg, 3)
+  readonly property color accentText: Tui.ensure(Commons.Color.accent, bg, 4.5)
+  readonly property color line: Tui.ensure(Tui.mix(Commons.Color.foreground, bg, 0.72), bg, 1.6)
   readonly property real clk: engine ? engine.time : -1          // the shared heartbeat
   readonly property bool playing: !!(player && player.isPlaying)
   readonly property real beat: engine && playing ? Math.max(0, Math.min(1, engine.beat || 0)) : 0
@@ -67,7 +68,7 @@ Item {
     id: art
     width: root.height
     height: root.height
-    color: Tui.alpha(Color.accent, 0.12)
+    color: Tui.alpha(Commons.Color.accent, 0.12)
     border.width: 1
     border.color: root.playing ? Tui.mix(root.line, root.accent, 0.35 + 0.4 * root.breath) : root.line
     Behavior on border.color { ColorAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }

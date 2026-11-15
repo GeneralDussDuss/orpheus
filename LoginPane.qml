@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // Sign-in, sign-out and "service offline" states for the Orpheus window.
@@ -13,7 +14,7 @@ Rectangle {
   readonly property var login: api ? api.login : ({})
   property bool hires: host && host.page.hires === true
 
-  color: Color.glass === true ? "transparent" : Color.background   // under glass the window paints the tint
+  color: Commons.Color.glass === true ? "transparent" : Commons.Color.background   // under glass the window paints the tint
   focus: true
 
   function signOut() { api.post("/logout") }
@@ -85,7 +86,7 @@ Rectangle {
   readonly property bool accountOn: !!api && api.online && api.signedIn
   readonly property bool signedOutOn: !!api && api.online && !api.signedIn && !hires
   readonly property bool hiresOn: !!api && api.online && hires && !api.signedIn
-  readonly property color urgent: Tui.ensure(Color.urgent, host.textBg || Color.background, 4.5)
+  readonly property color urgent: Tui.ensure(Commons.Color.urgent, host.textBg || Commons.Color.background, 4.5)
 
   component StateColumn: Column {
     property bool on: false
@@ -240,7 +241,7 @@ Rectangle {
             clip: true
             font.family: host.family; font.pixelSize: Tui.px("body", Style.font.body)
             color: host.fg
-            selectionColor: Tui.alpha(Color.accent, Tui.A.select)
+            selectionColor: Tui.alpha(Commons.Color.accent, Tui.A.select)
             cursorDelegate: TuiCaret { host: pane.host; visible: paste.activeFocus }
             onAccepted: pane.finish()
             Keys.onEscapePressed: { pane.hires = false; pane.forceActiveFocus() }

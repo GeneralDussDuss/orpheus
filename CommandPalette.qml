@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // Ctrl+K: every action in the player by name. Type a few letters of it, in
@@ -257,14 +258,14 @@ Item {
     }
 
     // theme
-    if (typeof Color.themeList !== "undefined" && Color.themeList) {
-      add("theme.builder", "theme", "open theme builder", "", "", function() { Color.openBuilder() })
-      add("theme.next", "theme", "cycle theme", "", "", function() { Color.cycle(1) })
-      if (Color.glass !== undefined && Color.setGlass)
-        add("theme.glass", "theme", "toggle glass", "", onOff(Color.glass === true), function() { Color.setGlass(Color.glass !== true) })
-      var tl = Color.themeList
+    if (typeof Commons.Color.themeList !== "undefined" && Commons.Color.themeList) {
+      add("theme.builder", "theme", "open theme builder", "", "", function() { Commons.Color.openBuilder() })
+      add("theme.next", "theme", "cycle theme", "", "", function() { Commons.Color.cycle(1) })
+      if (Commons.Color.glass !== undefined && Commons.Color.setGlass)
+        add("theme.glass", "theme", "toggle glass", "", onOff(Commons.Color.glass === true), function() { Commons.Color.setGlass(Commons.Color.glass !== true) })
+      var tl = Commons.Color.themeList
       for (var t = 0; t < tl.length; t++)
-        (function(th) { add("theme." + th.name, "theme", "set theme · " + th.label.toLowerCase(), "", Color.name === th.name ? "● now" : "", function() { Color.setTheme(th.name); h.say("theme ╱╱ " + th.label) }) })(tl[t])
+        (function(th) { add("theme." + th.name, "theme", "set theme · " + th.label.toLowerCase(), "", Commons.Color.name === th.name ? "● now" : "", function() { Commons.Color.setTheme(th.name); h.say("theme ╱╱ " + th.label) }) })(tl[t])
     }
 
     // advanced
@@ -357,7 +358,7 @@ Item {
     MouseArea { anchors.fill: parent; onClicked: pal.close() }
   }
 
-  readonly property color base: Color.background
+  readonly property color base: Commons.Color.background
 
   TuiBox {
     id: box
@@ -392,7 +393,7 @@ Item {
         width: parent.width - host.cw * 3
         font.family: host.family; font.pixelSize: Style.font.body
         color: host.fg
-        selectionColor: Tui.alpha(Color.accent, 0.35)
+        selectionColor: Tui.alpha(Commons.Color.accent, 0.35)
         cursorDelegate: TuiCaret { host: pal.host }
         onTextEdited: pal.filter()
         Keys.onPressed: function(e) {
@@ -471,7 +472,7 @@ Item {
           Rectangle {
             z: -1
             anchors.fill: parent
-            color: Tui.alpha(Color.accent, rowMouse.pressed ? Tui.A.press : Tui.A.hover)
+            color: Tui.alpha(Commons.Color.accent, rowMouse.pressed ? Tui.A.press : Tui.A.hover)
             opacity: rowMouse.pressed || (rowMouse.containsMouse && !hit.isCursor) ? 1 : 0
             Behavior on opacity { enabled: !rowMouse.pressed; NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
           }

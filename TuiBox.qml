@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Effects
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // ┌─ title ───────────── key ┐
@@ -19,9 +20,9 @@ Item {
   property Component titleExtra: null
   property string footer: ""
   property bool focused: false
-  property color background: Color.background
-  property color line: Tui.ensure(Tui.mix(Color.foreground, Color.background, 0.72), Color.background, 1.6)
-  property color text: Color.foreground
+  property color background: Commons.Color.background
+  property color line: Tui.ensure(Tui.mix(Commons.Color.foreground, Commons.Color.background, 0.72), Commons.Color.background, 1.6)
+  property color text: Commons.Color.foreground
   property real clock: -1               // engine heartbeat (seconds), for callers that animate content
   property real glow: 0                 // bloom budget (Tui.bloom) for the focused edge; 0 = none (menus, sheets)
   property Flickable flickable: null
@@ -32,7 +33,7 @@ Item {
   readonly property real ch: fm.height
   // Focused: the border breathes toward the accent on the shared clock.
   readonly property real breath: focused && clock >= 0 ? 0.5 + 0.5 * Math.sin(clock * 1.6) : 1
-  readonly property color edge: focused ? Tui.mix(line, Color.accent, 0.55 + 0.45 * breath) : line
+  readonly property color edge: focused ? Tui.mix(line, Commons.Color.accent, 0.55 + 0.45 * breath) : line
 
   FontMetrics { id: fm; font.family: Style.font.family; font.pixelSize: Style.font.body }
 
@@ -72,7 +73,7 @@ Item {
         anchors.fill: parent
         color: "transparent"
         border.width: 3
-        border.color: Color.accent
+        border.color: Commons.Color.accent
         visible: false
       }
       MultiEffect {
@@ -109,7 +110,7 @@ Item {
       font.family: Style.font.family
       font.pixelSize: Style.font.body
       font.bold: box.focused
-      color: box.focused ? Tui.ensure(Color.accent, box.opaqueBg, 4.5) : Tui.ensure(box.text, box.opaqueBg, 4.5)
+      color: box.focused ? Tui.ensure(Commons.Color.accent, box.opaqueBg, 4.5) : Tui.ensure(box.text, box.opaqueBg, 4.5)
     }
   }
 
@@ -136,9 +137,9 @@ Item {
       x: hintPad.advanceWidth
       anchors.verticalCenter: parent.verticalCenter
       items: box.hintItems
-      keyColor: Tui.ensure(Color.accent, box.opaqueBg, 4.5)
-      labelColor: Tui.muted(Color.foreground, box.opaqueBg, 4.5)
-      hoverColor: Tui.ensure(Color.accent, box.opaqueBg, 4.5)
+      keyColor: Tui.ensure(Commons.Color.accent, box.opaqueBg, 4.5)
+      labelColor: Tui.muted(Commons.Color.foreground, box.opaqueBg, 4.5)
+      hoverColor: Tui.ensure(Commons.Color.accent, box.opaqueBg, 4.5)
     }
   }
 
@@ -156,7 +157,7 @@ Item {
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
       anchors.verticalCenter: parent.verticalCenter
-      color: box.focused ? Tui.ensure(Color.accent, box.opaqueBg, 4.5) : Tui.muted(Color.foreground, box.opaqueBg, 4.5)
+      color: box.focused ? Tui.ensure(Commons.Color.accent, box.opaqueBg, 4.5) : Tui.muted(Commons.Color.foreground, box.opaqueBg, 4.5)
     }
   }
 
@@ -175,7 +176,7 @@ Item {
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
       anchors.verticalCenter: parent.verticalCenter
-      color: Tui.muted(Color.foreground, box.opaqueBg, 4.5)
+      color: Tui.muted(Commons.Color.foreground, box.opaqueBg, 4.5)
     }
   }
 
@@ -190,7 +191,7 @@ Item {
     y: Math.round(trackTop + pos * trackH)
     width: 2
     height: Math.max(Math.round(box.ch * 0.8), Math.round(ratio * trackH))
-    color: box.focused ? Tui.ensure(Color.accent, box.opaqueBg, 3) : Tui.mix(box.line, Color.accent, 0.45)
+    color: box.focused ? Tui.ensure(Commons.Color.accent, box.opaqueBg, 3) : Tui.mix(box.line, Commons.Color.accent, 0.45)
     opacity: 0.85
   }
 

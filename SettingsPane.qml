@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 import "Pilgrim.js" as Pilgrim
 
@@ -22,8 +23,8 @@ Rectangle {
   readonly property var engine: host ? host.engine : null
   readonly property var api: host ? host.api : null
 
-  // Opaque, for the same reason as the equalizer: Color.background carries alpha.
-  readonly property color base: Color.background
+  // Opaque, for the same reason as the equalizer: Commons.Color.background carries alpha.
+  readonly property color base: Commons.Color.background
   color: Qt.rgba(base.r, base.g, base.b, 1)
   focus: true
 
@@ -31,7 +32,7 @@ Rectangle {
 
   // Desktop-only pieces: Omarchy's own Color has no theme list, and the global
   // hotkeys there are Hyprland binds, so both sections say so instead.
-  readonly property bool hasThemes: typeof Color.themeList !== "undefined" && Color.themeList !== null
+  readonly property bool hasThemes: typeof Commons.Color.themeList !== "undefined" && Commons.Color.themeList !== null
   readonly property bool hasKeys: typeof OrpheusKeys !== "undefined"
   readonly property var keys: hasKeys ? OrpheusKeys : null
   readonly property bool hasGame: typeof OrpheusGame !== "undefined"
@@ -79,10 +80,10 @@ Rectangle {
       r.push({ kind: "action", id: "builder", label: "theme builder…", hint: "make your own",
                desc: "pick a background, text and accent; the rest of the palette is worked out, and saved under yours" })
       // glass: a blurred see-through window (desktop only; absent until Color has it)
-      if (onWindows && Color.glass !== undefined)
+      if (onWindows && Commons.Color.glass !== undefined)
         r.push({ kind: "toggle", id: "glass", label: "glass",
                  desc: "the player window turns frosted glass over whatever is behind it" })
-      var list = Color.themeList || [], group = ""
+      var list = Commons.Color.themeList || [], group = ""
       for (var i = 0; i < list.length; i++) {
         if (list[i].group !== group) { group = list[i].group; r.push({ kind: "header", label: group.toLowerCase() }) }
         r.push({ kind: "theme", id: list[i].name, label: list[i].label.toLowerCase(),
@@ -397,7 +398,7 @@ Rectangle {
     case "feedback": return engine.feedback
     case "ambient": return engine.ambient || "subtle"
     case "deckLook": return engine.deckLook || "shell"
-    case "glass": return Color.glass === true
+    case "glass": return Commons.Color.glass === true
     case "stage": return engine.open
     case "widget.enabled": return engine.widget.enabled !== false
     case "widget.style": return engine.widget.style
@@ -466,7 +467,7 @@ Rectangle {
     switch (r.id) {
     case "style": engine.setStyle(v); return
     case "railViz": engine.setRailViz(v); return
-    case "glass": if (Color.setGlass) Color.setGlass(!!v); return
+    case "glass": if (Commons.Color.setGlass) Commons.Color.setGlass(!!v); return
     case "bloom": engine.setBloom(v); return
     case "feedback": if (engine.setFeedback) { engine.setFeedback(v); return } break
     case "stage": engine.open = !!v; return
@@ -535,9 +536,9 @@ Rectangle {
     var r = rows[cursor]
     if (!r) return
     if (r.kind === "toggle" || r.kind === "choice") { change(1); return }
-    if (r.kind === "theme") { Color.setTheme(r.id); host.say("theme ╱╱ " + r.label); return }
+    if (r.kind === "theme") { Commons.Color.setTheme(r.id); host.say("theme ╱╱ " + r.label); return }
     if (r.kind === "hotkey" || r.kind === "text" || r.kind === "number") { startEdit(r); return }
-    if (r.id === "builder") { Color.openBuilder(); return }
+    if (r.id === "builder") { Commons.Color.openBuilder(); return }
     if (r.id === "eq") { host.showEq(); return }
     if (r.id === "autoeq") { host.go({ type: "eq", title: "equalizer", pick: true }); return }
     if (r.id === "shaderImport") { engine.importShader(Quickshell.clipboardText, function(ok, msg) { host.say(msg, ok ? "info" : "error") }); return }
@@ -713,7 +714,7 @@ Rectangle {
           font.family: host.family; font.pixelSize: Style.font.body
           color: host.fg
           clip: true
-          selectionColor: Tui.alpha(Color.accent, 0.35)
+          selectionColor: Tui.alpha(Commons.Color.accent, 0.35)
           cursorDelegate: TuiCaret { host: pane.host; visible: search.activeFocus }
           text: pane.query
           onTextEdited: { pane.query = text; pane.cursor = pane.firstRow() }
@@ -759,7 +760,7 @@ Rectangle {
           Rectangle {
             z: -1
             anchors.fill: parent; anchors.margins: -pane.cw * 0.3
-            color: Tui.alpha(Color.accent, tabArea.pressed ? Tui.A.press : Tui.A.hover)
+            color: Tui.alpha(Commons.Color.accent, tabArea.pressed ? Tui.A.press : Tui.A.hover)
             opacity: tabArea.pressed || (tabArea.containsMouse && !tab.on) ? 1 : 0
             Behavior on opacity { enabled: !tabArea.pressed; NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
           }
@@ -885,7 +886,7 @@ Rectangle {
         y: (rowItem.rowH - height) / 2
         spacing: pane.cw * 2
         Text {
-          readonly property bool current: rowItem.r.kind === "theme" && Color.name === rowItem.r.id
+          readonly property bool current: rowItem.r.kind === "theme" && Commons.Color.name === rowItem.r.id
           width: pane.labelW
           elide: Text.ElideRight
           text: (rowItem.r.kind === "theme" ? (current ? "● " : "  ") : "") + (rowItem.r.label || "")
@@ -929,7 +930,7 @@ Rectangle {
                 var mine = (pane.cfg.hotkeys || {})[r.id] !== undefined
                 return (st === "active" ? '<font color="' + Tui.hex(host.accentText) + '">● ' + Tui.esc(r.row.combo) + '</font>'
                       : st === "off" ? '<font color="' + Tui.hex(host.dim) + '">○ off</font>'
-                      : '<font color="' + Tui.hex(Color.urgent) + '">✕ none registered</font>')
+                      : '<font color="' + Tui.hex(Commons.Color.urgent) + '">✕ none registered</font>')
                      + (mine ? '<font color="' + Tui.hex(host.dim) + '">  · yours</font>' : '')
               }
               return ""
@@ -980,7 +981,7 @@ Rectangle {
             clip: true
             echoMode: rowItem.r.secret ? TextInput.Password : TextInput.Normal
             inputMethodHints: rowItem.r.kind === "number" ? Qt.ImhDigitsOnly : Qt.ImhNone
-            selectionColor: Tui.alpha(Color.accent, 0.35)
+            selectionColor: Tui.alpha(Commons.Color.accent, 0.35)
             cursorDelegate: TuiCaret { host: pane.host }
             Keys.onPressed: function(e) {
               if (e.key === Qt.Key_Return || e.key === Qt.Key_Enter) { pane.commitEdit(text); e.accepted = true; return }
@@ -1014,7 +1015,7 @@ Rectangle {
         elide: Text.ElideRight
         text: rowItem.misses
         font.family: host.family; font.pixelSize: Style.font.caption
-        color: Tui.mix(host.dim, Color.urgent, 0.35)
+        color: Tui.mix(host.dim, Commons.Color.urgent, 0.35)
       }
 
       // under the pointer a row takes a faint fill, like the player's lists
@@ -1022,7 +1023,7 @@ Rectangle {
         z: -1
         width: parent.width; height: rowItem.rowH
         opacity: rowMouse.containsMouse && !rowItem.isCursor ? 1 : 0
-        color: Tui.alpha(Color.accent, 0.07)
+        color: Tui.alpha(Commons.Color.accent, 0.07)
         Behavior on opacity { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
       }
       // A click selects and does the obvious thing: steps a choice, flips a

@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // Listening stats, as a page of the player: what the daemon's history says
@@ -17,8 +18,8 @@ Rectangle {
   property var host: null
   readonly property var api: host ? host.api : null
 
-  // Opaque, for the same reason as the equalizer: Color.background carries alpha.
-  readonly property color base: Color.background
+  // Opaque, for the same reason as the equalizer: Commons.Color.background carries alpha.
+  readonly property color base: Commons.Color.background
   color: Qt.rgba(base.r, base.g, base.b, 1)
   focus: true
 
@@ -215,7 +216,7 @@ Rectangle {
           Rectangle {
             z: -1
             anchors.fill: parent; anchors.margins: -pane.cw * 0.3
-            color: Tui.alpha(Color.accent, rangeArea.pressed ? Tui.A.press : Tui.A.hover)
+            color: Tui.alpha(Commons.Color.accent, rangeArea.pressed ? Tui.A.press : Tui.A.hover)
             opacity: rangeArea.pressed || (rangeArea.containsMouse && !rangeTab.on) ? 1 : 0
             Behavior on opacity { enabled: !rangeArea.pressed; NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
           }

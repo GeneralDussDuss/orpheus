@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import "Tui.js" as Tui
 
 // An empty, loading or failed page, said the same way everywhere:
@@ -27,11 +28,11 @@ Column {
   property bool shown: true
 
   readonly property string family: host && host.family ? host.family : Style.font.family
-  readonly property color bg: host && host.bg !== undefined ? host.bg : Color.background
-  readonly property color fg: host && host.fg !== undefined ? host.fg : Tui.ensure(Color.foreground, bg, 7)
-  readonly property color dim: host && host.dim !== undefined ? host.dim : Tui.muted(Color.foreground, bg, 4.5)
-  readonly property color accentText: host && host.accentText !== undefined ? host.accentText : Tui.ensure(Color.accent, bg, 4.5)
-  readonly property color urgent: Tui.ensure(Color.urgent, bg, 4.5)
+  readonly property color bg: host && host.bg !== undefined ? host.bg : Commons.Color.background
+  readonly property color fg: host && host.fg !== undefined ? host.fg : Tui.ensure(Commons.Color.foreground, bg, 7)
+  readonly property color dim: host && host.dim !== undefined ? host.dim : Tui.muted(Commons.Color.foreground, bg, 4.5)
+  readonly property color accentText: host && host.accentText !== undefined ? host.accentText : Tui.ensure(Commons.Color.accent, bg, 4.5)
+  readonly property color urgent: Tui.ensure(Commons.Color.urgent, bg, 4.5)
   readonly property color mark: kind === "error" ? urgent : accentText
   readonly property real clock: host && host.clock !== undefined ? host.clock : 0
 
