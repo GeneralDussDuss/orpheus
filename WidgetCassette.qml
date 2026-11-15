@@ -140,8 +140,24 @@ TuiBox {
                        : Math.round(parent.width * 0.72)
       color: Qt.rgba(box.bg.r, box.bg.g, box.bg.b, 0.55)
       border.width: 1
-      border.color: Tui.mix(box.dim, box.bg, 0.3)
+      border.color: Tui.mix(box.dim, box.bg, 0.45)
       clip: true
+
+      // four corner screws, like the shell of the real thing
+      Repeater {
+        model: 4
+        Text {
+          required property int index
+          readonly property bool onRight: index % 2 === 1
+          readonly property bool onLow: index > 1
+          anchors { left: onRight ? undefined : parent.left; right: onRight ? parent.right : undefined
+                    top: onLow ? undefined : parent.top; bottom: onLow ? parent.bottom : undefined
+                    margins: Math.round(box.cw * 0.4) }
+          z: 2
+          text: "•"; font.family: Style.font.family; font.pixelSize: Style.font.caption
+          color: Tui.mix(box.dim, box.bg, 0.35)
+        }
+      }
 
       Viz {
         anchors.fill: parent
@@ -175,20 +191,48 @@ TuiBox {
       width: parent.width
       spacing: box.ch * 0.55
 
-      // The label sticker: cover art and the track riding on the cassette's
-      // label, a tinted card so the deck has an anchor instead of loose rows.
+      // a rule between the tape window and the mechanism plate below
+      Rectangle { width: parent.width; height: 1; color: Tui.mix(box.dim, box.bg, 0.35) }
+
+      // The label sticker: square, 1px, with the classic two accent stripes
+      // and a side mark -- cover art and the track ride on it.
       Rectangle {
         id: label
         anchors.horizontalCenter: parent.horizontalCenter
+        readonly property real stripesH: Math.round(box.ch * 0.35) + Math.round(box.ch * 0.42)
+                                         + Math.round(box.ch * 0.18) + Math.max(2, Math.round(box.ch * 0.14))
         width: labelCol.width + box.cw * 3
-        height: labelCol.height + box.ch * 0.9
-        radius: 3
+        height: Math.round(stripesH + box.ch * 0.5 + labelCol.height + box.ch * 0.45)
         color: Tui.alpha(Commons.Color.accent, Tui.A.tint)
-        border.width: 1; border.color: Tui.mix(box.dim, box.bg, 0.4)
+        border.width: 1; border.color: Tui.mix(box.dim, box.bg, 0.5)
+
+        // stripe pair across the top of the label, side mark riding the bold one
+        Rectangle {
+          id: stripeA
+          anchors { top: parent.top; left: parent.left; right: parent.right; margins: 1; topMargin: Math.round(box.ch * 0.35) }
+          height: Math.round(box.ch * 0.42)
+          color: Tui.alpha(Commons.Color.accent, 0.5)
+          Text {
+            anchors { left: parent.left; leftMargin: box.cw; verticalCenter: parent.verticalCenter }
+            text: "A"; font.family: Style.font.family; font.pixelSize: Style.font.caption; font.bold: true
+            color: box.bg
+          }
+          Text {
+            anchors { right: parent.right; rightMargin: box.cw; verticalCenter: parent.verticalCenter }
+            text: box.playing ? "REC ●" : "STOP ■"
+            font.family: Style.font.family; font.pixelSize: Style.font.caption
+            color: Tui.mix(box.bg, box.playing ? Commons.Color.accent : box.dim, 0.25)
+          }
+        }
+        Rectangle {
+          anchors { top: stripeA.bottom; left: parent.left; right: parent.right; margins: 1; topMargin: Math.round(box.ch * 0.18) }
+          height: Math.max(2, Math.round(box.ch * 0.14))
+          color: Tui.alpha(Commons.Color.accent, 0.3)
+        }
 
         Column {
           id: labelCol
-          anchors.centerIn: parent
+          anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: Math.round(box.ch * 0.45) }
           spacing: box.ch * 0.45
           width: Math.min(box.width - box.cw * 6, Math.round(box.cw * 30 * box.dscale))
 
@@ -260,13 +304,16 @@ TuiBox {
         width: parent.width
         glow: box.player ? box.bloom * 0.4 : 0
         glowRadius: 6
-        readonly property int cells: Math.max(8, Math.floor(width / box.cw) - 7)
+        TextMetrics { id: meterCell; font: seek.font; text: "━━━━━━━━━━" }
+        readonly property real meterCW: meterCell.advanceWidth > 0 ? meterCell.advanceWidth / 10 : box.cw
+        readonly property int cells: Math.max(8, Math.floor((width - box.cw * (box.length > 0 ? 15 : 7)) / meterCW))
         property bool scrubbing: false
         property real scrubFrac: 0
         readonly property real sfrac: scrubbing ? scrubFrac : box.frac
         textFormat: Text.StyledText
+        readonly property string totalMark: box.length > 0 ? ' <font color="' + Tui.hex(Tui.mix(box.dim, box.bg, 0.15)) + '">╱ ' + box.clock(box.length) + '</font>' : ''
         text: Tui.meterRich(sfrac, cells, box.accent, Tui.mix(box.dim, box.bg, 0.3))
-              + ' <font color="' + Tui.hex(box.fg) + '">' + box.clock(scrubbing ? scrubFrac * box.length : box.position) + '</font>'
+              + ' <font color="' + Tui.hex(box.fg) + '">' + box.clock(scrubbing ? scrubFrac * box.length : box.position) + '</font>' + totalMark
         font.family: Style.font.family; font.pixelSize: Style.font.body
         color: box.accent
         TextMetrics { id: seekLine; font: seek.font; text: Tui.meter(0, seek.cells, "━", "─", "╸") }
