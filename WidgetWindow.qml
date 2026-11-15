@@ -5,9 +5,9 @@ import "Tui.js" as Tui
 
 // The widget as a real window, so it snaps into the user's Hyprland layout
 // (tile) or floats where they drag it (float). The title tells the window rule
-// which: "Orpheus Widget" tiles, "Orpheus Widget [float]" floats. The cassette
-// style opens this as a tall, narrow panel to stand on the desktop; the others
-// open the wider now-playing card. Either body fills the window (fill: true).
+// which: "Orpheus Widget" tiles, "Orpheus Widget [float]" floats at the card
+// size, and the cassette floats as "[float][tall]" so the rule leaves its
+// portrait default alone. Either body fills the window (fill: true).
 FloatingWindow {
   id: win
 
@@ -20,7 +20,8 @@ FloatingWindow {
   readonly property real cw: fm.advanceWidth("M")
   readonly property real ch: fm.height
 
-  title: floating ? "Orpheus Widget [float]" : "Orpheus Widget"
+  title: floating ? (cassette ? "Orpheus Widget [float][tall]" : "Orpheus Widget [float]")
+                  : "Orpheus Widget"
   color: Color.background
   implicitWidth: Math.round(cw * (cassette ? 30 : 48))
   implicitHeight: Math.round(ch * (cassette ? 44 : 18))
