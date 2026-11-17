@@ -91,8 +91,15 @@ Item {
   // once its confidence has built up; the section is the director's reading and
   // means nothing while the director is off or has no beat lock. Silence and
   // pause hide both: a stale number is worse than none.
-  readonly property bool tempoOk: !!engine && playing && engine.tempo > 0 && engine.tempoConfidence >= 0.5
-  readonly property bool sectionOk: !!engine && playing && engine.director && engine.beatConfidence >= 0.4 && engine.section !== ""
+  readonly property bool tempoOk: settled && !!engine && playing && engine.tempo > 0 && engine.tempoConfidence >= 0.5
+  readonly property bool sectionOk: settled && !!engine && playing && engine.director && engine.beatConfidence >= 0.4 && engine.section !== ""
+  // After a track change the engine's tempo and section (and the daemon's
+  // stream) still describe the last track until the analysis catches up, and
+  // during continuous audio their confidence never dips. So all three sit out a
+  // settle window; the live confidence checks then decide when they return.
+  property bool settled: false
+  Timer { id: settleTimer; interval: 6000; running: true; onTriggered: box.settled = true }
+  onTrackKeyChanged: { settled = false; settleTimer.restart() }
   // A section change lights the word in the accent and lets it cool: build into
   // drop is the moment the header is for.
   property real secFlash: 0
@@ -107,7 +114,9 @@ Item {
   readonly property var stream: apiPlayer && apiPlayer.stream ? apiPlayer.stream : null
   readonly property string qualityLabel: {
     var s = stream
-    if (!s || !s.quality) return ""
+    // The daemon's stream state carries no track id, so it can't be matched to
+    // the track: hide it through the settle window instead.
+    if (!settled || !s || !s.quality) return ""
     var lossy = { HIGH: 320, LOW: 96 }[s.quality]
     if (lossy) return ((s.codec || "AAC") + " " + lossy).toUpperCase()
     var res = s.bitDepth && s.sampleRate ? " " + s.bitDepth + "/" + (s.sampleRate / 1000) : ""
@@ -161,6 +170,8 @@ Item {
   focus: keys
   Keys.onPressed: function(e) {
     if (!keys || (e.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
+    // Holding a key must not skip tracks or flicker play/pause.
+    if (e.isAutoRepeat) { e.accepted = true; return }
     var a = e.key === Qt.Key_Space ? "toggle" : e.text === "n" ? "next" : e.text === "p" ? "previous"
           : e.text === "F" ? "like" : e.text === "V" ? "stage" : ""
     if (a !== "") e.accepted = act(a)
@@ -221,6 +232,19 @@ Item {
       if (Math.abs(p - box.mprisBase) > 0.05) { box.mprisBase = p; box.mprisAt = Date.now() }
       box.mprisPos = box.mprisBase + (Date.now() - box.mprisAt) / 1000
     }
+  }
+
+  // One of the art's two swap layers (see `art`).
+  component ArtLayer: Image {
+    property Item owner: null
+    property bool shown: false
+    property bool pending: false
+    anchors.fill: parent; anchors.margins: 1
+    fillMode: Image.PreserveAspectCrop; asynchronous: true
+    sourceSize: owner ? Qt.size(owner.width * 2, owner.height * 2) : Qt.size(0, 0)
+    opacity: shown ? 1 : 0
+    Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
+    onStatusChanged: if (owner) owner.layerStatus(this)
   }
 
   // A little tag with a hairline border, for the quality and the like.
@@ -366,7 +390,7 @@ Item {
         // when title effects are on. Off with bloom (and on light themes), and
         // in game mode.
         Loader {
-          active: box.bloom > 0 && !!box.engine && !box.engine.gameMode
+          active: box.live && box.bloom > 0 && !!box.engine && !box.engine.gameMode
           anchors.fill: parent
           sourceComponent: Item {
             Rectangle { id: glowSrc; anchors.fill: parent; color: box.accent; visible: false }
@@ -390,39 +414,62 @@ Item {
           border.width: 1; border.color: box.rule
           clip: true
 
-          property string cur: ""
-          property string prev: ""
+          // Two layers that trade roles. The one on show never changes source:
+          // a new cover loads into the other, and only once it is Ready does it
+          // fade in over the first, which is then emptied (freeing its decode).
+          // No art, or a failed load, fades both out to the placeholder, so a
+          // stale cover is never left up.
           readonly property string url: box.player && box.player.trackArtUrl ? box.player.trackArtUrl : ""
-          onUrlChanged: { prev = cur; cur = url }
-          Component.onCompleted: cur = url
+          property Item front: layerA
+          property bool hasArt: false
+          onUrlChanged: show(url)
+          Component.onCompleted: show(url)
+          function show(u) {
+            if (u === "") { clear(); return }
+            var h = front === layerA ? layerB : layerA
+            h.pending = true
+            h.source = u
+            // a cached cover is Ready at once, before any status change fires
+            if (h.status === Image.Ready) layerStatus(h)
+          }
+          function clear() {
+            layerA.pending = false; layerB.pending = false
+            layerA.shown = false; layerB.shown = false
+            hasArt = false
+            wipe.restart()
+          }
+          function layerStatus(l) {
+            if (!l.pending) return
+            if (l.status === Image.Ready) {
+              l.pending = false
+              var o = l === layerA ? layerB : layerA
+              o.z = 1; l.z = 2
+              l.shown = true
+              front = l
+              hasArt = true
+              wipe.restart()
+            } else if (l.status === Image.Error) {
+              clear()
+            }
+          }
+          // After the fade, empty whichever layer is no longer on show.
+          Timer {
+            id: wipe
+            interval: Tui.STATE + 40
+            onTriggered: {
+              var ls = [layerA, layerB]
+              for (var i = 0; i < 2; i++)
+                if (!ls[i].pending && (ls[i] !== art.front || !art.hasArt)) { ls[i].shown = false; ls[i].source = "" }
+            }
+          }
 
           Text {
-            anchors.centerIn: parent; visible: !artNew.arrived && !artOld.visible
+            anchors.centerIn: parent; opacity: art.hasArt ? 0 : 1
+            Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
             text: "╱╱╱"; font.family: Style.font.family; font.pixelSize: Style.font.body; color: box.dim
           }
-          // the cover we are leaving, held under the new one until it arrives
-          Image {
-            id: artOld
-            anchors.fill: parent; anchors.margins: 1
-            source: art.prev
-            visible: source !== "" && opacity > 0.01
-            fillMode: Image.PreserveAspectCrop; asynchronous: true
-            sourceSize: Qt.size(art.width * 2, art.height * 2)
-            opacity: artNew.arrived ? 0 : 1
-            Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
-          }
-          Image {
-            id: artNew
-            anchors.fill: parent; anchors.margins: 1
-            source: art.cur
-            fillMode: Image.PreserveAspectCrop; asynchronous: true
-            sourceSize: Qt.size(art.width * 2, art.height * 2)
-            property bool arrived: false
-            onSourceChanged: arrived = false
-            onStatusChanged: if (status === Image.Ready) arrived = true
-            opacity: arrived ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
-          }
+          ArtLayer { id: layerA; owner: art }
+          ArtLayer { id: layerB; owner: art }
           MouseArea { anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                       onClicked: if (box.engine) box.engine.libraryOpen = true
                       TuiTip { text: "open the player" } }
@@ -459,15 +506,14 @@ Item {
         }
       }
 
-      Flow {
-        visible: box.showChips && (box.qualityLabel !== "" || box.liked)
+      Row {
+        visible: box.showChips
         x: titleCol.x
         anchors.bottom: parent.bottom
-        width: titleCol.width
         spacing: Math.round(box.cw * 0.6)
-        Chip { visible: box.qualityLabel !== ""; label: box.qualityLabel }
+        Chip { id: chipQ; visible: box.qualityLabel !== "" && implicitWidth <= titleCol.width; label: box.qualityLabel }
         Chip {
-          visible: box.liked
+          visible: box.liked && (chipQ.visible ? chipQ.width + parent.spacing : 0) + implicitWidth <= titleCol.width
           label: "♥"
           tone: box.accent
           clickable: true
@@ -483,6 +529,7 @@ Item {
     Item {
       id: mirror
       visible: box.showMirror
+      readonly property bool active: box.showMirror && box.live
       width: parent.width
       height: box.mirrorH
       readonly property int bars: 30
@@ -491,7 +538,7 @@ Item {
       readonly property real baseY: Math.round(height * 0.62)
       readonly property real span: bars * bw + (bars - 1) * gap
       Repeater {
-        model: mirror.bars
+        model: mirror.active ? mirror.bars : 0
         Item {
           required property int index
           readonly property real v: box.playing && box.engine && box.engine.levels
