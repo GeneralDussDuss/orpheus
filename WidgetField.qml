@@ -38,6 +38,15 @@ Item {
 
   implicitHeight: Math.round(lay.total)
 
+  // Fade up whenever the window shows (Widget.qml multiplies this by its rest dim).
+  property real appear: 0
+  opacity: appear
+  NumberAnimation on appear { id: appearAnim; from: 0; to: 1; duration: Tui.STATE; easing.type: Easing.InOutCubic }
+  Connections {
+    target: deck.Window.window
+    function onVisibleChanged() { if (deck.Window.window && deck.Window.window.visible) appearAnim.restart() }
+  }
+
   // ---- materials, from the theme ----------------------------------------------
   function desat(c, t) {
     var l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
@@ -338,16 +347,36 @@ Item {
   TextMetrics { id: plateTm; font.family: deck.family; font.pixelSize: Math.round(11 * deck.u); font.bold: true; font.letterSpacing: 2.4 * deck.u; text: "orpheus · field f2" }
   Item {
     id: plate
-    width: Math.round(plateTm.advanceWidth + 34 * deck.u); height: Math.round(deck.lay.plate.h)
+    // room on the right end, before the pin, for the engraved close mark
+    width: Math.round(plateTm.advanceWidth + 52 * deck.u); height: Math.round(deck.lay.plate.h)
     x: Math.round(deck.lay.face.x + (deck.lay.face.w - width) / 2); y: Math.round(deck.lay.plate.y)
     Text {
       anchors.centerIn: parent
       anchors.verticalCenterOffset: 0.5
+      anchors.horizontalCenterOffset: -9 * deck.u
       text: "orpheus · field f2"
       font.family: deck.family; font.pixelSize: Math.round(11 * deck.u); font.bold: true; font.letterSpacing: 2.4 * deck.u
       // cut through the anodising to bright metal
       color: Tui.mix(deck.steel, deck.white, 0.25)
       style: Text.Sunken; styleColor: Tui.alpha(deck.black, 0.6)
+    }
+    // close: a ✕ cut into the plate's right end, lit in the accent on hover
+    Text {
+      id: closeMark
+      anchors.verticalCenter: parent.verticalCenter
+      anchors.verticalCenterOffset: 0.5
+      x: Math.round(parent.width - 18 * deck.u - width / 2)
+      text: "✕"
+      font.family: deck.family; font.pixelSize: Math.round(11 * deck.u); font.bold: true
+      color: closeMouse.containsMouse ? core.accent : Tui.mix(deck.steel, deck.ink, 0.12)
+      style: Text.Sunken; styleColor: Tui.alpha(deck.black, 0.6)
+      MouseArea {
+        id: closeMouse
+        anchors.fill: parent; anchors.margins: -4
+        hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+        onClicked: if (deck.engine) deck.engine.setWidget("enabled", "off")
+        TuiTip { text: "close the widget" }
+      }
     }
   }
 
@@ -695,7 +724,7 @@ Item {
     MouseArea {
       id: seekMouse
       anchors.fill: parent; anchors.leftMargin: -6 * deck.u; anchors.rightMargin: -6 * deck.u
-      enabled: core.length > 0
+      enabled: !!(core.player && core.player.canSeek !== false) && core.length > 0
       hoverEnabled: true; cursorShape: Qt.PointingHandCursor
       function fracAt(x) { return Math.max(0, Math.min(1, (x - 6 * deck.u) / Math.max(1, tapeScale.width))) }
       onPressed: function(m) { core.beginScrub(fracAt(m.x)) }

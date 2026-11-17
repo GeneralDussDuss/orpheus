@@ -51,14 +51,22 @@ Item {
   function moveScrub(f) { if (scrubbing) scrubFrac = Math.max(0, Math.min(1, f)) }
   function commitScrub() {
     if (!scrubbing) return
-    if (player && length > 0) player.position = scrubFrac * length
+    if (player && length > 0) seekTo(scrubFrac * length)
     scrubbing = false
+  }
+  // Tell the player, and (for a plain MPRIS player, whose position we only
+  // poll while it plays) move our own clock too, so a paused scrub doesn't
+  // snap back and quick wheel notches add up.
+  function seekTo(t) {
+    if (!player) return
+    player.position = t
+    if (!apiPlayer) { mprisBase = t; mprisAt = Date.now(); mprisPos = t }
   }
   function cancelScrub() { scrubbing = false }
   // Nudge the play head by `d` seconds (wheels, scroll steps), clamped to the track.
   function seekBy(d) {
     if (!player || length <= 0) return
-    player.position = Math.max(0, Math.min(length - 0.5, position + d))
+    seekTo(Math.max(0, Math.min(length - 0.5, position + d)))
   }
 
   Timer {

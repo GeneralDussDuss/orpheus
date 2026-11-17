@@ -37,7 +37,7 @@ FloatingWindow {
   Loader {
     anchors.fill: parent
     anchors.margins: Math.round(win.cw * 0.5)
-    sourceComponent: ({ cassette: cassetteBody, monolith: monolithBody, reference: referenceBody, field: fieldBody })[win.cfg.style] || horizBody
+    sourceComponent: win.cassette ? ({ cassette: cassetteBody, monolith: monolithBody, reference: referenceBody, field: fieldBody })[win.cfg.style] : horizBody
     focus: true
     onLoaded: if (item) item.forceActiveFocus()
   }
