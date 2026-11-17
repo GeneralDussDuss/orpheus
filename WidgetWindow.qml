@@ -17,7 +17,8 @@ FloatingWindow {
   property var engine: null
   property bool floating: false
   readonly property var cfg: engine ? engine.widget : ({})
-  readonly property bool cassette: cfg.style === "cassette"
+  // Any tall style: the Studio deck ("cassette") or a hardware deck.
+  readonly property bool cassette: (engine && engine.tallStyles ? engine.tallStyles : ["cassette"]).indexOf(cfg.style) >= 0
 
   FontMetrics { id: fm; font.family: Style.font.family; font.pixelSize: Style.font.body }
   readonly property real cw: fm.advanceWidth("M")
@@ -36,7 +37,7 @@ FloatingWindow {
   Loader {
     anchors.fill: parent
     anchors.margins: Math.round(win.cw * 0.5)
-    sourceComponent: win.cassette ? cassetteBody : horizBody
+    sourceComponent: ({ cassette: cassetteBody, monolith: monolithBody, reference: referenceBody, field: fieldBody })[win.cfg.style] || horizBody
     focus: true
     onLoaded: if (item) item.forceActiveFocus()
   }
@@ -68,6 +69,30 @@ FloatingWindow {
   Component {
     id: cassetteBody
     WidgetCassette {
+      engine: win.engine
+      fill: true
+      keys: true
+    }
+  }
+  Component {
+    id: monolithBody
+    WidgetMonolith {
+      engine: win.engine
+      fill: true
+      keys: true
+    }
+  }
+  Component {
+    id: referenceBody
+    WidgetReference {
+      engine: win.engine
+      fill: true
+      keys: true
+    }
+  }
+  Component {
+    id: fieldBody
+    WidgetField {
       engine: win.engine
       fill: true
       keys: true

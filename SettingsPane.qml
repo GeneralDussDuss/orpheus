@@ -181,8 +181,8 @@ Rectangle {
       r.push({ kind: "header", label: "widget" })
       r.push({ kind: "toggle", id: "widget.enabled", label: "desktop widget", def: d.widget.enabled,
                desc: "a small now-playing card in a corner of the screen" })
-      r.push({ kind: "choice", id: "widget.style", label: "widget style", options: ["compact", "full", "cassette"], def: d.widget.style,
-               desc: "full has the art and a visualizer; compact is one line; cassette stands vertical, a walkman tape" })
+      r.push({ kind: "choice", id: "widget.style", label: "widget style", options: e && e.widgetStyles ? e.widgetStyles : ["compact", "full", "cassette"], def: d.widget.style,
+               desc: "full has the art and a visualizer; compact is one line; cassette (studio), monolith, reference and field stand vertical" })
       r.push({ kind: "choice", id: "widget.corner", label: "widget corner", options: corners, def: d.widget.corner,
                desc: "where on the screen the widget sits" })
       r.push({ kind: "choice", id: "widget.monitor", label: "widget screen", options: screens(), def: d.widget.monitor,

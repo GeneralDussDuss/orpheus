@@ -139,6 +139,12 @@ Item {
   // The cassette deck's look: "shell" a lit clear-shell machine, "light" the deck drawn in light.
   readonly property var deckLooks: ["shell", "light"]
   readonly property string deckLook: deckLooks.indexOf(config.deckLook) >= 0 ? config.deckLook : "shell"
+  // Widget styles. The tall ones stand vertical (a narrow corner box, a
+  // "[float][tall]" window): the Studio deck (still called "cassette") and the
+  // three hardware decks. One list, read by Widget, WidgetWindow, Settings and
+  // the command palette.
+  readonly property var widgetStyles: ["compact", "full", "cassette", "monolith", "reference", "field"]
+  readonly property var tallStyles: ["cassette", "monolith", "reference", "field"]
   readonly property var widget: {
     var w = {}
     for (var k in defaults.widget) w[k] = defaults.widget[k]
@@ -1004,7 +1010,7 @@ Item {
   }
   function setWidget(key, value) {
     if (key === "viz" && syncViz && styles.indexOf(value) >= 0) return setStyle(value)
-    var allowed = { enabled: ["on", "off", "toggle"], style: ["compact", "full", "cassette"], corner: ["top-left", "top-right", "bottom-left", "bottom-right"],
+    var allowed = { enabled: ["on", "off", "toggle"], style: widgetStyles, corner: ["top-left", "top-right", "bottom-left", "bottom-right"],
                     layer: ["top", "reserve", "desktop", "tile", "float"] }
     if (key === "viz" && styles.indexOf(value) < 0) return "unknown viz: " + value + " (" + styles.join("|") + ")"
     if (allowed[key] && allowed[key].indexOf(value) < 0) return "unknown " + key + ": " + value + " (" + allowed[key].join("|") + ")"

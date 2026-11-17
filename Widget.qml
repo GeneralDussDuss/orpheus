@@ -11,6 +11,8 @@ import "Tui.js" as Tui
 //   cassette a standing walkman tape -- the spectrum is the window, two reels
 //            spin and wind with the seek, the track written on the label below;
 //            narrow and tall, for a vertical bar (WidgetCassette.qml)
+//   monolith · reference · field  the hardware decks, tall like the cassette
+//            (WidgetMonolith / WidgetReference / WidgetField, on DeckCore)
 // Hides when nothing is playing and while a window is fullscreen.
 PanelWindow {
   id: win
@@ -18,8 +20,10 @@ PanelWindow {
   property var engine: null
   readonly property var player: engine ? engine.player : null
   readonly property var cfg: engine ? engine.widget : ({})
-  readonly property string styleName: ["compact", "full", "cassette"].indexOf(cfg.style) >= 0 ? cfg.style : "full"
-  readonly property bool cassette: styleName === "cassette"
+  readonly property var styles: engine && engine.widgetStyles ? engine.widgetStyles : ["compact", "full", "cassette"]
+  readonly property string styleName: styles.indexOf(cfg.style) >= 0 ? cfg.style : "full"
+  // Every tall style (the Studio deck and the hardware decks) shares the narrow box.
+  readonly property bool cassette: (engine && engine.tallStyles ? engine.tallStyles : ["cassette"]).indexOf(styleName) >= 0
   readonly property bool full: styleName !== "compact"
   readonly property string corner: cfg.corner || "bottom-right"
   // top: above windows (fades back until hovered) · reserve: above windows, and
@@ -78,7 +82,7 @@ PanelWindow {
   // live-count), so switching style swaps cleanly.
   Loader {
     id: bodyLoader
-    sourceComponent: win.cassette ? cassetteBody : horizBody
+    sourceComponent: ({ cassette: cassetteBody, monolith: monolithBody, reference: referenceBody, field: fieldBody })[win.styleName] || horizBody
     x: !win.reserve ? 0 : (win.atLeft ? win.gap : parent.width - width - win.gap)
     // Floating over windows: sit back until the pointer comes near.
     property real rest: win.layer === "top" && !hover.hovered ? 0.72 : 1
@@ -98,6 +102,36 @@ PanelWindow {
   Component {
     id: cassetteBody
     WidgetCassette {
+      engine: win.engine
+      full: win.full
+      width: win.boxWidth
+      height: implicitHeight
+      opacity: bodyLoader.rest * appear
+    }
+  }
+  Component {
+    id: monolithBody
+    WidgetMonolith {
+      engine: win.engine
+      full: win.full
+      width: win.boxWidth
+      height: implicitHeight
+      opacity: bodyLoader.rest * appear
+    }
+  }
+  Component {
+    id: referenceBody
+    WidgetReference {
+      engine: win.engine
+      full: win.full
+      width: win.boxWidth
+      height: implicitHeight
+      opacity: bodyLoader.rest * appear
+    }
+  }
+  Component {
+    id: fieldBody
+    WidgetField {
       engine: win.engine
       full: win.full
       width: win.boxWidth

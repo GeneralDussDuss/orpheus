@@ -8,7 +8,9 @@ cd "$(dirname "$0")/shaders"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-for src in *.frag; do
+# With arguments, only those (e.g. ./build-shaders.sh monolith_face.frag); else all.
+for src in ${@:-*.frag}; do
+  src=$(basename "$src")
   sed -e '/\/\/#common/{r _common.glsl' -e 'd}' "$src" >"$tmp/$src"
   "$qsb" --glsl "300es,330" --hlsl 50 --msl 12 -o "$src.qsb" "$tmp/$src"
   # Windows: bake DXBC in, or D3D11 compiles the HLSL at first draw (orpheusd/dxbc.py)
