@@ -109,6 +109,8 @@ Item {
                                   ["g", "pilgrimage on / off"], ["n", "next leg · pilgrimage"], ["?", "this sheet"],
                                   ["t", "cassette deck / visualizer"], ["e", "eject · cassette deck only"], ["f", "fullscreen show / window"],
                                   ["p", "mini player on / off"], ["space", "play / pause"], ["esc", "close it"]]],
+    ["widget · floating or tiled window", [["space", "play / pause"], ["n  p", "next / previous track"], ["F", "like what is playing"],
+                                           ["V", "open / close the visualizer window"]]],
     ["mouse · player", [["click row", "select it"], ["dbl-click row", "play or open it"], ["right-click", "menu: queue, radio, link"],
                         ["click picture", "next rail visual · right-click back"], ["scroll picture", "step through visuals"],
                         ["‹ name ›", "step, or pick from a list"], ["click art · artist", "go to the album / artist"],

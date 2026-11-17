@@ -8,7 +8,9 @@ import "Tui.js" as Tui
 // (tile) or floats where they drag it (float). The title tells the window rule
 // which: "Orpheus Widget" tiles, "Orpheus Widget [float]" floats at the card
 // size, and the cassette floats as "[float][tall]" so the rule leaves its
-// portrait default alone. Either body fills the window (fill: true).
+// portrait default alone. Either body fills the window (fill: true). The
+// cassette deck also takes the keyboard here (it prints its keys): a layer
+// surface can't, so the corner widget's copy has none.
 FloatingWindow {
   id: win
 
@@ -35,6 +37,8 @@ FloatingWindow {
     anchors.fill: parent
     anchors.margins: Math.round(win.cw * 0.5)
     sourceComponent: win.cassette ? cassetteBody : horizBody
+    focus: true
+    onLoaded: if (item) item.forceActiveFocus()
   }
 
   // Floating only: drag the top strip to move it (a tiled window is placed by
@@ -66,6 +70,7 @@ FloatingWindow {
     WidgetCassette {
       engine: win.engine
       fill: true
+      keys: true
     }
   }
 }

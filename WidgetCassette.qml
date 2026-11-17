@@ -1,21 +1,45 @@
 import QtQuick
 import QtQuick.Window
+import QtQuick.Effects
 import qs.Commons
 import qs.Commons as Commons
 import "Tui.js" as Tui
 
-// The vertical "cassette" widget -- a standing Walkman tape, for people who run a
-// portrait bar and don't want to turn their layout sideways for it. A thin
-// spectrum sits in the tape window up top; two reels spin while the song plays
-// and their packs wind supply -> take-up with the seek, the album art riding
-// between them as the cassette label. Same corner-widget plumbing as WidgetBody
-// (the horizontal form), laid out in a narrow column.
-TuiBox {
+// The vertical widget -- "Studio". A tall, narrow deck for people who run a
+// portrait bar: the visualizer on top, then the track (big art on a soft glow,
+// the title large, the artist small and spaced out, chips for the stream's
+// quality and a like), a mirrored spectrum, the time, a hairline seek line, and
+// a control row that prints the key of each control when the window can take
+// keys. (The config style is still called "cassette"; the spinning reels went
+// with 16aea30 and are not coming back.)
+//
+// The deck is a double hairline frame -- an outer rule, a 3 px gap, an inner
+// rule -- not a card: square corners, text in the shell font, box-drawing
+// weight. Pixels are for the album art and the live spectrum only. Every
+// colour comes off the live theme through Tui, so it reads in light and dark.
+//
+// Room decides what shows, from the height it is actually given. The corner
+// widget (a layer surface, no keyboard) keeps the art, the track, the seek line
+// and the controls; the header's tempo, the chips, the mirror, the time row and
+// the key labels only come in a window (`fill`) with the height to spare. The
+// visualizer takes whatever is left, so nothing can overlap at any size.
+// Same corner-widget plumbing as WidgetBody (the horizontal form).
+Item {
   id: box
 
   property var engine: null
   property bool full: true           // unused here; Widget.qml sets it on every body
   property bool fill: false
+  // True only where the host can give this window the keyboard (WidgetWindow).
+  // The corner widget is a layer surface with no keyboard focus, so it prints
+  // no key labels and handles no keys: a label for a key that does nothing is
+  // worse than none.
+  property bool keys: false
+
+  FontMetrics { id: fm; font.family: Style.font.family; font.pixelSize: Style.font.body }
+  readonly property real cw: fm.advanceWidth("M")
+  readonly property real ch: fm.height
+
   readonly property var player: engine ? engine.player : null
   readonly property var orpheusTrack: engine && engine.api && player && player.identity === "Orpheus" ? engine.api.track : null
   readonly property bool liked: !!orpheusTrack && engine.api.isLiked("track", orpheusTrack.id)
@@ -30,8 +54,13 @@ TuiBox {
                                            : (player && player.lengthSupported ? player.length : 0)
   readonly property real position: ours ? (engine.api.position || 0) : mprisPos
   onPlayerChanged: { mprisBase = 0; mprisAt = Date.now(); mprisPos = 0 }
-  // How far through the tape we are, 0..1 -- drives the reels' winding.
+  // How far through the track we are, 0..1.
   readonly property real frac: length > 0 ? Math.max(0, Math.min(1, position / length)) : 0
+  // Scrubbing the seek line: the line and the elapsed time follow the pointer
+  // until release, when the player is told once.
+  property bool scrubbing: false
+  property real scrubFrac: 0
+  readonly property real sfrac: scrubbing ? scrubFrac : frac
 
   // The deck scales up with the window, so a big panel doesn't show a
   // corner-sized mechanism floating in empty space.
@@ -42,30 +71,48 @@ TuiBox {
   readonly property color fg: Tui.ensure(Commons.Color.foreground, bg, 7)
   readonly property color dim: Tui.muted(Commons.Color.foreground, bg, 4.5)
   readonly property color accent: Tui.ensure(Commons.Color.accent, bg, 3)
+  // The frame and the chips' borders: decoration, so they sit well back.
+  readonly property color rule: Tui.mix(dim, bg, 0.6)
   readonly property real bloom: Tui.bloom(engine)
   readonly property bool playing: !!(player && player.isPlaying)
   readonly property real beat: engine && playing ? Math.max(0, Math.min(1, engine.beat || 0)) : 0
   readonly property bool titleFx: !!engine && engine.titleFx && !engine.gameMode
   readonly property string trackKey: player ? (player.trackTitle || "") + " | " + (player.trackArtist || "") : ""
 
-  // A block-char spectrum off the live audio bands (engine.levels, 0..1), for
-  // the small TUI analyser on the deck. Recomputes whenever the bands move.
-  readonly property string spectrum: {
-    var lv = engine && engine.levels ? engine.levels : []
-    var blocks = " ▁▂▃▄▅▆▇█"
-    var s = ""
-    for (var i = 0; i < 30; i++) {
-      var v = Math.max(0, Math.min(1, (lv[i] || 0) * 1.4))
-      s += blocks.charAt(Math.round(v * 8))
-    }
-    return s
-  }
-
   readonly property string libraryKey: {
     if (typeof OrpheusKeys === "undefined") return "super+shift+m"
     var b = OrpheusKeys.bindings || []
     for (var i = 0; i < b.length; i++) if (b[i].action === "library" && b[i].combo) return String(b[i].combo).toLowerCase()
     return ""
+  }
+
+  // --- the header's tempo and section ----------------------------------------
+  // Only what the engine is sure of. The tempo is the eased estimate and shows
+  // once its confidence has built up; the section is the director's reading and
+  // means nothing while the director is off or has no beat lock. Silence and
+  // pause hide both: a stale number is worse than none.
+  readonly property bool tempoOk: !!engine && playing && engine.tempo > 0 && engine.tempoConfidence >= 0.5
+  readonly property bool sectionOk: !!engine && playing && engine.director && engine.beatConfidence >= 0.4 && engine.section !== ""
+  // A section change lights the word in the accent and lets it cool: build into
+  // drop is the moment the header is for.
+  property real secFlash: 0
+  NumberAnimation on secFlash { id: flashAnim; running: false; from: 1; to: 0; duration: Tui.PAGE; easing.type: Easing.OutCubic }
+  Connections {
+    target: box.engine
+    function onSectionCodeChanged() { if (box.sectionOk) flashAnim.restart() }
+  }
+
+  // The stream's own quality, from the daemon's player state (the same figures
+  // the player window's quality chip prints). Empty when the daemon has none.
+  readonly property var stream: apiPlayer && apiPlayer.stream ? apiPlayer.stream : null
+  readonly property string qualityLabel: {
+    var s = stream
+    if (!s || !s.quality) return ""
+    var lossy = { HIGH: 320, LOW: 96 }[s.quality]
+    if (lossy) return ((s.codec || "AAC") + " " + lossy).toUpperCase()
+    var res = s.bitDepth && s.sampleRate ? " " + s.bitDepth + "/" + (s.sampleRate / 1000) : ""
+    var fmt = s.codec || (res ? "" : String(s.quality))
+    return (String(fmt).toUpperCase() + res).trim()
   }
 
   // Fade up whenever the window shows, like WidgetBody.
@@ -95,16 +142,72 @@ TuiBox {
     return Math.floor(s / 60) + ":" + (s % 60 < 10 ? "0" : "") + (s % 60)
   }
 
-  implicitHeight: content.implicitHeight + ch * 2
-  // A cassette reads as a solid object, so its shell is more opaque than the
-  // horizontal card -- less desktop shows through the label and reels.
-  background: Commons.Color.background !== undefined ? Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, fill ? (Commons.Color.glass === true ? 0 : 1) : 0.92) : "#000000"
-  title: "orpheus · " + (engine ? (engine.styleLabels[engine.widgetViz] || "") : "").toLowerCase()
-  hintItems: [
-    { k: player && player.isPlaying ? "▶" : "‖" },
-    { k: "✕", run: function() { if (box.engine) box.engine.setWidget("enabled", "off") }, tip: "close the widget" }
-  ]
-  clock: engine ? engine.time : -1
+  // What the controls do -- one place for the buttons and the keys.
+  function act(a) {
+    var p = player
+    if (a === "stage") { if (engine) engine.open = !engine.open; return true }
+    if (a === "like") { if (orpheusTrack) engine.api.toggleLike("track", orpheusTrack.id); return !!orpheusTrack }
+    if (!p) return false
+    if (a === "toggle") p.togglePlaying()
+    else if (a === "next" && p.canGoNext) p.next()
+    else if (a === "previous" && p.canGoPrevious) p.previous()
+    else return false
+    return true
+  }
+
+  // Keys, when the host gave us the keyboard. The same letters as the player
+  // window (space, n, p, F, V); anything with a modifier is left for the
+  // compositor's own binds.
+  focus: keys
+  Keys.onPressed: function(e) {
+    if (!keys || (e.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
+    var a = e.key === Qt.Key_Space ? "toggle" : e.text === "n" ? "next" : e.text === "p" ? "previous"
+          : e.text === "F" ? "like" : e.text === "V" ? "stage" : ""
+    if (a !== "") e.accepted = act(a)
+  }
+
+  // --- layout: from the room we are given --------------------------------------
+  readonly property real frameInset: 4                       // outer rule, 3 px gap, inner rule
+  readonly property real padX: Math.round(cw * 0.9)
+  readonly property real padY: Math.round(ch * 0.6)
+  readonly property real innerW: Math.max(0, width - 2 * (frameInset + 1 + padX))
+  readonly property real availH: Math.max(0, height - 2 * (frameInset + 1 + padY))
+  readonly property real sp: Math.round(ch * 0.55)
+
+  readonly property real headH: Math.round(ch * 1.3)
+  // The art takes 38% of the width, but never more than a third of a short
+  // window's height: a wide, shallow tile keeps room for the visualizer.
+  readonly property real artSize: Math.round(fill ? Math.min(innerW * 0.38, Math.max(ch * 4, availH * 0.3)) : innerW * 0.38)
+  readonly property bool showChips: fill && availH >= ch * 30
+  readonly property real chipH: Math.round(ch * 1.3)
+  readonly property real metaH: Math.max(artSize, titleCol.implicitHeight + (showChips ? chipH + sp : 0))
+  readonly property real timeH: Math.round(ch * 1.1)
+  readonly property real seekH: Math.round(ch * 0.9)
+  readonly property real ctlH: Math.round(Tui.px("lead", Style.font.body) * dscale * 1.15 + (keys ? ch * 1.2 : ch * 0.5))
+  readonly property real mirrorH: Math.round(ch * 4.5 * Math.min(dscale, 1.4))
+  // Rows that are always there: header, visualizer, track, seek, controls (+ the
+  // time row in a window). Spacings between them are `sp` each.
+  readonly property real fixedH: headH + metaH + seekH + ctlH + (fill ? timeH : 0) + sp * (fill ? 5 : 4)
+  readonly property real vizMin: Math.round(ch * 6)
+  // The mirror only joins when the visualizer keeps a decent height without it.
+  readonly property bool showMirror: fill && availH - fixedH - mirrorH - sp >= vizMin
+  readonly property real vizH: fill ? Math.max(Math.round(ch * 3), availH - fixedH - (showMirror ? mirrorH + sp : 0))
+                                    : Math.round(innerW * 0.4)
+
+  implicitHeight: body.implicitHeight + 2 * (frameInset + 1 + padY)
+
+  // The shell is more opaque than the horizontal card (and solid when filling a
+  // window), so less desktop shows through the deck.
+  Rectangle {
+    anchors.fill: parent
+    color: Commons.Color.background !== undefined ? Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, box.fill ? (Commons.Color.glass === true ? 0 : 1) : 0.92) : "#000000"
+    border.width: 1; border.color: box.rule
+  }
+  Rectangle {
+    anchors.fill: parent; anchors.margins: box.frameInset
+    color: "transparent"
+    border.width: 1; border.color: box.rule
+  }
 
   // MPRIS position doesn't tick by itself (copied from WidgetBody).
   Timer {
@@ -120,44 +223,107 @@ TuiBox {
     }
   }
 
+  // A little tag with a hairline border, for the quality and the like.
+  component Chip: Rectangle {
+    id: chip
+    property string label: ""
+    property color tone: box.dim
+    property bool clickable: false
+    property string tip: ""
+    signal clicked()
+    implicitWidth: chipText.implicitWidth + Math.round(box.cw * 1.2)
+    implicitHeight: box.chipH
+    color: "transparent"
+    border.width: 1
+    border.color: Tui.mix(tone, box.bg, 0.55)
+    Text {
+      id: chipText
+      anchors.centerIn: parent
+      text: chip.label
+      font.family: Style.font.family; font.pixelSize: Style.font.caption
+      color: chip.tone
+    }
+    MouseArea {
+      anchors.fill: parent
+      enabled: chip.clickable
+      cursorShape: Qt.PointingHandCursor
+      hoverEnabled: true
+      onClicked: chip.clicked()
+      TuiTip { text: chip.tip; key: box.keys ? "F" : "" }
+    }
+  }
+
   Column {
-    id: content
-    width: parent.width
-    spacing: box.ch * 0.7
+    id: body
+    x: box.frameInset + 1 + box.padX
+    y: box.frameInset + 1 + box.padY
+    width: box.innerW
+    spacing: box.sp
 
-    // 1. The cassette window: the spectrum is the tape you see through it, with
-    // the two reels turning over it -- supply (left) empties into take-up
-    // (right) as the song plays. Click the window to cycle the visualizer.
-    Rectangle {
-      id: windowRect
+    // 1. Header: what this is and which visualizer, and on the right the
+    // engine's tempo and section when it is sure of them.
+    Item {
       width: parent.width
-      // Sized to the width in the corner; when filling a bigger window (float,
-      // tile, desktop) it swallows the spare height so the tape window is the
-      // part that grows. The deck below always keeps its seat: in a short or
-      // landscape window the tape yields rather than pushing it off the edge.
-      height: box.fill ? Math.max(box.ch * 5,
-                                  box.height - box.ch * 2.4 - deck.height - content.spacing)
-                       : Math.round(parent.width * 0.72)
-      color: Qt.rgba(box.bg.r, box.bg.g, box.bg.b, 0.55)
-      border.width: 1
-      border.color: Tui.mix(box.dim, box.bg, 0.45)
-      clip: true
-
-      // four corner screws, like the shell of the real thing
-      Repeater {
-        model: 4
+      height: box.headH
+      Text {
+        id: headLeft
+        anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+        width: Math.max(0, parent.width - headRight.width - box.cw)
+        elide: Text.ElideRight
+        text: "orpheus · " + (box.engine ? (box.engine.styleLabels[box.engine.widgetViz] || "") : "").toLowerCase()
+        font.family: Style.font.family; font.pixelSize: Style.font.caption
+        color: box.dim
+      }
+      Row {
+        id: headRight
+        anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+        spacing: box.cw * 0.6
         Text {
-          required property int index
-          readonly property bool onRight: index % 2 === 1
-          readonly property bool onLow: index > 1
-          anchors { left: onRight ? undefined : parent.left; right: onRight ? parent.right : undefined
-                    top: onLow ? undefined : parent.top; bottom: onLow ? parent.bottom : undefined
-                    margins: Math.round(box.cw * 0.4) }
-          z: 2
-          text: "•"; font.family: Style.font.family; font.pixelSize: Style.font.caption
-          color: Tui.mix(box.dim, box.bg, 0.35)
+          visible: box.fill && box.tempoOk
+          text: box.engine ? Math.round(box.engine.tempo) + " bpm" : ""
+          font.family: Style.font.family; font.pixelSize: Style.font.caption; font.features: { "tnum": 1 }
+          color: box.dim
+        }
+        Text {
+          visible: box.fill && box.tempoOk && box.sectionOk
+          text: "·"
+          font.family: Style.font.family; font.pixelSize: Style.font.caption
+          color: box.dim
+        }
+        Text {
+          visible: box.fill && box.sectionOk
+          text: box.engine ? box.engine.section : ""
+          font.family: Style.font.family; font.pixelSize: Style.font.caption
+          font.bold: box.secFlash > 0.3
+          color: Tui.mix(box.dim, box.accent, box.secFlash)
+        }
+        Text {
+          id: closeMark
+          text: "✕"
+          font.family: Style.font.family; font.pixelSize: Style.font.caption
+          color: closeMouse.containsMouse ? box.accent : box.dim
+          MouseArea {
+            id: closeMouse
+            anchors.fill: parent; anchors.margins: -4
+            hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+            onClicked: if (box.engine) box.engine.setWidget("enabled", "off")
+            TuiTip { text: "close the widget" }
+          }
         }
       }
+    }
+
+    // 2. The visualizer. Sized to the width in the corner; in a window it
+    // swallows the spare height, so it is the part that grows and the rows
+    // below always keep their seat. Click it to cycle the style.
+    Rectangle {
+      id: vizRect
+      width: parent.width
+      height: box.vizH
+      color: Qt.rgba(box.bg.r, box.bg.g, box.bg.b, 0.55)
+      border.width: 1
+      border.color: box.rule
+      clip: true
 
       Viz {
         anchors.fill: parent
@@ -171,6 +337,7 @@ TuiBox {
           hoverEnabled: true
           acceptedButtons: Qt.LeftButton | Qt.RightButton
           cursorShape: Qt.PointingHandCursor
+          property real wheelAcc: 0
           onClicked: function(m) { if (box.engine) box.engine.cycleWidgetViz(m.button === Qt.RightButton ? -1 : 1) }
           onWheel: function(w) { var n = Tui.notches(vizMouse, w.angleDelta.y); if (n && box.engine) box.engine.cycleWidgetViz(-n) }
           TuiTip { text: "click: next style · right-click: back · scroll"; delay: 900 }
@@ -181,211 +348,309 @@ TuiBox {
           function onWidgetVizChanged() { vizLabel.flash(box.engine.styleLabels[box.engine.widgetViz] || box.engine.widgetViz) }
         }
       }
-
     }
 
-    // 2. The deck: cover art and track, a block-char spectrum, the playbar, and
-    // the transport. The window above fills the slack so this stays put.
-    Column {
-      id: deck
+    // 3. The track: art on a glow, the title large, the artist small and spaced,
+    // chips at the foot. Art and text cross over on a track change.
+    Item {
+      id: meta
       width: parent.width
-      spacing: box.ch * 0.55
+      height: box.metaH
 
-      // a rule between the tape window and the mechanism plate below
-      Rectangle { width: parent.width; height: 1; color: Tui.mix(box.dim, box.bg, 0.35) }
+      Item {
+        id: artBox
+        width: box.artSize; height: box.artSize
 
-      // The label sticker: square, 1px, with the classic two accent stripes
-      // and a side mark -- cover art and the track ride on it.
-      Rectangle {
-        id: label
-        anchors.horizontalCenter: parent.horizontalCenter
-        readonly property real stripesH: Math.round(box.ch * 0.35) + Math.round(box.ch * 0.42)
-                                         + Math.round(box.ch * 0.18) + Math.max(2, Math.round(box.ch * 0.14))
-        width: labelCol.width + box.cw * 3
-        height: Math.round(stripesH + box.ch * 0.5 + labelCol.height + box.ch * 0.45)
-        color: Tui.alpha(Commons.Color.accent, Tui.A.tint)
-        border.width: 1; border.color: Tui.mix(box.dim, box.bg, 0.5)
-
-        // stripe pair across the top of the label, side mark riding the bold one
-        Rectangle {
-          id: stripeA
-          anchors { top: parent.top; left: parent.left; right: parent.right; margins: 1; topMargin: Math.round(box.ch * 0.35) }
-          height: Math.round(box.ch * 0.42)
-          color: Tui.alpha(Commons.Color.accent, 0.5)
-          Text {
-            anchors { left: parent.left; leftMargin: box.cw; verticalCenter: parent.verticalCenter }
-            text: "A"; font.family: Style.font.family; font.pixelSize: Style.font.caption; font.bold: true
-            color: box.bg
-          }
-          Text {
-            anchors { right: parent.right; rightMargin: box.cw; verticalCenter: parent.verticalCenter }
-            text: box.playing ? "REC ●" : "STOP ■"
-            font.family: Style.font.family; font.pixelSize: Style.font.caption
-            color: Tui.mix(box.bg, box.playing ? Commons.Color.accent : box.dim, 0.25)
+        // The glow: the accent, blurred once, sitting behind the art. Only its
+        // opacity moves (a composite, never a re-blur), breathing with the beat
+        // when title effects are on. Off with bloom (and on light themes), and
+        // in game mode.
+        Loader {
+          active: box.bloom > 0 && !!box.engine && !box.engine.gameMode
+          anchors.fill: parent
+          sourceComponent: Item {
+            Rectangle { id: glowSrc; anchors.fill: parent; color: box.accent; visible: false }
+            MultiEffect {
+              source: glowSrc
+              anchors.fill: glowSrc
+              autoPaddingEnabled: true
+              blurEnabled: true
+              blur: 1
+              blurMax: 36
+              scale: 1.1
+              opacity: box.bloom * (0.2 + (box.titleFx ? 0.3 * box.beat : 0.1))
+            }
           }
         }
+
         Rectangle {
-          anchors { top: stripeA.bottom; left: parent.left; right: parent.right; margins: 1; topMargin: Math.round(box.ch * 0.18) }
-          height: Math.max(2, Math.round(box.ch * 0.14))
-          color: Tui.alpha(Commons.Color.accent, 0.3)
+          id: art
+          anchors.fill: parent
+          color: Tui.mix(box.accent, box.bg, 0.88)
+          border.width: 1; border.color: box.rule
+          clip: true
+
+          property string cur: ""
+          property string prev: ""
+          readonly property string url: box.player && box.player.trackArtUrl ? box.player.trackArtUrl : ""
+          onUrlChanged: { prev = cur; cur = url }
+          Component.onCompleted: cur = url
+
+          Text {
+            anchors.centerIn: parent; visible: !artNew.arrived && !artOld.visible
+            text: "╱╱╱"; font.family: Style.font.family; font.pixelSize: Style.font.body; color: box.dim
+          }
+          // the cover we are leaving, held under the new one until it arrives
+          Image {
+            id: artOld
+            anchors.fill: parent; anchors.margins: 1
+            source: art.prev
+            visible: source !== "" && opacity > 0.01
+            fillMode: Image.PreserveAspectCrop; asynchronous: true
+            sourceSize: Qt.size(art.width * 2, art.height * 2)
+            opacity: artNew.arrived ? 0 : 1
+            Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
+          }
+          Image {
+            id: artNew
+            anchors.fill: parent; anchors.margins: 1
+            source: art.cur
+            fillMode: Image.PreserveAspectCrop; asynchronous: true
+            sourceSize: Qt.size(art.width * 2, art.height * 2)
+            property bool arrived: false
+            onSourceChanged: arrived = false
+            onStatusChanged: if (status === Image.Ready) arrived = true
+            opacity: arrived ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
+          }
+          MouseArea { anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                      onClicked: if (box.engine) box.engine.libraryOpen = true
+                      TuiTip { text: "open the player" } }
         }
+      }
 
-        Column {
-          id: labelCol
-          anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: Math.round(box.ch * 0.45) }
-          spacing: box.ch * 0.45
-          width: Math.min(box.width - box.cw * 6, Math.round(box.cw * 30 * box.dscale))
+      // slide and fade in on a track change, at the shared state pace
+      property real swap: 1
+      NumberAnimation on swap { id: swapAnim; running: false; from: 0; to: 1; duration: Tui.STATE; easing.type: Easing.OutCubic }
+      Connections { target: box; function onTrackKeyChanged() { swapAnim.restart() } }
 
-          // cover art, centred
+      Column {
+        id: titleCol
+        x: box.artSize + box.cw * 1.2 + (1 - meta.swap) * box.cw
+        width: Math.max(0, parent.width - box.artSize - box.cw * 1.2)
+        opacity: 0.25 + 0.75 * meta.swap
+        spacing: Math.round(box.ch * 0.25)
+        ScrambleText {
+          width: parent.width; elide: Text.ElideRight; wrapMode: Text.Wrap; maximumLineCount: 2
+          textFormat: Text.PlainText
+          animate: box.titleFx; key: box.trackKey
+          target: box.player ? (box.player.trackTitle || "unknown track") : "nothing playing"
+          font.family: Style.font.family; font.pixelSize: Math.round(Tui.px("title", Style.font.body) * Math.min(box.dscale, 1.35)); font.bold: true
+          color: box.fg
+        }
+        ScrambleText {
+          width: parent.width; elide: Text.ElideRight
+          textFormat: Text.PlainText
+          animate: box.titleFx; key: box.trackKey; duration: Tui.DECODE
+          target: box.player ? (box.player.trackArtist || "") : "pick something in the player" + (box.libraryKey ? " · " + box.libraryKey : "")
+          font.family: Style.font.family; font.pixelSize: Math.round(Style.font.caption * Math.min(box.dscale, 1.3))
+          font.capitalization: Font.AllUppercase; font.letterSpacing: 1.2
+          color: box.dim
+        }
+      }
+
+      Flow {
+        visible: box.showChips && (box.qualityLabel !== "" || box.liked)
+        x: titleCol.x
+        anchors.bottom: parent.bottom
+        width: titleCol.width
+        spacing: Math.round(box.cw * 0.6)
+        Chip { visible: box.qualityLabel !== ""; label: box.qualityLabel }
+        Chip {
+          visible: box.liked
+          label: "♥"
+          tone: box.accent
+          clickable: true
+          tip: "unlike"
+          onClicked: box.act("like")
+        }
+      }
+    }
+
+    // 4. The mirrored spectrum: the live bands as bars rising from a baseline,
+    // with a faint reflection fading out below it. Pixels, because it is the
+    // spectrum.
+    Item {
+      id: mirror
+      visible: box.showMirror
+      width: parent.width
+      height: box.mirrorH
+      readonly property int bars: 30
+      readonly property real gap: 2
+      readonly property real bw: Math.max(1, Math.floor((width - (bars - 1) * gap) / bars))
+      readonly property real baseY: Math.round(height * 0.62)
+      readonly property real span: bars * bw + (bars - 1) * gap
+      Repeater {
+        model: mirror.bars
+        Item {
+          required property int index
+          readonly property real v: box.playing && box.engine && box.engine.levels
+                                    ? Math.max(0, Math.min(1, (box.engine.levels[index] || 0) * 1.4)) : 0
+          x: Math.round((mirror.width - mirror.span) / 2) + index * (mirror.bw + mirror.gap)
+          width: mirror.bw; height: mirror.height
           Rectangle {
-            id: art
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: Math.round(box.ch * 6 * box.dscale); height: width
-            color: Tui.alpha(Commons.Color.accent, Tui.A.tint)
-            border.width: 1; border.color: Tui.mix(box.dim, box.bg, 0.4)
-            Text {
-              anchors.centerIn: parent; visible: !artImg.arrived
-              text: "╱╱╱"; font.family: Style.font.family; font.pixelSize: Style.font.body; color: box.dim
-            }
-            Image {
-              id: artImg
-              anchors.fill: parent; anchors.margins: 1
-              source: box.player && box.player.trackArtUrl ? box.player.trackArtUrl : ""
-              fillMode: Image.PreserveAspectCrop; asynchronous: true
-              sourceSize: Qt.size(art.width * 2, art.height * 2)
-              property bool arrived: false
-              onSourceChanged: arrived = false
-              onStatusChanged: if (status === Image.Ready) arrived = true
-              opacity: arrived ? 1 : 0
-              Behavior on opacity { NumberAnimation { duration: Tui.STATE; easing.type: Tui.EASE } }
-            }
-            MouseArea { anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                        onClicked: if (box.engine) box.engine.libraryOpen = true
-                        TuiTip { text: "open the player" } }
+            width: parent.width; height: Math.max(1, Math.round(mirror.baseY * parent.v))
+            y: mirror.baseY - height
+            color: Tui.mix(box.accent, box.fg, 0.15)
           }
-
-          // title / artist, centred
-          Column {
-            width: parent.width
-            ScrambleText {
-              width: parent.width; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
-              textFormat: Text.PlainText
-              animate: box.titleFx; key: box.trackKey
-              target: box.player ? (box.player.trackTitle || "unknown track") : "nothing playing"
-              font.family: Style.font.family; font.pixelSize: Math.round(Style.font.body * box.dscale); font.bold: true; color: box.fg
-            }
-            ScrambleText {
-              id: artistRow
-              width: parent.width; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
-              textFormat: Text.PlainText
-              animate: box.titleFx; key: box.trackKey; duration: Tui.DECODE
-              target: box.player ? (box.player.trackArtist || "") : "pick something in the player" + (box.libraryKey ? " · " + box.libraryKey : "")
-              font.family: Style.font.family; font.pixelSize: Math.round(Style.font.caption * box.dscale); color: box.dim
+          Rectangle {
+            y: mirror.baseY + 2
+            width: parent.width; height: Math.round((mirror.height - mirror.baseY - 2) * parent.v)
+            gradient: Gradient {
+              GradientStop { position: 0; color: Tui.alpha(box.accent, 0.3) }
+              GradientStop { position: 1; color: Tui.alpha(box.accent, 0) }
             }
           }
         }
       }
+      Rectangle { y: mirror.baseY; width: parent.width; height: 1; color: box.rule }
+    }
 
-      // a vibey block-char spectrum off the live bands
-      GlowText {
-        width: parent.width
-        horizontalAlignment: Text.AlignHCenter
-        text: box.spectrum
-        font.family: Style.font.family; font.pixelSize: Math.round(Tui.px("lead", Style.font.body) * box.dscale)
-        color: Tui.mix(box.accent, box.fg, 0.15)
-        glowLive: box.bloom > 0 && box.playing
-        glow: box.bloom * 0.5 * (0.5 + 0.5 * box.beat)
-        glowRadius: 7
+    // 5. Time: elapsed on the left, what is left on the right.
+    Item {
+      visible: box.fill
+      width: parent.width
+      height: box.timeH
+      Text {
+        anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+        text: box.clock(box.scrubbing ? box.scrubFrac * box.length : box.position)
+        font.family: Style.font.family; font.pixelSize: Style.font.caption; font.features: { "tnum": 1 }
+        color: box.fg
       }
+      Text {
+        anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+        visible: box.length > 0
+        text: "−" + box.clock(box.length * (1 - box.sfrac))
+        font.family: Style.font.family; font.pixelSize: Style.font.caption; font.features: { "tnum": 1 }
+        color: box.dim
+      }
+    }
 
-      // the playbar -- a bold, full-width tape counter you can scrub
-      GlowText {
-        id: seek
-        width: parent.width
-        glow: box.player ? box.bloom * 0.4 : 0
-        glowRadius: 6
-        TextMetrics { id: meterCell; font: seek.font; text: "━━━━━━━━━━" }
-        readonly property real meterCW: meterCell.advanceWidth > 0 ? meterCell.advanceWidth / 10 : box.cw
-        readonly property int cells: Math.max(8, Math.floor((width - box.cw * (box.length > 0 ? 15 : 7)) / meterCW))
-        property bool scrubbing: false
-        property real scrubFrac: 0
-        readonly property real sfrac: scrubbing ? scrubFrac : box.frac
-        textFormat: Text.StyledText
-        readonly property string totalMark: box.length > 0 ? ' <font color="' + Tui.hex(Tui.mix(box.dim, box.bg, 0.15)) + '">╱ ' + box.clock(box.length) + '</font>' : ''
-        text: Tui.meterRich(sfrac, cells, box.accent, Tui.mix(box.dim, box.bg, 0.3))
-              + ' <font color="' + Tui.hex(box.fg) + '">' + box.clock(scrubbing ? scrubFrac * box.length : box.position) + '</font>' + totalMark
-        font.family: Style.font.family; font.pixelSize: Style.font.body
+    // 6. The seek line: a 2 px hairline with an accent fill and a soft glow,
+    // a touch thicker under the pointer. Click or drag to seek, as ever.
+    Item {
+      id: seekBar
+      width: parent.width
+      height: box.seekH
+      readonly property bool hot: seekMouse.containsMouse || box.scrubbing
+      property real th: hot ? 3 : 2
+      Behavior on th { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+      Rectangle {
+        anchors.verticalCenter: parent.verticalCenter
+        width: parent.width; height: seekBar.th
+        color: Tui.mix(box.dim, box.bg, 0.6)
+      }
+      Rectangle {
+        anchors { verticalCenter: parent.verticalCenter; left: parent.left }
+        visible: box.bloom > 0 && box.player !== null
+        width: Math.round(parent.width * box.sfrac); height: seekBar.th + 6
+        color: Tui.alpha(box.accent, 0.22 * box.bloom)
+      }
+      Rectangle {
+        anchors { verticalCenter: parent.verticalCenter; left: parent.left }
+        width: Math.round(parent.width * box.sfrac); height: seekBar.th
         color: box.accent
-        TextMetrics { id: seekLine; font: seek.font; text: Tui.meter(0, seek.cells, "━", "─", "╸") }
-        MouseArea {
-          id: seekMouse
-          width: seekLine.advanceWidth; height: parent.height
-          enabled: !!(box.player && box.player.canSeek) && box.length > 0
-          hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-          function fracAt(x) { return Math.max(0, Math.min(1, x / Math.max(1, width))) }
-          onPressed: function(m) { seek.scrubFrac = fracAt(m.x); seek.scrubbing = true }
-          onPositionChanged: function(m) { if (pressed) seek.scrubFrac = fracAt(m.x) }
-          onReleased: {
-            if (!seek.scrubbing) return
-            if (box.player) box.player.position = seek.scrubFrac * box.length
-            seek.scrubbing = false
-          }
-          onCanceled: seek.scrubbing = false
-          TuiTip {
-            follow: true; force: seek.scrubbing
-            at: Math.max(0, Math.min(seekMouse.width, seekMouse.mouseX))
-            text: box.length > 0 ? box.clock((seek.scrubbing ? seek.scrubFrac : seekMouse.fracAt(seekMouse.mouseX)) * box.length) : ""
-          }
+      }
+      Rectangle {
+        visible: seekBar.hot && box.length > 0
+        anchors.verticalCenter: parent.verticalCenter
+        x: Math.max(0, Math.min(parent.width - width, Math.round(parent.width * box.sfrac) - width / 2))
+        width: 3; height: Math.round(box.ch * 0.7)
+        color: box.accent
+      }
+      MouseArea {
+        id: seekMouse
+        anchors.fill: parent
+        enabled: !!(box.player && box.player.canSeek) && box.length > 0
+        hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+        function fracAt(x) { return Math.max(0, Math.min(1, x / Math.max(1, width))) }
+        onPressed: function(m) { box.scrubFrac = fracAt(m.x); box.scrubbing = true }
+        onPositionChanged: function(m) { if (pressed) box.scrubFrac = fracAt(m.x) }
+        onReleased: {
+          if (!box.scrubbing) return
+          if (box.player) box.player.position = box.scrubFrac * box.length
+          box.scrubbing = false
+        }
+        onCanceled: box.scrubbing = false
+        TuiTip {
+          follow: true; force: box.scrubbing
+          at: Math.max(0, Math.min(seekMouse.width, seekMouse.mouseX))
+          text: box.length > 0 ? box.clock((box.scrubbing ? box.scrubFrac : seekMouse.fracAt(seekMouse.mouseX)) * box.length) : ""
         }
       }
+    }
 
-      // transport
-      Row {
-        id: controlsRow
-        anchors.horizontalCenter: parent.horizontalCenter
-        spacing: box.cw * 2.5 * box.dscale
-        topPadding: box.ch * 0.1
-        Repeater {
-          model: [
-            { g: "󰒮", a: "previous", tip: "previous track" },
-            { g: box.player && box.player.isPlaying ? "󰏤" : "󰐊", a: "toggle", tip: box.playing ? "pause" : "play" },
-            { g: "󰒭", a: "next", tip: "next track" },
-            { g: box.liked ? "󰋑" : "󰋕", a: "like", tip: box.liked ? "unlike" : "like" },
-            { g: "󰺢", a: "stage", tip: "open or close the big visualizer" }
-          ]
-          GlowText {
-            required property var modelData
-            readonly property bool isPlay: modelData.a === "toggle"
-            text: modelData.g
-            font.family: Style.font.family; font.pixelSize: Math.round(Tui.px("lead", Style.font.body) * box.dscale * 1.15)
-            property real hot: cm.containsMouse ? 1 : 0
-            Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
-            color: modelData.a === "like" && box.liked ? Commons.Color.accent
-                   : Tui.mix(isPlay && box.playing ? Tui.mix(box.fg, Commons.Color.accent, 0.45 + 0.55 * box.beat) : box.fg, Commons.Color.accent, hot)
-            scale: cm.pressed ? 0.86 : 1
-            Behavior on scale { enabled: !cm.pressed; SpringAnimation { spring: Tui.SPRING.spring; damping: Tui.SPRING.damping } }
-            glowLive: box.bloom > 0 && ((isPlay && box.playing) || (modelData.a === "like" && box.liked))
-            glow: !glowLive ? 0 : isPlay ? box.bloom * (0.3 + 0.7 * box.beat) : box.bloom * 0.4
-            visible: modelData.a !== "like" || box.orpheusTrack !== null
-            MouseArea {
-              id: cm
-              anchors.fill: parent; anchors.margins: -5
-              hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-              onClicked: {
-                var p = box.player, a = parent.modelData.a
-                if (a === "stage") { if (box.engine) box.engine.open = !box.engine.open; return }
-                if (a === "like") { if (box.orpheusTrack) box.engine.api.toggleLike("track", box.orpheusTrack.id); return }
-                if (!p) return
-                if (a === "toggle") p.togglePlaying()
-                else if (a === "next" && p.canGoNext) p.next()
-                else if (a === "previous" && p.canGoPrevious) p.previous()
-              }
-              TuiTip { text: cm.parent.modelData.tip }
+    // 7. Controls, each with its key printed small underneath where the window
+    // takes keys. The cells share the width, so five (or four) always fit.
+    Row {
+      id: controls
+      width: parent.width
+      height: box.ctlH
+      readonly property int count: box.orpheusTrack !== null ? 5 : 4
+      Repeater {
+        model: [
+          { g: "󰒮", a: "previous", k: "p", tip: "previous track" },
+          { g: "󰐊", a: "toggle", k: "space", tip: "play / pause" },
+          { g: "󰒭", a: "next", k: "n", tip: "next track" },
+          { g: "󰋕", a: "like", k: "F", tip: "like / unlike" },
+          { g: "󰺢", a: "stage", k: "V", tip: "open or close the big visualizer" }
+        ]
+        Item {
+          id: cell
+          required property var modelData
+          readonly property bool isPlay: modelData.a === "toggle"
+          readonly property bool isLike: modelData.a === "like"
+          visible: !isLike || box.orpheusTrack !== null
+          width: controls.width / controls.count
+          height: controls.height
+
+          Column {
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: Math.round(box.ch * 0.1)
+            GlowText {
+              id: glyph
+              anchors.horizontalCenter: parent.horizontalCenter
+              text: cell.isPlay ? (box.playing ? "󰏤" : "󰐊") : cell.isLike ? (box.liked ? "󰋑" : "󰋕") : cell.modelData.g
+              font.family: Style.font.family; font.pixelSize: Math.round(Tui.px("lead", Style.font.body) * box.dscale * 1.15)
+              property real hot: cm.containsMouse ? 1 : 0
+              Behavior on hot { NumberAnimation { duration: Tui.HOVER; easing.type: Tui.EASE } }
+              color: cell.isLike && box.liked ? Commons.Color.accent
+                     : Tui.mix(cell.isPlay && box.playing ? Tui.mix(box.fg, Commons.Color.accent, 0.45 + 0.55 * box.beat) : box.fg, Commons.Color.accent, hot)
+              scale: cm.pressed ? 0.86 : 1
+              Behavior on scale { enabled: !cm.pressed; SpringAnimation { spring: Tui.SPRING.spring; damping: Tui.SPRING.damping } }
+              glowLive: box.bloom > 0 && ((cell.isPlay && box.playing) || (cell.isLike && box.liked))
+              glow: !glowLive ? 0 : cell.isPlay ? box.bloom * (0.3 + 0.7 * box.beat) : box.bloom * 0.4
+            }
+            Text {
+              visible: box.keys
+              anchors.horizontalCenter: parent.horizontalCenter
+              text: cell.modelData.k
+              font.family: Style.font.family; font.pixelSize: Style.font.caption - 1
+              color: box.dim
+            }
+          }
+          MouseArea {
+            id: cm
+            anchors.fill: parent
+            hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+            onClicked: box.act(cell.modelData.a)
+            TuiTip {
+              text: cell.isPlay ? (box.playing ? "pause" : "play") : cell.isLike ? (box.liked ? "unlike" : "like") : cell.modelData.tip
+              key: box.keys ? cell.modelData.k : ""
             }
           }
         }
       }
     }
   }
-
 }
