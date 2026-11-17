@@ -17,10 +17,11 @@ o.window({ class = "org.quickshell", title = "^Orpheus$" }, {
 })
 -- The desktop widget: "Orpheus Widget" tiles into the layout; the [float] variant floats.
 -- The cassette style floats as "[float][tall]" with no pinned size, so the
--- window's own portrait default (scaled to the user's font) stands.
+-- window's own portrait default (scaled to the user's font) stands. Both open
+-- centred: left to itself Hyprland can drop a tall one half off a short screen.
 o.window({ class = "org.quickshell", title = "^Orpheus Widget" }, { tag = "-default-opacity", opacity = "1 1" })
-o.window({ class = "org.quickshell", title = "^Orpheus Widget \\[float\\]$" }, { float = true, size = { 520, 420 } })
-o.window({ class = "org.quickshell", title = "^Orpheus Widget \\[float\\]\\[tall\\]$" }, { float = true })
+o.window({ class = "org.quickshell", title = "^Orpheus Widget \\[float\\]$" }, { float = true, center = true, size = { 520, 420 } })
+o.window({ class = "org.quickshell", title = "^Orpheus Widget \\[float\\]\\[tall\\]$" }, { float = true, center = true })
 -- Video: its mpv runs as app id orpheus.video, so it skips Omarchy's generic
 -- mpv rule and opens as a centered 16:9 screen.
 o.window("^orpheus\\.video$", {
