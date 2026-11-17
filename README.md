@@ -2,98 +2,54 @@
 
 <a href="docs/media/social.png"><img src="docs/media/social.png" alt="ORPHEUS: a hi-res TIDAL player that thinks it's a terminal" width="720"></a>
 
-```
-█████ ████  ████  █   █ █████ █   █ █████
-█   █ █   █ █   █ █   █ █     █   █ █
-█   █ ████  ████  █████ ████  █   █ █████
-█   █ █  █  █     █   █ █     █   █     █
-█████ █   █ █     █   █ █████ █████ █████
-```
-
 **a hi-res TIDAL player that thinks it's a terminal**
-
-`▌▌ SIDE A: THE IDEA  ·  SIDE B: THE MANUAL  ·  ORPHEUS//WIN EDITION ▐▐`
 
 [![licence](https://img.shields.io/badge/licence-GPL--3.0--or--later-2f5bff?style=flat-square)](LICENSE)
 [![version](https://img.shields.io/badge/version-0.1.0-5b8cff?style=flat-square)](manifest.json)
-[![platform](https://img.shields.io/badge/platform-Omarchy%20%C2%B7%20Windows-84a9ff?style=flat-square)](#-side-a--the-idea)
-[![stack](https://img.shields.io/badge/QML%20·%20GLSL%20·%20Python-0a1020?style=flat-square)](#03--how-it-fits-together)
+[![platform](https://img.shields.io/badge/platform-Omarchy%20%C2%B7%20Windows-84a9ff?style=flat-square)](#requirements)
+[![stack](https://img.shields.io/badge/QML%20·%20GLSL%20·%20Python-0a1020?style=flat-square)](docs/architecture.md)
 [![stars](https://img.shields.io/github/stars/GeneralDussDuss/orpheus?style=flat-square&color=ffd98a&label=stars)](https://github.com/GeneralDussDuss/orpheus/stargazers)
 
-**[▶ Live demo — the real shaders, running in your browser](https://generaldussduss.github.io/orpheus-site/)**
+**[▶ Live demo: the real shaders, running in your browser](https://generaldussduss.github.io/orpheus-site/)**
 
 </div>
 
-```
- ORPHEUS BIOS v0.1                       (c) the underworld, all rights reversed
- CPU ........ OK          MEM ........ OK
- DSP ........ OK          GLSL ....... 20 STYLES LOADED
- MPV ........ OK          EQ ......... 10 BANDS, FLAT
- TIDAL LINK . ▮           MODE ....... HI-RES / LOSSLESS
- > insert cassette, press play_
-```
+Orpheus is a music player and visualizer for the [Omarchy](https://omarchy.org) desktop (and Windows).
+It plays TIDAL up to hi-res FLAC, your own Navidrome server, and SoundCloud and YouTube. The whole
+interface is box-drawing characters in your desktop font and theme, with twenty GLSL visualizers that
+move at the pace of the music, not its volume.
 
 ![the player in motion](docs/media/player.gif)
 
-### ▶ PRESS PLAY
+## Install
 
-**Linux ([Omarchy](https://omarchy.org))** — paste this into a terminal:
+**Linux (Omarchy)**, in a terminal:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/GeneralDussDuss/orpheus/main/install.sh | bash
 ```
 
-**Windows 10 / 11** — paste this into PowerShell:
+**Windows 10 / 11**, in PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/GeneralDussDuss/orpheus/main/install.ps1 | iex
 ```
 
-Either one is the whole install. It adds whatever is missing, sets everything up, and
-opens the player when it is done. Run the same line again to update.
-[What they do, and how to undo them.](#05--boot-sequence--install)
+Either one is the whole install: it adds what is missing, sets everything up and opens the player.
+Run the same line again to update. `install.sh --uninstall` (or Settings → Apps on Windows) removes
+it and keeps your sign-in. What the scripts do, flag by flag: [docs/install.md](docs/install.md).
 
----
+Then press `Super+Shift+M` for the player and `Ctrl+Shift+O` to sign in. *Insert cassette, press play.*
 
-## ▤ TRACKLIST ╱╱ contents
+## The idea
 
-| side | # | track | |
-|:-:|:-:|---|---|
-| **A** | 01 | [the idea](#01--the-idea) | pace, not loudness |
-| **A** | 02 | [what you get](#02--what-you-get) | the feature list |
-| **A** | 03 | [how it fits together](#03--how-it-fits-together) | daemon, plugin, shaders |
-| **A** | 04 | [requirements](#04--requirements) | what you need first |
-| **A** | 05 | [boot sequence](#05--boot-sequence--install) | install, update, uninstall |
-| **B** | 06 | [sign-in](#06--sign-in) | standard and hi-res |
-| **B** | 07 | [keybinds and usage](#07--keybinds-and-usage) | keys, CLI, widget |
-| **B** | 08 | [equalizer](#08--equalizer) | ten bands, AutoEQ headphone corrections |
-| **B** | 09 | [lyrics](#09--lyrics) | synced, cached, never bundled |
-| **B** | 10 | [configuration](#10--configuration) | where things live |
-| **B** | 11 | [your own shaders](#11--your-own-shaders) | shadertoy-style .frag, hot reload |
-| `//WIN` | | [liner notes](#-liner-notes--orpheuswin) | what the Windows edition adds |
-| B-sides | | [troubleshooting](#-b-sides--troubleshooting) · [status and known issues](#-b-sides--status-and-known-issues) | the honest list |
-| | | [credits and licence](#-credits--licence) | |
+Most visualizers react to **loudness**: a kick lands, the bars jump, and that is the whole
+relationship. Orpheus reacts to **pace**. It estimates the tempo of what is playing and moves the world
+at that speed. A 174 BPM breakbeat does not just flicker harder than an 89 BPM doom riff: the road
+arrives sooner, the camera covers more ground, the terrain rolls past faster.
 
----
-
-## ▶ SIDE A ╱╱ the idea
-
-### 01 · the idea
-
-Most music visualizers react to **loudness**. A kick lands, the bars jump, and that is
-the whole relationship. Orpheus reacts to **pace**: it estimates the tempo of what is
-playing and moves the world at that speed. A 174 BPM breakbeat does not just flicker
-harder than a 89 BPM doom riff — the road arrives sooner, the camera covers more ground,
-the terrain rolls past faster.
-
-The shaders never read the clock. They read a distance that the CPU integrates from the
-current tempo, so when the pace changes, the world's speed changes with it.
-
-The other half of the idea is that none of it looks like a music app. There is no title
-bar, there are no rounded cards and there are no popout menus. The interface is
-box-drawing characters and braille spectrum glyphs laid out in the columns and rows of
-your desktop font, with a fragment shader running in the right half of the window.
-Colours come from the active Omarchy theme, so it changes when your desktop does.
+The other half is that none of it looks like a music app. No title bar, no rounded cards, no popout
+menus. Colours come from the active Omarchy theme, so it changes when your desktop does.
 
 <table>
 <tr>
@@ -101,555 +57,193 @@ Colours come from the active Omarchy theme, so it changes when your desktop does
 <td width="50%"><img src="docs/media/horizon.png" alt="Horizon: ridgelines rolling out of a banded sun"></td>
 </tr>
 <tr>
-<td align="center"><b>Prism</b> — a spectrum city on a winding road</td>
-<td align="center"><b>Horizon</b> — ridgelines rolling out of a banded sun</td>
+<td align="center"><b>Prism</b>, a spectrum city on a winding road</td>
+<td align="center"><b>Horizon</b>, ridgelines rolling out of a banded sun</td>
 </tr>
 </table>
 
-> **Unofficial client.** Orpheus is not affiliated with, endorsed by or supported by
-> TIDAL. It uses the unofficial [`tidalapi`](https://github.com/tamland/python-tidal)
-> library and needs **your own paid TIDAL subscription**. It only streams; it does not
-> download, store or decrypt anything. TIDAL's terms may not permit third-party clients.
-> Whether to use one on your account is your call and your risk.
+> **Unofficial client.** Orpheus is not affiliated with, endorsed by or supported by TIDAL. It uses the
+> unofficial [`tidalapi`](https://github.com/tamland/python-tidal) library and needs **your own paid
+> TIDAL subscription**. It only streams; it does not download, store or decrypt anything. TIDAL's terms
+> may not permit third-party clients. Whether to use one on your account is your call and your risk.
 
-### 02 · what you get
+## What you get
 
-| | |
-|---|---|
-| **The player** | A TUI window with your mixes, playlists, albums, tracks and artists, a search, a queue, and a visualizer in the right-hand rail. `Super+Shift+M`. |
-| **The stage** | The same engine fullscreen, with a mini-player. `Super+Ctrl+M`. |
-| **Cassette deck** | Press `t` in the visualizer: reels at tape speed, vu needles, the queue as a j-card, all in the theme. Drag a reel to scrub. No album art. |
-| **The widget** | A desktop widget that cycles styles inline — no popout. Five layer modes: `top`, `reserve`, `desktop`, `tile`, `float`. |
-| **The bar** | A tiny always-on spectrum in the Omarchy bar. Click for the stage, scroll for the next style. |
-| **Twenty styles** | Prism, Skyline, Horizon, Orb, Tunnel, Halo, Scope, Nova, Ink, Abyss, Aurora, Lens, Gyre, Nebula, Inferno, Teletype, Sanctum, Grid, Aether and Mandala — plus `mini` for bar-sized surfaces, and a GPU spectrum-history pass that several of them build terrain, text and accretion from. |
-| **Hi-res** | Up to FLAC hi-res through the PKCE sign-in, lossless otherwise. The player shows which you got. |
-| **More than TIDAL** | Section `8` searches YouTube and SoundCloud through `yt-dlp`, and anime through `ani-cli` (on Windows, `c` opens Curd). Videos play in their own window; YouTube and SoundCloud also play as audio through the same queue, equalizer and visualizer. None of it needs a TIDAL sign-in. |
-| **Navidrome** | Point Orpheus at a self-hosted [Navidrome](https://www.navidrome.org) server (settings, or `navidromeUrl` / `navidromeUser` / `navidromePass` in config.json) and its library joins the search, tagged `nd` — albums, artists, queueing, the drop map and Pilgrimage included, plays scrobbled back to the server. Playback only: Orpheus does not download from anywhere. |
-| **Your own shaders** | drop a Shadertoy-style .frag in your shader folder, or paste a shadertoy link in the Ctrl+K palette; it compiles on save, hot-reloads while you edit, and joins the style list. |
-| **Drop map** | Each TIDAL track is analysed ahead of time so builds, drops and beats land exactly: the picture winds up over the last bars, blacks out on the last beat and bursts on the drop; drop marks on the seek bar. Needs ffmpeg. |
-| **Pilgrimage** | A stage mode (`g`): the song travels between styles by section — the build in one world, the drop diving into another — each morph landing on the boundary itself when the drop map knows it ahead of time. `n` skips to the next leg; a manual pick is a detour until the next section. Route in `config.json` under `pilgrimRoute`. |
-| **AutoEQ** | Press `A` on the equalizer page and type your headphones: AutoEq's measured correction is fetched on request and stacked under the ten bands, with its curve drawn beneath them. |
-| **Desktop integration** | MPRIS, so your bar, your media keys and the rest of the desktop see the track. Favourites from anywhere in the UI. The queue and position survive a service restart. |
+- **The player** (`Super+Shift+M`): mixes, playlists, albums, tracks, artists, search, a queue, and a
+  visualizer in the right-hand rail. Drag its top edge to move it.
+- **The stage** (`Super+Ctrl+M`): the same engine fullscreen or as a floating card, with a mini player.
+  Drag the card by its title; double-click to centre it. Pin the fullscreen show to a monitor in
+  settings ▸ "show on screen".
+- **Twenty styles**: Prism, Skyline, Horizon, Orb, Tunnel, Halo, Scope, Nova, Ink, Abyss, Aurora, Lens,
+  Gyre, Nebula, Inferno, Teletype, Sanctum, Grid, Aether and Mandala. A director reads the song's
+  structure and lands style changes on the downbeat.
+- **Drop map**: each track (TIDAL or Navidrome) is analysed ahead so builds and drops land exactly: the
+  picture winds up over the last bars, blacks out on the last beat and bursts on the drop. Needs ffmpeg.
+- **Pilgrimage** (`g` on the stage): the song travels between styles by section, the build in one world
+  and the drop diving into another. `n` skips a leg; a style you pick yourself is a detour until the
+  next section.
+- **Cassette deck** (`t`): reels that turn at real tape speed, vu needles, the queue as a j-card you can
+  click, a take-up counter, piano keys and eject. Pausing coasts into a brake kiss. Drag a reel to scrub.
+  Two looks: `shell` and `light`.
+- **The desktop widget** (`Super+Alt+M`): horizontal (`compact`, `full`) or one of four vertical decks,
+  below. It sits in a corner, on the desktop, tiled or floating.
+- **The bar**: a tiny always-on spectrum. Click for the stage, right-click or scroll for the next style,
+  middle-click for the mini player.
+- **More than TIDAL**: section `8` searches YouTube and SoundCloud through `yt-dlp` (as video in its own
+  window, or as audio through the same queue, EQ and visualizer) and anime through `ani-cli`. A
+  [Navidrome](https://www.navidrome.org) server joins the search tagged `nd`, with plays scrobbled back.
+  None of these need a TIDAL sign-in. Playback only: Orpheus downloads nothing.
+- **Listening**: endless radio when the queue runs out, crossfade, a sleep timer, listening stats (`9`,
+  with a wrapped), scrobbling to ListenBrainz and Last.fm, and an opt-in LAN phone remote.
+- **Equalizer**: ten bands in mpv, plus AutoEQ headphone corrections fetched on request.
+- **Your own shaders**: drop a Shadertoy-style `.frag` in a folder, or paste a shadertoy link into `Ctrl+K`.
+- **Desktop integration**: MPRIS for your bar and media keys; the queue and position survive a restart.
 
-![the desktop widget](docs/media/widget.png)
+## The widget decks
 
----
+<img src="docs/media/decks.jpg" alt="The Monolith, Reference and Field decks, side by side" width="720">
 
-### 03 · how it fits together
+Four vertical widget styles, for a portrait bar or a tall floating window. All of them take their colours
+from the live theme, and only the meters move while music plays; the rest is drawn once and cached.
 
-Two halves that talk over a loopback socket.
-
-```
-   TIDAL ──tidalapi──┐
-                     │
-                 ┌───▼──────────────────────┐        ┌──────────────────────┐
-                 │  orpheusd  (Python)      │  JSON  │  Quickshell plugin   │
-                 │                          │◄──────►│  (QML + GLSL)        │
-                 │  · tidalapi session      │  :47837│                      │
-                 │  · mpv over JSON IPC     │        │  · Library / Stage   │
-                 │  · MPRIS over dbus-next  │        │  · Widget / BarWidget│
-                 │  · queue + resume.json   │        │  · 8 style shaders│
-                 └───┬──────────────────────┘        └──────────▲───────────┘
-                     │                                          │
-                    mpv ──► PipeWire ──────────► cava ──────────┘
-                                                 32 bands @ 30/60 Hz
-```
-
-- **`orpheusd/`** — the daemon. `tidal.py` owns the session and the catalogue, `player.py`
-  drives `mpv` over its JSON IPC (launched `--load-scripts=no --media-controls=no` so
-  mpv's own MPRIS stays out of the way), `mpris.py` publishes the standard interface.
-  It serves a long-polling `/status` plus `/play`, `/control/*`, `/favorite`, `/liked`
-  and `/login/*` on `127.0.0.1:47837`.
-- **`*.qml`** — the shell plugin. `Service.qml` is the always-on half: it runs `cava`,
-  detects beats, reads theme colours live and registers the IPC handler. `Library.qml` is
-  the player window, `Stage.qml` the fullscreen one, `Widget*.qml` the desktop widget,
-  `BarWidget.qml` the bar spectrum, `Viz.qml` the shader host.
-- **`shaders/`** — the GLSL. `_common.glsl` is inlined at each `//#common` line by
-  `build-shaders.sh`; `history.frag` is a feedback pass that keeps a 32×40 spectrum
-  history on the GPU so Prism and Horizon can build terrain out of the past.
-
-Tempo is estimated by autocorrelating the spectral-flux envelope at a fixed 50 Hz. The
-octave is chosen against a target derived from onset density, with a veto on any
-candidate that would imply more than 3.5 onsets per beat — that is what stops a dense
-breakbeat locking to half-time.
-
----
-
-### 04 · requirements
-
-- **Linux with [Omarchy](https://omarchy.org)** (Hyprland and its Quickshell-based shell),
-  where Orpheus is a shell plugin, **or Windows 10 / 11**, where the same player runs as a
-  tray app. Not macOS, and not another Linux desktop without the Omarchy shell.
-- Linux: `mpv`, `cava`, `uv` and `jq`. The installer checks for them and offers to install
-  anything missing. PipeWire is expected (the visualizers read its monitor).
-- Windows: `winget` (built into Windows 10 and 11 as App Installer). The installer uses it
-  for git, uv, mpv, cava and yt-dlp, and installs Curd from its own release; mpv's
-  installer asks for administrator approval once.
-- Optional: `yt-dlp` for YouTube and SoundCloud, `ani-cli` for anime, `curd` for anime
-  with AniList sync.
-- Optional: a paid TIDAL subscription, for the music library. Everything else works
-  without one.
-- Optional: `ffmpeg` and numpy for the drop map (on Windows, winget's `yt-dlp` already
-  brings ffmpeg and the desktop extra brings numpy). Without them every track plays on the
-  live beat grid.
-- To rebuild shaders, or for your own shaders: `qsb` from Qt 6 shader tools
-  (`qt6-shadertools`). The compiled `shaders/*.qsb` files are committed, so a normal
-  install does not need it.
-
-Orpheus has been run on very few machines so far (Arch-based Omarchy, Hyprland 0.56). If
-you get it working somewhere else, or it breaks, an issue is genuinely useful.
-
-### 05 · boot sequence ╱╱ install
-
-#### Linux (Omarchy)
+- **`cassette`**, the Studio deck: the visualizer on top, big art on a glow, a mirrored spectrum and a
+  hairline seek line, in a double-rule frame. (The reels are gone, and not coming back.)
+- **`monolith`** (left): one block of anodised aluminium, a dot-matrix visualizer behind smoked glass,
+  rubber keys, and a knurled wheel on the edge you roll to seek.
+- **`reference`** (middle): an eighties hi-fi faceplate stood on end. A VFD display with peak-hold
+  spectrum and dB meters, chrome piano keys, and a big position knob that scrubs.
+- **`field`** (right): a steel field recorder. A backlit VU needle on a damped spring, a drum counter,
+  a tape-position scale you drag, a push-to-play knob and bat-handle toggles.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/GeneralDussDuss/orpheus/main/install.sh | bash
+omarchy-shell orpheus widget style monolith   # or cassette, reference, field, compact, full
+omarchy-shell orpheus widget layer float      # top, reserve, desktop, tile, float
 ```
 
-Want to read it first? It is [one short script](install.sh). Prefer not to pipe into
-bash? Either of these does the same thing:
+In a floating or tiled window the decks take `space`, `n`, `p`, `F` and `V`, and print those keys on
+their controls. Drag the top strip to move it. Scroll or right-click the widget to cycle styles. All the
+widget settings: [docs/config.md](docs/config.md#the-widget).
 
-```sh
-# through Omarchy's plugin manager
-omarchy plugin add https://github.com/GeneralDussDuss/orpheus
-~/.config/omarchy/plugins/orpheus/install.sh
+## Keys
 
-# or a clone anywhere
-git clone https://github.com/GeneralDussDuss/orpheus && ./orpheus/install.sh
-```
-
-The installer:
-
-- checks for Omarchy and the tools above, and offers `omarchy pkg add` for what is missing
-- links the plugin into `~/.config/omarchy/plugins/orpheus` (if it is not there already)
-- builds the Python environment with `uv` and starts `orpheusd` as a systemd user service
-- puts `orpheus` on your `PATH` and adds launcher entries
-- links `hypr/orpheus.lua` into `~/.config/hypr` and adds one `require` line to
-  `hyprland.lua` (backed up first) for the window rules and keys
-- enables the plugin, with the bar widget on the right, restarts the shell and opens the player
-
-It is safe to re-run, and that is how you update: the one-liner again, or `git pull` and
-`./install.sh`. Add `--yes` (`| bash -s -- --yes`) to skip the question before it installs
-packages. `install.sh --check` only reports what is missing, and `install.sh --uninstall`
-undoes all of it, keeping your sign-in and settings in `~/.local/state/orpheus`.
-
-The shell does not hot-reload plugins, so after changing any QML, run `omarchy restart shell`.
-
-#### Windows
-
-```powershell
-irm https://raw.githubusercontent.com/GeneralDussDuss/orpheus/main/install.ps1 | iex
-```
-
-[The script](install.ps1) installs whatever is missing with winget (git, uv, mpv, cava,
-yt-dlp) plus Curd for anime, fetches Orpheus into `%LOCALAPPDATA%\Orpheus\app`, builds its Python environment,
-adds **Orpheus** to the Start menu and Settings → Apps, and opens it. It lives in the tray:
-click the icon for the player, right-click for the visualizer, the mini player and
-**Start with Windows**. From anywhere, **Win+Alt+M** opens the player, **Win+Alt+V** the
-visualizer and **Win+Alt+P** the mini player, and the keyboard's media keys and the
-Windows media overlay control playback. The player, the visualizers and the video
-section are the same code as on Linux. Anime is Curd's: in section `8`, `c` opens it in
-its own console with AniList sync. The bar widget is Linux-only.
-
-Run the same line again to update. To remove it, use Uninstall in Settings → Apps, or
-this, either way keeping your sign-in and settings in `%LOCALAPPDATA%\Orpheus\state`:
-
-```powershell
-& "$env:LOCALAPPDATA\Orpheus\app\install.ps1" -Uninstall
-```
-
-Windows support is new: it is tested on every change in CI, but has run on few real
-machines so far. If something is off, an issue helps a lot.
-
-#### Rebuilding the shaders
-
-`shaders/*.frag` are compiled to `.qsb` by `build-shaders.sh`, which inlines
-`shaders/_common.glsl` at each `//#common` line and runs `qsb --qt6`.
-
-`qsb` ships with Qt 6's shader tools. On Arch it is in `qt6-shadertools` and installs to
-`/usr/lib/qt6/bin/qsb`, which is **not on `PATH`**. The script falls back to that path on
-its own; for anywhere else, set `QSB`:
-
-```sh
-./build-shaders.sh
-QSB=/path/to/qsb ./build-shaders.sh
-```
-
-The std140 uniform block in `_common.glsl` must match `Viz.qml` exactly, or the
-visualizer renders black.
-
----
-
-## ◀ SIDE B ╱╱ the manual
-
-*Flip the tape. Everything you press, tune and configure.*
-
-### 06 · sign-in
-
-Press `Ctrl+Shift+O` (once bound, see below), or run `orpheus login`. The sign-in page
-offers two flows:
-
-- **Standard sign-in** (a device link). This streams at most lossless FLAC.
-- **Hi-res sign-in** (`h`, PKCE). It opens a TIDAL login in your browser, and you paste
-  the redirect URL back into the page. **Hi-res streaming only works with this flow**:
-  the daemon reports `hires` only when the session is a PKCE session, and otherwise falls
-  back to lossless.
-
-The page shows `signed in as <user> · hi-res unlocked` when it worked. The session is
-kept in `~/.local/state/orpheus/tidal-session.json` — treat that file as a credential.
-
-### 07 · keybinds and usage
-
-The installer binds these through `hypr/orpheus.lua`. `Super+Shift+M` is Omarchy's own
-music key (Spotify by default), and Orpheus takes it over. To bring your own keys
-instead, put `orpheus_bindings = false` in `hyprland.lua` above the
-`require("hypr.orpheus")` line; the window rules stay.
+Press `?` anywhere for the full sheet, including what Hyprland has bound right now.
 
 | key | |
 |---|---|
 | `Super+Shift+M` | the player |
-| `Super+Ctrl+M` | fullscreen stage |
+| `Super+Ctrl+M` | the stage |
 | `Super+Alt+M` | the desktop widget |
-| `Ctrl+Shift+O` | sign-in |
+| `Ctrl+Shift+O` | sign in |
 
-And in the player: `e` opens the equalizer, `L` the lyrics, `y` copies a link to
-whatever the cursor is on.
+In the player: `space` pause, `n` / `p` next / previous, `/` search, `1`-`9` sections, `e` equalizer,
+`L` lyrics, `t` cassette deck, `V` the stage, `,` settings, `Ctrl+K` command palette, `y` / `Y` copy a
+link. On the stage: `←` / `→` change style, `f` fullscreen, `g` pilgrimage, `esc` close.
 
-In the player: `v` cycles the visualizer plane, `V` opens the stage, `1`–`9` switch sections
-(home, search, mixes, playlists, albums, tracks, artists, video, stats), `↵` plays, `space` pauses,
-`f` favourites, `/` searches, `,` opens settings, `Ctrl+K` the command palette, `?` the key sheet, `q` closes.
+`Super+Shift+M` is Omarchy's own music key, and Orpheus takes it over. To bring your own keys, put
+`orpheus_bindings = false` in `hyprland.lua` above the `require("hypr.orpheus")` line.
 
-`t` toggles the cassette deck. In the visualizer window `t` swaps the visualizer and the deck; under the deck
-`←`/`→` shuttle ± 10 s, `e` ejects (and closes), and a reel drags to scrub (one turn is 30 s).
-Also on the stage: `g` toggles pilgrimage (the journey between styles) and `n` skips to its next leg.
+Every key, the Windows hotkeys, sharing and the `orpheus` command: [docs/keys.md](docs/keys.md).
 
-A tape-deck key is yours to bind, e.g. `o.bind("SUPER + CTRL + T", "Music tape deck", "omarchy-shell -q orpheus cassette")`, or `orpheus tape`.
+## Sign-in
 
-**Sharing.** `y` copies a TIDAL link to the clipboard — for the row under the cursor,
-not necessarily what is playing, since what you want to send is usually what you are
-looking at. `Y` copies a [song.link](https://song.link) instead, which opens on whatever
-service the person you send it to actually uses; a bare TIDAL link is no use to a friend
-on Spotify. Tracks and albums have a universal form, artists and playlists do not, and a
-mix has no link at all — its id means nothing outside your account.
+`Ctrl+Shift+O`, or `omarchy-shell orpheus login`. Two flows:
 
-`orpheus share` does the same from a keybind with nothing open (`-u` for the universal
-link). It asks the daemon rather than the shell, because the window's status poll only
-runs while a window is on screen:
+- **Standard** (a device link) streams up to lossless FLAC.
+- **Hi-res** (`h`, PKCE) opens a TIDAL login in your browser; paste the redirect URL back. **Hi-res only
+  works with this flow.**
 
-```lua
-o.bind("SUPER + SHIFT + C", "Copy song link", "orpheus share")
-```
+It says `signed in as <user> · hi-res unlocked` when it worked, and the player shows which quality you got. The session lives in
+`~/.local/state/orpheus/tidal-session.json`: treat that file as a credential.
 
-**CLI.** `bin/orpheus [open|stage|close|toggle|status|share]` is idempotent: `open` and
-`close` check state first, `toggle` flips the player, `status` prints the shell's status
-JSON. Apart from `share`, everything is an IPC call; nothing is launched or kept alive.
-That is what makes it safe for a `.desktop` entry, which a launcher may fire twice.
+## Equalizer and lyrics
 
-**The desktop widget** is configured through one method, `widget <key> <value>`:
+**Equalizer** (`e`): ten bands, 31 Hz to 16 kHz, ±12 dB, running inside mpv, so it follows your output
+device and touches nothing else. A flat EQ removes the filter entirely. Six tone presets, an automatic
+preamp so boosts never clip, and `A` to find your headphones in [AutoEq](https://github.com/jaakkopasanen/AutoEq):
+the correction is fetched on request, stacked under your bands, and never shipped with Orpheus.
+Details, headroom and the API: [docs/equalizer.md](docs/equalizer.md).
 
-| key | values |
-|---|---|
-| `enabled` | `on` · `off` · `toggle` |
-| `style` | `compact` · `full` · `cassette` · `monolith` · `reference` · `field` (the last four stand vertical) |
-| `corner` | `top-left` · `top-right` · `bottom-left` · `bottom-right` |
-| `layer` | `top` · `reserve` · `desktop` · `tile` · `float` |
-| `viz` | `prism` · `skyline` · `horizon` · `tunnel` · `orb` · `halo` · `scope` · `nova` · `ridge` · `ink` · `abyss` · `aurora` |
-| `monitor` | a monitor name, or empty for wherever it lands |
+**Lyrics** (`L`): synced lyrics scroll with the track. TIDAL is asked first, then
+[LRCLIB](https://lrclib.net), then plain words. Results are cached in `~/.cache/orpheus/lyrics`,
+misses included: plenty of tracks have no lyrics anywhere, and asking two services again on every play
+is rude to both. No lyrics are bundled. `[` / `]` nudge the sync a quarter second, `\` resets it.
 
-`layer` is the one that decides how it behaves: `desktop` pins it behind your windows like
-a wallpaper, `tile` makes it a real window Hyprland lays out, `float` floats it, `top`
-sits above everything and `reserve` carves out space for it. Settings persist, so you set
-them once. Styles also cycle on the widget itself — scroll it or right-click — because
-this player does not do popout menus.
+## Configuration
 
-Or call the shell directly — `omarchy-shell orpheus <method>` — with methods
-`status toggle show hide library login eq lyrics style railViz nextRailViz nextStyle miniPlayer
-placement scene cassette dropMap importShader widget`. Note the widget's visualizer is `widget viz <style>`; there is no
-`widgetViz`. `scene viz|cassette|next` sets the stage's scene; `cassette` toggles the deck
-(opening the stage on it if closed). `dropMap on|off|toggle` flips the drop map;
-`importShader <text>` imports a shadertoy link or GLSL as a style.
+Almost everything is in settings (`,`), and the rest is `~/.config/orpheus/config.json`. Colours and font
+follow the Omarchy theme; there is nothing to set. Every config key, file location, IPC method and
+daemon route: [docs/config.md](docs/config.md).
 
-### 08 · equalizer
+Your own shaders go in `~/.config/orpheus/shaders` and become styles named `@<file>`. They compile on
+save and hot-reload while you edit. Uniforms, pragmas and limits: [docs/shaders.md](docs/shaders.md).
 
-Ten bands at 31, 62, 125, 250, 500&nbsp;Hz and 1, 2, 4, 8, 16&nbsp;kHz, ±12&nbsp;dB in half-decibel
-steps. The two end bands are shelves rather than peaks, because a peaking filter at 31&nbsp;Hz
-with Q&nbsp;1.4 has almost no effect by 20&nbsp;Hz — "lift the sub-bass" should do what it says.
+## Requirements
 
-It runs inside mpv as a filter chain, not as a PipeWire sink. That means it follows the
-output device automatically, affects nothing but Orpheus, and adds no dependency. **A flat
-or disabled EQ removes the filter entirely**, so the signal path is untouched rather than
-running through a unity-gain biquad.
+- **Linux with Omarchy** (Hyprland and its Quickshell shell), where Orpheus is a shell plugin, **or
+  Windows 10 / 11**, where it runs as a tray app. Not macOS, and not another Linux desktop.
+- Linux: `mpv`, `cava`, `uv`, `jq` and PipeWire. The installer offers to add what is missing.
+- Windows: `winget`, which installs the rest.
+- Optional: a paid TIDAL subscription (everything else works without one), `yt-dlp` for YouTube and
+  SoundCloud, `ani-cli` or `curd` for anime, and `ffmpeg` + numpy for the drop map (without them every
+  track plays on the live beat grid).
 
-**Headroom, and why a boost can sound quieter.** Boosting a band cannot make anything
-louder — there is nothing above full scale. So the preamp pulls the whole signal down by
-the size of the largest boost: lift 31&nbsp;Hz by 6&nbsp;dB and the bass lands at net zero while
-everything else drops 6. Relative to each other the bass is +6; absolutely, the track got
-quieter. That is what stops it clipping, and it matters here because mpv already runs with
-`--replaygain-clip=no`, so material is permitted above 0&nbsp;dBFS before the EQ touches it.
+It has run on very few machines so far (Arch-based Omarchy, Hyprland 0.56). If you get it working
+somewhere else, or it breaks, an issue is genuinely useful.
 
-You can take the headroom back. `[` and `]` move the preamp half a decibel at a time and
-`\` returns it to automatic. Taking less than the curve needs is allowed and says **may
-clip** while it is.
+## Troubleshooting
 
-```sh
-curl -s 127.0.0.1:47837/eq                  # bands, presets, current state
-curl -X POST 127.0.0.1:47837/eq -d '{"preset":"loudness","enabled":true}'
-curl -X POST 127.0.0.1:47837/eq -d '{"band":0,"gain":4.5}'   # one band, for a slider
-curl -X POST 127.0.0.1:47837/eq -d '{"enabled":false}'       # bypass
-```
-
-Six tone presets ship with it: Flat, Bass Lift, Vocal, Loudness, Tame Treble and Speech.
-
-Open it with `e` in the player, or `omarchy-shell orpheus eq` to open the window straight
-onto it. Inside: `h`/`l` pick a band, `j`/`k` move it by half a decibel, `J`/`K` coarse,
-`0` zeroes a band, `z` zeroes all, `p` cycles presets, `b` bypasses, `esc` goes back.
-`[` and `]` set the preamp, `\` returns it to automatic. `A` finds your headphones,
-`x` switches their correction on and off, `X` forgets it. The bands also take the mouse:
-click or drag to set one, scroll to nudge, middle click to zero, right click to bypass.
-
-The transport bar carries a small readout beside the volume — eight block glyphs
-summarising the ten bands, accented while a filter is live and a flat dim line when it is
-not, so you can tell at a glance whether something is shaping the sound. Left click opens
-the pane, right click bypasses without leaving the page.
-
-#### Headphone corrections
-
-Orpheus ships **no measurement data**, deliberately. The obvious source is
-[AutoEq](https://github.com/jaakkopasanen/AutoEq), whose MIT licence covers its code and
-not its data — the measurements come from oratory1990, Rtings, Super Review and others, none
-of whom have granted redistribution, and the maintainer confirms the distinction in AutoEq
-issue [#790](https://github.com/jaakkopasanen/AutoEq/issues/790). So Orpheus ships the
-importer instead, and the numbers stay on your machine.
-
-The quick way is the picker. On the equalizer page press **`A`**, type a model — `hd600`,
-`sundara`, `moondrop aria` — and press **⏎**. Orpheus looks it up in AutoEq's public index,
-downloads that one headphone's `ParametricEQ.txt` from AutoEq's repository to your machine,
-and plays through it. Rows name the measurement source and rig (oratory1990, crinacle on
-711, Rtings…), oratory1990 first where there is a choice, as AutoEq itself recommends; the
-`●` marks the one in use. Everything is credited to the named source and fetched only when you
-ask; none of it ships with Orpheus.
-
-The correction is **stacked**, not swapped: it runs first, in the same mpv filter graph, and
-your ten bands sit on top of it, so the bars now mean "on top of my headphones". Its curve is
-drawn beneath the bars on the same scale, with the combined response dashed over it. With a
-correction live, the automatic preamp is measured from the combined response — the top of the
-whole cascade, rounded up to half a decibel — so it is exactly enough headroom and no more.
-`x` switches the correction off without forgetting it, `X` forgets it, and presets (`p`) leave
-it alone.
-
-The index (about 9,000 headphones) is fetched on the first search and refreshed in the
-background once a month (`ctrl+r` in the picker refreshes it now); devices are fetched once.
-Both live in `%LOCALAPPDATA%\Orpheus\cache\autoeq` on Windows and `~/.cache/orpheus/autoeq` on
-Linux. The chosen correction is stored with the EQ state, so it keeps playing after a restart
-with the network unplugged. Offline with no index, the picker lists the headphones you have
-used before.
-
-```sh
-curl -s '127.0.0.1:47837/autoeq/search?q=hd%20600'
-curl -X POST 127.0.0.1:47837/autoeq/apply -d '{"path":"oratory1990/over-ear/Sennheiser HD 600"}'
-curl -X POST 127.0.0.1:47837/eq -d '{"autoeqOn":false}'      # off, kept
-curl -X POST 127.0.0.1:47837/autoeq/clear                    # forgotten
-```
-
-The manual route below still works, for a fixed-band file you already have.
-
-Find your headphones in AutoEq's results, take the **`FixedBandEQ.txt`** (not
-`ParametricEQ.txt` or `GraphicEQ.txt` — the fixed-band file is already fitted to these exact
-ten centres) and post it:
-
-```sh
-curl -X POST 127.0.0.1:47837/eq/presets -H 'Content-Type: application/json' \
-  --argjson text "$(jq -Rs . < 'Sennheiser HD 6XX FixedBandEQ.txt')" \
-  -d "{\"name\":\"Sennheiser HD 6XX\",\"text\":$(jq -Rs . < 'Sennheiser HD 6XX FixedBandEQ.txt')}"
-```
-
-It lands in `~/.local/state/orpheus/eq-presets.json` and appears alongside the tone presets.
-`DELETE /eq/presets/{id}` removes one.
-
-One thing the importer will warn you about: AutoEq fits out to 20&nbsp;kHz, above the range
-where coupler measurements are reliable, so the 16&nbsp;kHz band often comes out as a large cut
-that is an artefact of the fit rather than anything you would hear. The warning is advisory —
-your data is imported as written.
-
-### 09 · lyrics
-
-`L` in the player, or `omarchy-shell orpheus lyrics`. Synced lyrics scroll with the track,
-the current line lit, lines already sung dimmed behind it.
-
-TIDAL is asked first, since your subscription already carries timed lyrics for a lot of
-the catalogue. When it has none, or has only unsynced words, [LRCLIB](https://lrclib.net)
-is asked — it is free, needs no key, and often has timings TIDAL lacks. Failing both, the
-plain words are shown unsynced, and failing that it says so.
-
-Results are cached under `~/.cache/orpheus/lyrics`, including the misses: plenty of tracks
-have no lyrics anywhere and asking two services again on every play is rude to both.
-**No lyrics are bundled with Orpheus** — they are fetched at play time and cached locally.
-
-Community LRC files are often a fraction of a second out. `[` and `]` nudge the sync a
-quarter second at a time and `\` resets it.
-
-### 10 · configuration
-
-Little is configurable, and most of it is by hand.
-
-- **Audio quality** is picked in the player (`high` 320k, `lossless` FLAC, `hires`); the
-  choice is stored in `~/.local/state/orpheus/daemon.json`.
-- **The EQ curve** is stored in the same file and restored before the first track plays.
-  Imported headphone corrections live beside it in `eq-presets.json`.
-- **Port.** The daemon defaults to `47837`, settable with `--port` or `ORPHEUS_PORT`.
-  `Api.qml` hardcodes `47837`, so changing the daemon's port also means editing the QML.
-- **Daemon routes** added with the deck, the drop map, your shaders and AutoEQ: `GET /queue?from=&count=`
-  (a window of the play order), `GET /analysis/{id}` (a track's drop map), `GET /shaders`,
-  `POST /shaders/import`, `POST /shaders/reload`, `GET /autoeq/search?q=`, `POST /autoeq/apply`,
-  `POST /autoeq/clear`, `POST /autoeq/refresh`. All loopback-only behind the same guard.
-- **State**: `~/.local/state/orpheus/` (session, prefs, `resume.json` — the queue and
-  position are restored on start). **Cache**: `~/.cache/orpheus/`. **mpv socket**:
-  `$XDG_RUNTIME_DIR/orpheus/mpv.sock`.
-- **Stage scene**: `scene` in `~/.config/orpheus/config.json`, `"viz"` (default) or `"cassette"`;
-  set it from settings ▸ visuals ▸ stage scene, `t`, or IPC.
-- **Drop map**: `dropMap` (default on; daemon and player) and `dropMapLeadMs` (player, default 30)
-  in `~/.config/orpheus/config.json`. The daemon needs `ffmpeg` on PATH (`ORPHEUS_FFMPEG`
-  overrides) and numpy (`uv sync --extra analysis`, or `--extra desktop`). Maps are cached in
-  `~/.cache/orpheus/analysis/`; `orpheus dropMap on|off|toggle` flips it.
-- **Your shaders**: `shadertoyKey` in `config.json` (your shadertoy.com app key, for pasted
-  links); `ORPHEUS_SHADERS` moves the shader folder, `ORPHEUS_QSB` points at the compiler
-  (set but empty = none).
-- **AutoEQ**: no config key; the chosen correction is daemon state, stored with the EQ in
-  `daemon.json`. Index and device files are cached in `~/.cache/orpheus/autoeq/`.
-- **Colours and font** follow the Omarchy theme and font. There is nothing to set.
-
-### 11 · your own shaders
-
-Any Shadertoy-style `.frag` in your shader folder becomes a style called `@<file name>`:
-
-| | |
-|---|---|
-| Windows | `%LOCALAPPDATA%\Orpheus\shaders` |
-| Linux | `~/.config/orpheus/shaders` (`$XDG_CONFIG_HOME`) |
-| either | `ORPHEUS_SHADERS` overrides it |
-
-Save a file there and it compiles in a second or two (qsb, one at a time, idle priority); edit it while it's on
-screen and it rebuilds in place. A broken save keeps the last good picture and says which line, in a toast, a tick
-on the stage, settings ▸ visuals ▸ your shaders and `.build/<name>.log`. Other ways in: paste a shadertoy link or an
-Image shader's code into Ctrl+K (it offers "import shader · …" first), or drop a `.frag` on the visualizer card
-(on Linux that depends on the compositor; the palette always works).
-
-`mainImage`, `iTime`, `iResolution`, `iMouse` (xy, hover), `iFrame`, `iTimeDelta` work; `iChannel0` is the audio
-(512x2: spectrum row, plus a wave synthesised from the 32 bands — Orpheus never sees samples), `iChannel1` the
-spectrum history. Every Orpheus uniform is in scope too — `band(x)`, `kick`, `beatPhase`, `build`, `drop`, `pal(x)` —
-and the folder's `README.txt` lists them. Pragmas: `//! name:`, `//! scale:` (default 0.8), `//! time: flow`,
-`//! transition:`. A line `//#common` makes it an Orpheus-native shader. Only Image + Common passes; multipass
-shaders get a clear no. Shadertoy links need your own app key (settings ▸ integrations ▸ shadertoy) and a shader
-published as Public + API; imports keep the author and link at the top of the file (Shadertoy's default licence is
-CC BY-NC-SA 3.0). No album art ever reaches a shader.
-
----
-
-## ✦ LINER NOTES ╱╱ ORPHEUS//WIN
-
-*Recorded on Windows 10 / 11. Same daemon, same QML as Linux, plus a lot of host.* The
-Windows edition (codename **`ORPHEUS//WIN`**) is a PySide6 tray app that loads the player and
-supplies stand-ins for the Quickshell and Omarchy pieces. The pressing:
-
-| # | track | what it adds |
-|:-:|---|---|
-| 01 | **Themes** | 8 originals (acid-rave, aurora, chrome-heart, lyre, styx, sub-bass, underworld, vinyl) and 19 [Omarchy](https://omarchy.org) palettes, in the tray's Theme menu. A **theme builder** turns three colours (background, text, accent) into a whole palette, with a dice roll, and saves it to `~/.config/orpheus/themes`. **From Album Art** pulls a palette from the cover of whatever is playing. |
-| 02 | **Twelve shader visualizers** | Prism, Skyline, Horizon, Orb, Tunnel, Halo, Scope, Nova, Ridge, Ink, Abyss, Aurora. Feedback **trails** (off / subtle / full) and **bloom** (off / subtle / full) are settings. A **director** reads the song's structure (intro, build, drop, breakdown, steady): style changes land on the **downbeat** with a transition, and it can switch style when a drop lands. |
-| 03 | **The show** | A fullscreen **show**, a **wallpaper mode** that sits behind your desktop icons, and **kinetic lyrics** over the stage (entrance: wave, rain or plain). |
-| 04 | **Only Orpheus** | The visualizers capture the app's own audio through **WASAPI process loopback** (Windows 10 2004 and later), so a game or a call in the background does not drive them. Where that is missing, they fall back to `cava` on the whole output. |
-| 05 | **Controls** | Settings (`,`), a **Ctrl+K command palette**, a `?` key sheet, and **rebindable global hotkeys**: `Win+Alt+M` player, `Win+Alt+V` visualizer, `Win+Alt+P` mini player, `Win+Alt+Space` play / pause, `Win+Alt+←` / `→` previous / next, `Win+Alt+N` the HUD, `Win+Alt+Q` the cassette deck, and more (the `?` sheet lists the ones your run registered). |
-| 06 | **Windows shell** | Taskbar **thumbnail buttons** (previous, play / pause, next), **toasts** on track change, a **jump list**, and a frameless window drawn entirely by the TUI. |
-| 07 | **Game mode** | Notices a fullscreen game, stands the widget, stage and toasts down, and brings them back afterwards. An **in-game HUD** (cover, title, a mini spectrum) slides in on track changes, click-through and never taking focus. **Discord Rich Presence** with your own application ID. |
-| 08 | **Listening** | **Endless radio** when the queue runs out, **crossfade** (2 to 12 s, or gapless), **listening stats** (week, month, year, all time, wrapped; key `9`), **scrobbling** to ListenBrainz and Last.fm, a **sleep timer**, and a **LAN phone remote** behind a pairing token (QR code in settings; off by default). The queue survives restarts. |
-| 09 | **Locked door** | The daemon refuses cross-site and DNS-rebinding requests to its loopback API, so a web page you visit cannot drive it. |
-| 10 | **Cassette deck** | `t` in the stage (or `Win+Alt+Q` anywhere) swaps the visualizer for a tape deck drawn in the theme: area-exact packs that turn at real tape speed, a take-up counter, LO/HI vu needles, the queue as a j-card you can click, piano transport keys and eject. Pausing coasts into a brake kiss; seeks shuttle with blurred spokes. |
-| 11 | **Your shaders** | put qsb.exe + Qt6ShaderTools.dll in %LOCALAPPDATA%\Orpheus\tools\qsb (or set ORPHEUS_QSB); drop a .frag on the visualizer card or paste a shadertoy link in Ctrl+K. |
-
-The developer guide is [docs/windows.md](docs/windows.md).
-
----
-
-## ☾ B-SIDES ╱╱ troubleshooting
-
-- **Nothing happens on the keybind.** Check the plugin is loaded:
-  `omarchy-shell orpheus status`. If it errors, the plugin symlink or the shell restart
-  is missing.
-- **Player opens but is empty or offline.** Check the daemon:
-  `systemctl --user status orpheusd`, `journalctl --user -u orpheusd -e`. A quick probe
-  is `curl -s 127.0.0.1:47837/status`.
-- **Only lossless, no hi-res.** You signed in with the standard flow. Sign in again and
-  press `h`.
-- **No sound or no visualizer.** The visualizer reads PipeWire through `cava`; check
-  `command -v cava mpv`. (Orpheus has nothing to do with your DAC — if the whole desktop
-  is silent, that is elsewhere.)
-- **The visualizer is flat while music is obviously playing.** Orpheus pins `cava` to the
-  monitor of your *default sink* and follows it when you switch output. If it ever gets
-  out of step, check which source `cava` actually grabbed:
+- **Nothing happens on the keybind.** `omarchy-shell orpheus status`. If it errors, the plugin symlink
+  or the shell restart is missing.
+- **The player is empty or offline.** Check the daemon: `systemctl --user status orpheusd`,
+  `journalctl --user -u orpheusd -e`, or `curl -s 127.0.0.1:47837/status`.
+- **Only lossless, no hi-res.** You used the standard sign-in. Sign in again and press `h`.
+- **No sound or no visualizer.** `command -v cava mpv`. If the whole desktop is silent, that is not Orpheus.
+- **The visualizer is flat while music plays.** `cava` follows your default sink's monitor. These three
+  should agree; `source = auto` means `pactl` could not be reached and cava is guessing:
 
   ```sh
-  pactl get-default-sink                       # where audio is going
-  grep '^source' ~/.local/state/orpheus/cava.conf   # where cava was told to listen
-  pactl list source-outputs | grep -A6 cava    # where cava actually is
+  pactl get-default-sink                              # where audio is going
+  grep '^source' ~/.local/state/orpheus/cava.conf     # where cava was told to listen
+  pactl list source-outputs | grep -A6 cava           # where cava actually is
   ```
+- **Black visualizer after a shader edit.** `./build-shaders.sh` and restart the shell; the uniform
+  block in `_common.glsl` must match `Viz.qml`. For your own shaders, see settings ▸ visuals ▸ your
+  shaders or `.build/<name>.log`: a broken save keeps the last good build.
+- **The drop map never kicks in.** Settings ▸ visuals says "no decoder" when the daemon cannot find
+  `ffmpeg`; `curl -s 127.0.0.1:47837/status | jq .analysis` says why.
+- **A floating widget can't be dragged.** Omarchy's `Super+O` "pop" tiles an already-floating window.
+  Reopen the window (toggle the
+  widget off and on) to get its rules back.
+- **Changed some QML?** The shell does not hot-reload plugins: `omarchy restart shell`.
+- **Restarting `orpheusd`** interrupts playback for about a second; resume brings it back.
 
-  Those three should agree. If the config says `source = auto`, `pactl` could not be
-  reached and cava is guessing — that is the old behaviour, and it breaks as soon as you
-  change output device.
-- **Visualizer is a black rectangle after a shader edit.** Rebuild with
-  `./build-shaders.sh` and restart the shell. A uniform-block mismatch between
-  `_common.glsl` and `Viz.qml` is the usual cause.
-- **A user shader is black, or unchanged after an edit.** See settings ▸ visuals ▸ your
-  shaders, or `.build/<name>.log` in the shader folder: a broken save keeps the last good build.
-- **The drop map never kicks in.** Settings ▸ visuals shows "no decoder" under the toggle when
-  the daemon cannot find `ffmpeg`; `curl -s 127.0.0.1:47837/status | jq .analysis` says why.
-- **Restarting `orpheusd` interrupts playback** for about a second; resume brings it back.
+## Known issues
 
----
+Orpheus is a personal project, run on one desktop by one person for a few weeks. It is the author's daily
+player, with the sharp edges one machine's worth of testing leaves. The honest list:
 
-## ☾ B-SIDES ╱╱ status and known issues
+- **Sparse drum & bass can still read at half-time.** Dense breakbeats are fixed (the octave rule now
+  vetoes anything needing more than 3.5 onsets per beat), but around 4 onsets/s the two readings are
+  genuinely ambiguous.
+- **`tempoConfidence` measures peak sharpness, not correctness.** A half-time lock produces a very sharp peak.
+- **mpv's memory grows over a long session.** 1.19 GB after 7¼ hours, with the demuxer cache at the stock
+  150 MiB, so buffering does not explain it. The cache is now capped at 48 MiB forward / 16 MiB back;
+  not confirmed as the cause. Restarting `orpheusd` reclaims it and resume restores the queue.
+- **The plugin costs roughly 15% of shell CPU while playing.** One machine, eyeballed, not a benchmark.
+- **Toggling the plugin off and on froze the shell once.** Teardown on unload has been added since, but
+  the freeze never reproduced to confirm the fix.
 
-Orpheus is a personal project. It has been run on one desktop, by one person, for a
-couple of weeks. It works well enough that it is the author's daily player — and it has
-sharp edges that only one machine's worth of testing can leave.
+If something breaks, [open an issue](https://github.com/GeneralDussDuss/orpheus/issues). If you like it,
+a ⭐ is how the author finds out anyone else is running it.
 
-Honest list, at the time of writing:
+## Credits and licence
 
-- **Sparse drum & bass can still read at half-time.** The octave rule used to prefer the
-  candidate nearest 120 BPM, which locked a ~174 BPM track to 86 and rendered it *slower*
-  than rest pace. It now aims at a target derived from onset density and vetoes any
-  candidate needing more than 3.5 onsets per beat, which fixes dense breakbeats. Around
-  4 onsets/s the two readings are genuinely ambiguous and it can still pick half-time.
-- **`tempoConfidence` measures peak sharpness, not correctness.** A confident reading is
-  not necessarily a right one — a half-time lock produces a very sharp peak.
-- **An intermittent crash when closing the stage.** Twice in one session, closing the
-  stage took the whole shell down inside Qt's item destruction. It did not reproduce
-  across 90 scripted open/close cycles, so the trigger is not known. Unresolved.
-- **mpv's memory grows over a long session.** After 7¼ hours of playback mpv held 1.19 GB
-  of anonymous heap with its demuxer cache at the stock 150 MiB the whole time, so
-  buffering does not explain it. The budget is now capped at 48 MiB forward / 16 MiB
-  back, which bounds the buffers but is not confirmed to be the cause. Restarting
-  `orpheusd` reclaims it and resume restores the queue. Under investigation.
-- **The plugin costs roughly 15% of shell CPU while playing.** One machine, eyeballed —
-  not a benchmark.
-- **Toggling the plugin off and on at runtime froze the shell once.** Teardown on unload
-  has since been added, but the original freeze has not been reproduced to confirm the
-  fix.
-- **TIDAL is the only provider, on purpose.** Spotify cannot legally stream to a
-  third-party client at all, and a provider abstraction for one provider costs more than
-  it returns.
+**[GPL-3.0-or-later](LICENSE).** It sits naturally on this stack: Quickshell and tidalapi are both
+LGPL-3, so there is no compatibility friction. (c) the underworld, all rights reversed.
 
-If you run it and something breaks, [open an issue](https://github.com/GeneralDussDuss/orpheus/issues).
-If you like it, a ⭐ is how the author finds out anyone else is running it.
+How the daemon, plugin and shaders fit together: [docs/architecture.md](docs/architecture.md). The
+Windows edition: [docs/install.md](docs/install.md#orpheuswin-what-the-windows-edition-adds) and the
+developer guide [docs/windows.md](docs/windows.md).
 
----
-
-## ♪ CREDITS ╱╱ licence
-
-**[GPL-3.0-or-later](LICENSE).** It sits naturally on this stack: both Quickshell and
-tidalapi are LGPL-3, so there is no compatibility friction.
-
-The showcase site is a separate repo
-([orpheus-site](https://github.com/GeneralDussDuss/orpheus-site), CC BY-SA 4.0) and
-carries the screenshots, the motion clips and a browser port of these shaders you can
-drive yourself.
+The showcase site is a separate repo ([orpheus-site](https://github.com/GeneralDussDuss/orpheus-site),
+CC BY-SA 4.0) with the screenshots, motion clips and a browser port of these shaders you can drive yourself.
