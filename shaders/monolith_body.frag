@@ -26,7 +26,6 @@ layout(std140, binding = 0) uniform buf {
     vec4 rK0; vec4 rK1; vec4 rK2; vec4 rK3; vec4 rK4;
     vec4 rWheel;     // the wheel's slot
     vec4 rLed;       // the status LED's hole
-    vec4 rGrille;    // the speaker grille's field (w = 0: none)
     vec4 radA;       // body, viz, art, lcd corner radii
     vec4 radB;       // seek, big key, small key, wheel
 };
@@ -214,34 +213,6 @@ void main() {
             col = mix(col, cut, cov * 0.85);
             float foot = ss(w + 0.5, w - 0.5, dx) * ss(0.9, 0.0, abs(p.y - yT - len - 0.6));
             col += vec3(1.0) * foot * mix(0.10, 0.28, light);
-        }
-    }
-
-    // ---- the speaker grille: a field of drilled holes ----------------------
-    if (rGrille.z > 0.0) {
-        float pitch = 8.0 * s;
-        vec2 gp = p - rGrille.xy;
-        if (gp.x > -pitch && gp.y > -pitch && gp.x < rGrille.z + pitch && gp.y < rGrille.w + pitch) {
-            vec2 cell = floor(gp / pitch);
-            // offset every other row: a hex-ish drilling pattern
-            float off = mod(cell.y, 2.0) * 0.5;
-            cell = floor(vec2(gp.x / pitch - off, gp.y / pitch));
-            vec2 c = (cell + vec2(0.5 + off, 0.5)) * pitch;
-            bool inField = sdRBox(c + rGrille.xy, rGrille, 9.0 * s) < -1.0 * s;
-            if (inField) {
-                vec2 lp = gp - c;
-                float r = 2.05 * s;
-                float d = length(lp) - r;
-                if (d < 0.8) {
-                    vec2 g = normalize(lp + 1e-5);
-                    float t = clamp(-d / (0.9 * s), 0.0, 1.0);
-                    vec3 ln = normalize(vec3(-g * 1.2, 1.0));
-                    vec3 lc = shade(mix(M, vec3(dot(M, vec3(0.33))) + 0.25, 0.3), ln, 20.0, 0.6);
-                    vec3 hole = M * 0.10;
-                    vec3 hc = mix(lc, hole, ss(0.2, 0.8, t));
-                    col = mix(col, hc, clamp(0.5 - d, 0.0, 1.0));
-                }
-            }
         }
     }
 

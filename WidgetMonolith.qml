@@ -10,10 +10,10 @@ import "Tui.js" as Tui
 // an engraved header with the tempo and section and a status LED that
 // breathes with the beat; a dot-matrix visualizer behind smoked glass; the art
 // in a recessed well beside the title and a backlit display strip; a machined
-// seek slot with a sliding puck; soft-touch rubber keys; a speaker grille when
-// the window is tall; and a knurled wheel on the right edge (roll it to seek).
+// seek slot with a sliding puck; soft-touch rubber keys; and a knurled wheel
+// on the right edge (roll it to seek).
 //
-// The block, its openings and the grille are one static shader, layer-cached:
+// The block and its openings are one static shader, layer-cached:
 // it redraws on a resize or a theme change only. Per frame, and only while the
 // music runs and the window is on screen, three small things move: the
 // visualizer, the status LED and the play key's LED ring. The seek puck moves
@@ -21,8 +21,8 @@ import "Tui.js" as Tui
 //
 // Scale: the deck is drawn at `s` x a 400 px design. In a window it scales up
 // with the window (a big window is a bigger device) and down for a short one
-// (nothing overlaps); spare height goes first to the visualizer, then to the
-// grille. In the corner the width sets the scale and the deck its own height.
+// (nothing overlaps); spare height goes to the visualizer (more LED rows).
+// In the corner the width sets the scale and the deck its own height.
 Item {
   id: deck
 
@@ -114,10 +114,8 @@ Item {
   readonly property real innerW: Math.max(0, width - (mL + mR + 2 * pad) * s)
   readonly property real art: Math.round(artD * s)
   readonly property real spare: fill ? height - fixedD * s : 0
-  readonly property real vizMax: Math.round(innerW * 0.64)
-  // in a tall window the visualizer stops growing and a grille takes the rest
-  readonly property real grilleH: fill && spare - vizMax >= 40 * s ? Math.floor(spare - vizMax - 12 * s) : 0
-  readonly property real vizH: Math.round(fill ? (grilleH > 0 ? vizMax : Math.max(vizMinD * s * 0.6, spare)) : innerW * 0.46)
+  // in a window the visualizer takes all the spare height: more rows of LEDs, never stretched ones
+  readonly property real vizH: Math.round(fill ? Math.max(vizMinD * s * 0.6, spare) : innerW * 0.46)
   implicitHeight: Math.round(fixedD * s + vizH)
 
   readonly property real lip: 1.8 * s
@@ -130,7 +128,6 @@ Item {
   readonly property real yArt: yViz + vizH + gViz * s
   readonly property real ySeek: yArt + art + gArt * s
   readonly property real yKeys: ySeek + (seekD + gSeek) * s
-  readonly property real yGrille: yKeys + (keyD + legD + 12) * s
 
   readonly property rect rViz: Qt.rect(x0, yViz, innerW, vizH)
   readonly property rect rArt: Qt.rect(x0, yArt, art, art)
@@ -183,7 +180,6 @@ Item {
     property rect rWheel: Qt.rect(deck.rWheel.x - 2.5 * deck.s, deck.rWheel.y - 3 * deck.s, deck.wheelW + 12 * deck.s, deck.wheelH + 6 * deck.s)
     property rect rLed: Qt.rect(led.x + led.width / 2 - deck.ledR - 1.4 * deck.s, led.y + led.height / 2 - deck.ledR - 1.4 * deck.s,
                                 2 * (deck.ledR + 1.4 * deck.s), 2 * (deck.ledR + 1.4 * deck.s))
-    property rect rGrille: deck.grilleH > 0 ? Qt.rect(deck.x0 + 4 * deck.s, deck.yGrille, deck.innerW - 8 * deck.s, deck.grilleH) : Qt.rect(0, 0, 0, 0)
     property vector4d radA: Qt.vector4d(15 * deck.s, 7 * deck.s, 7 * deck.s, 5 * deck.s)
     property vector4d radB: Qt.vector4d(3 * deck.s, deck.bigR + deck.holeGap, deck.smallD / 2 + deck.holeGap, 3 * deck.s)
     fragmentShader: Qt.resolvedUrl("shaders/monolith_body.frag.qsb")

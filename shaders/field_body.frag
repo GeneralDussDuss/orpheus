@@ -30,7 +30,6 @@ layout(std140, binding = 0) uniform buf {
     vec4 levR;
     vec4 togL;        // toggle plates: cx, cy, radius, 0
     vec4 togR;
-    vec4 grilleR;     // the monitor speaker's grille (w = 0: none)
     vec4 steel;       // the metal's own tint
     vec4 ink;         // engraving fill / anodised black
     vec4 hide;        // the rails
@@ -294,26 +293,6 @@ void main() {
         float up = grooves(p - vec2(0.0, 0.9 * u));
         col = mix(col, ink.rgb * 0.55 + col * 0.18, gv * 0.92);
         col += alb * 0.22 * clamp(up - gv, 0.0, 1.0);
-
-        // ---- the monitor grille: a field of drilled holes, a hex pitch -----------------
-        if (grilleR.z > 0.0) {
-            float d = sdR(p, grilleR, 3.0 * u);
-            if (d < 0.0) {
-                float pitch = 4.6 * u;
-                vec2 gp = (p - grilleR.xy) / pitch;
-                float row = floor(gp.y + 0.5);
-                vec2 cc = vec2(floor(gp.x - 0.5 * mod(row, 2.0) + 0.5) + 0.5 * mod(row, 2.0), row);
-                vec2 hc = grilleR.xy + cc * pitch;
-                float inside = step(-d, 1e3) * cov(sdR(hc, grilleR, 3.0 * u) + 2.2 * u);
-                vec2 hq = p - hc;
-                float hr = 1.35 * u;
-                float hole = cov(length(hq) - hr) * inside;
-                // dark bore, the light catching its far lip
-                vec3 bore = ink.rgb * 0.25 * (0.5 + 0.5 * clamp(hq.y / hr, -1.0, 1.0));
-                col = mix(col, bore, hole);
-                col += alb * 0.28 * cov(abs(length(hq) - hr - 0.45 * u) - 0.4 * u) * clamp(hq.y / hr, 0.0, 1.0) * inside;
-            }
-        }
 
         // ---- the knob well: a deep round recess ---------------------------------------
         if (knob.z > 0.0) {

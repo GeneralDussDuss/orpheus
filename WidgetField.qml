@@ -102,7 +102,8 @@ Item {
         artS = aMin + (aN - aMin) * t
       }
     }
-    var g = spare / 6
+    // spare height opens the gaps evenly (half a gap above and below the stack)
+    var g = spare / 5
     var devH = fill ? height - 11 * u : fixedH(u) + meterH + artS - 11 * u
     var face = { x: m + railW, y: m, w: faceW, h: devH }
     var x0 = face.x + 16 * u
@@ -115,15 +116,7 @@ Item {
     var knob = { x: face.x + face.w / 2, y: y + wr + 14 * u, r: kr, w: wr }
     var side = (cw - 2 * (wr + 14 * u)) / 2
     var colL = x0 + side / 2, colR = x0 + cw - side / 2
-    // the monitor speaker's grille, in whatever the bay has spare under the knob
-    var gTop = knob.y + wr + 13 * u + 11 * u + (k ? 15 * u : 0) + 8 * u
-    var gBot = face.y + devH - 14 * u - 8 * u
-    var gH = Math.min(24 * u, gBot - gTop)
-    var gW = Math.min(cw * 0.56, 190 * u)
-    var grille = gH >= 13 * u ? { x: face.x + (faceW - gW) / 2, y: gTop + (gBot - gTop - gH) / 2, w: gW, h: gH }
-                              : { x: 0, y: 0, w: 0, h: 0 }
     return {
-      grille: grille,
       u: u, k: k, total: fixedH(u) + meterH + artS,
       dev: { x: m, y: m, w: W - 2 * m, h: devH }, railW: railW, face: face, cw: cw, x0: x0,
       meter: meter, plate: plate, art: art, scale: scale, knob: knob, side: side, colL: colL, colR: colR,
@@ -188,7 +181,6 @@ Item {
     property vector4d levR: Qt.vector4d(nextKey.x + nextKey.pad - 3 * deck.u, nextKey.y + nextKey.pad - 3 * deck.u, nextKey.width - 2 * nextKey.pad + 6 * deck.u, nextKey.height - 2 * nextKey.pad + 6 * deck.u)
     property vector4d togL: Qt.vector4d(likeSw.x + likeSw.width / 2, likeSw.y + likeSw.height / 2, 12 * deck.u, 0)
     property vector4d togR: Qt.vector4d(visSw.x + visSw.width / 2, visSw.y + visSw.height / 2, 12 * deck.u, 0)
-    property vector4d grilleR: deck.v4(deck.lay.grille)
     property color steel: deck.steel
     property color ink: deck.ink
     property color hide: deck.hideC
