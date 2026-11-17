@@ -21,7 +21,11 @@ o.window({ class = "org.quickshell", title = "^Orpheus$" }, {
 -- centred: left to itself Hyprland can drop a tall one half off a short screen.
 o.window({ class = "org.quickshell", title = "^Orpheus Widget" }, { tag = "-default-opacity", opacity = "1 1" })
 o.window({ class = "org.quickshell", title = "^Orpheus Widget \\[float\\]$" }, { float = true, center = true, size = { 520, 420 } })
-o.window({ class = "org.quickshell", title = "^Orpheus Widget \\[float\\]\\[tall\\]$" }, { float = true, center = true })
+o.window({ class = "org.quickshell", title = "^Orpheus Widget \\[float\\]\\[tall\\](\\[deck\\])?$" }, { float = true, center = true })
+-- The hardware decks ("[deck]") are see-through: no border, shadow, blur or
+-- rounding, and fully opaque whatever the global window opacity (override, not
+-- multiply), so the device stands solid on the wallpaper with its own shadow.
+o.window({ class = "org.quickshell", title = "^Orpheus Widget.*\\[deck\\]$" }, { border_size = 0, no_shadow = true, no_blur = true, rounding = 0, opacity = "1 override 1 override 1 override" })
 -- Video: its mpv runs as app id orpheus.video, so it skips Omarchy's generic
 -- mpv rule and opens as a centered 16:9 screen.
 o.window("^orpheus\\.video$", {

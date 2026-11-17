@@ -19,14 +19,18 @@ FloatingWindow {
   readonly property var cfg: engine ? engine.widget : ({})
   // Any tall style: the Studio deck ("cassette") or a hardware deck.
   readonly property bool cassette: (engine && engine.tallStyles ? engine.tallStyles : ["cassette"]).indexOf(cfg.style) >= 0
+  // A hardware deck is an object on the desk, not a card: the window is
+  // see-through and undecorated ("[deck]" in the title tells the rule) so the
+  // device stands on the wallpaper with only its own shadow and light spill.
+  readonly property bool deck: cassette && cfg.style !== "cassette"
 
   FontMetrics { id: fm; font.family: Style.font.family; font.pixelSize: Style.font.body }
   readonly property real cw: fm.advanceWidth("M")
   readonly property real ch: fm.height
 
-  title: floating ? (cassette ? "Orpheus Widget [float][tall]" : "Orpheus Widget [float]")
-                  : "Orpheus Widget"
-  color: Commons.Color.background
+  title: (floating ? (cassette ? "Orpheus Widget [float][tall]" : "Orpheus Widget [float]")
+                   : "Orpheus Widget") + (deck ? "[deck]" : "")
+  color: deck ? "transparent" : Commons.Color.background
   implicitWidth: Math.round(cw * (cassette ? 30 : 48))
   implicitHeight: Math.round(ch * (cassette ? 44 : 18))
   minimumSize: cassette ? Qt.size(Math.round(cw * 22), Math.round(ch * 24))
@@ -36,7 +40,8 @@ FloatingWindow {
 
   Loader {
     anchors.fill: parent
-    anchors.margins: Math.round(win.cw * 0.5)
+    // decks bring their own room (the stage margin) for the lean and shadow
+    anchors.margins: win.deck ? 0 : Math.round(win.cw * 0.5)
     sourceComponent: win.cassette ? ({ cassette: cassetteBody, monolith: monolithBody, reference: referenceBody, field: fieldBody })[win.cfg.style] : horizBody
     focus: true
     onLoaded: if (item) item.forceActiveFocus()
