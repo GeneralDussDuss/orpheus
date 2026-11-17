@@ -881,8 +881,11 @@ Item {
     function reload() { active = false; Qt.callLater(function() { desktopStage.active = Qt.binding(function() { return root.open && root.placement === "desktop" }) }) }
   }
   Loader {
+    id: showStage
     active: root.open && root.placement === "fullscreen"
-    sourceComponent: Stage { engine: root; mode: "fullscreen" }
+    // A new showMonitor: the show picks its monitor at creation, so start over.
+    sourceComponent: Stage { engine: root; mode: "fullscreen"; onRebuild: showStage.reload() }
+    function reload() { active = false; Qt.callLater(function() { showStage.active = Qt.binding(function() { return root.open && root.placement === "fullscreen" }) }) }
   }
 
   // Widget: a corner widget on a layer (top/reserve/desktop), or a real

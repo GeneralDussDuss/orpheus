@@ -42,6 +42,19 @@ PanelWindow {
       if (focused && list[i].name === focused.name) return list[i]
     return list.length ? list[0] : null
   }
+  // On Linux the monitor is picked once, when the window opens. A layer surface
+  // cannot move between outputs: re-targeting a live one makes Quickshell
+  // rebuild the window under the visualizer's live textures, Qt logs "Cannot
+  // use same item on different windows", and a later teardown frees an item
+  // that still points at the dead window (shell SIGSEGV in
+  // QQuickItemPrivate::derefWindow, 2026-11-17). So the stage stays where it
+  // opened when focus moves; a new showMonitor gets a fresh window instead.
+  Component.onCompleted: if (!windows) screen = screen      // breaks the binding
+  Connections {
+    target: win.engine
+    enabled: !win.windows && win.bleed
+    function onShowMonitorChanged() { win.rebuild() }
+  }
 
   // Opaque reference surface for contrast guards (Commons.Color.background carries alpha).
   readonly property color bg: Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, 1)
