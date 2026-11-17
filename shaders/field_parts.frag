@@ -32,9 +32,10 @@ layout(std140, binding = 0) uniform buf {
     vec4 ink;
     vec4 lampC;       // the lamp's / light-pipe's colour
     vec4 hot;
+    vec3 lightV;      // the stage's key light, swung by the lean
 };
 
-const vec3 LD = vec3(-0.36, -0.74, 0.57);
+#define LD lightV
 
 float h12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float vn(vec2 p) {
@@ -60,7 +61,7 @@ float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 vec4 over(vec4 dst, vec3 rgb, float a) { return vec4(rgb * a + dst.rgb * (1.0 - a), a + dst.a * (1.0 - a)); }
 
 float studio(vec3 r, float rough) {
-    vec3 kd = normalize(vec3(-0.30, -0.62, 0.72));
+    vec3 kd = normalize(LD + vec3(0.08, 0.10, 0.10));   // the softbox rides with the key light
     float key = exp(-(1.0 - dot(r, kd)) / (0.025 + 1.25 * rough));
     float strip = exp(-abs(r.x - 0.62) / (0.02 + 0.3 * rough)) * smoothstep(0.9, 0.2, abs(r.y + 0.1));
     float sky = smoothstep(0.45, -0.75, r.y);
@@ -118,7 +119,7 @@ void main() {
         }
         // the knob's shadow in the well (less of it when pressed in)
         {
-            vec2 so = vec2(1.6, 3.4) * u * (1.0 - 0.6 * press);
+            vec2 so = -LD.xy / max(LD.z, 0.3) * 3.2 * u * (1.0 - 0.6 * press);
             float ds = length(q - so) - kr;
             float sa = 0.75 * exp(-pow(max(ds, 0.0) / (3.2 * u), 1.4)) * cov(d - wr);
             o = over(o, vec3(0.0), sa * (1.0 - cov(d - kr)));
@@ -269,7 +270,7 @@ void main() {
         float height = 1.0 - min(abs(v), 1.0) * 0.6;    // nearer the camera mid-flip
         // shadow first, thrown down-right by its height
         {
-            vec2 so = vec2(2.2, 3.6) * u * (0.7 + 0.6 * height);
+            vec2 so = -LD.xy / max(LD.z, 0.3) * 3.6 * u * (0.7 + 0.6 * height);
             vec2 pa = p - so - A, ba = B - A;
             float h = span > 0.5 ? clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0) : 1.0;
             float ds = length(pa - ba * h) - mix(ra, rb, h);
@@ -328,7 +329,7 @@ void main() {
             vec3 onc = lampC.rgb * (1.0 + 0.35 * (1.0 - dot(s, s))) + vec3(0.35) * exp(-dot(s, s) * 3.0) * lon;
             vec3 lc = mix(offc, onc, lon);
             lc *= 0.85 + 0.15 * facet;
-            float spec = exp(-pow(length(s - vec2(-0.35, -0.42)) / 0.30, 2.0));
+            float spec = exp(-pow(length(s - LD.xy * 0.62) / 0.30, 2.0));
             lc += vec3(0.6) * spec;
             o = over(o, lc, a);
         }
@@ -355,7 +356,7 @@ void main() {
         }
     } else {
         // ================= the sapphire over the art ===============================================
-        vec2 e = p / res;
+        vec2 e = (p - dims.xy) / res + (LD.xy - vec2(-0.42, -0.62)) * vec2(-0.5, -0.4);   // the glare rides the light and the parallax
         float dEdge = -sdRB(p - res * 0.5, res * 0.5, 3.0 * u);
         // the bezel's shade, deepest at the top-left where it overhangs the light
         float shade = exp(-dEdge / (4.0 * u)) * 0.45 + exp(-p.y / (8.0 * u)) * 0.18 + exp(-p.x / (10.0 * u)) * 0.10;

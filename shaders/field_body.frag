@@ -34,9 +34,13 @@ layout(std140, binding = 0) uniform buf {
     vec4 ink;         // engraving fill / anodised black
     vec4 hide;        // the rails
     vec4 accent;
+    vec3 lightV;      // the stage's key light (x right, y down, z out), swung by the lean
+    float lamp;       // the meter's backlight, 0..1
+    vec4 paper;       // the dial card (its light leaks round the bezel)
+    float bloomAmt;
 };
 
-const vec3 LD = vec3(-0.36, -0.74, 0.57);   // toward the key light (normalised below)
+#define LD lightV
 
 float h12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float vn(vec2 p) {
@@ -57,7 +61,7 @@ float cov(float d) { return clamp(0.5 - d, 0.0, 1.0); }
 // The studio the metal reflects: a big soft key overhead-left, a cool fill
 // strip on the right, a dim floor. `rough` widens every edge (satin vs polish).
 float studio(vec3 r, float rough) {
-    vec3 kd = normalize(vec3(-0.30, -0.62, 0.72));
+    vec3 kd = normalize(LD + vec3(0.08, 0.10, 0.10));   // the softbox rides with the key light
     float key = exp(-(1.0 - dot(r, kd)) / (0.025 + 1.25 * rough));
     float strip = exp(-abs(r.x - 0.62) / (0.02 + 0.3 * rough)) * smoothstep(0.9, 0.2, abs(r.y + 0.1));
     float sky = smoothstep(0.45, -0.75, r.y);
@@ -181,7 +185,7 @@ void main() {
     float sh1 = sdR(p - vec2(0.0, 7.0 * u), dev, rad);
     float sh2 = sdR(p - vec2(1.5 * u, 2.5 * u), dev, rad);
     float shadowA = 0.42 * exp(-max(sh1, 0.0) / (10.0 * u)) + 0.40 * exp(-max(sh2, 0.0) / (2.2 * u));
-    shadowA *= mix(1.0, 0.55, lt);
+    shadowA = 0.0;   // the stage casts the device's shadow now
     vec4 outc = vec4(0.0, 0.0, 0.0, clamp(shadowA, 0.0, 0.85));
 
     float devA = cov(dd);
@@ -271,23 +275,31 @@ void main() {
         col = metal(falb, n, p, 0.22);
         // the key softbox's broad reflection, swept across the plate on a diagonal
         vec2 fe = (p - face.xy) / face.zw;
-        float sweep = exp(-pow((fe.x * 0.55 + fe.y * 0.85 - 0.30) / 0.30, 2.0));
+        vec2 lsh = (LD.xy - vec2(-0.42, -0.62)) * vec2(0.9, 0.6);   // highlights slide as the light swings
+        float sweep = exp(-pow((fe.x * 0.55 + fe.y * 0.85 - 0.30 - lsh.x * 0.55 - lsh.y * 0.85) / 0.30, 2.0));
         // brushed along x, the highlight smears across the grain: a soft upright
         // band, streaked by the marks themselves
-        float aniso = exp(-pow((fe.x - 0.30 + 0.08 * fe.y) / 0.13, 2.0)) * (0.55 + 0.9 * (marks - 0.35));
+        float aniso = exp(-pow((fe.x - 0.30 - lsh.x + 0.08 * fe.y) / 0.13, 2.0)) * (0.55 + 0.9 * (marks - 0.35));
         col += falb * (0.11 * sweep + 0.10 * aniso - 0.06 * smoothstep(0.6, 1.1, fe.y));
         // the rails stand proud: their walls shade the face's sides
         float lx = p.x - face.x, rx = face.x + face.z - p.x;
         col *= 1.0 - 0.30 * exp(-lx / (2.2 * u)) - 0.10 * exp(-rx / (1.8 * u));
         col += alb * 0.10 * exp(-rx / (1.2 * u));
 
-        // ---- raised parts' shadows on the face -----------------------------------
+        // ---- raised parts' shadows on the face, thrown away from the light -------------
+        vec2 sdir = -LD.xy / max(LD.z, 0.3);
         float shd = 0.0;
-        shd = max(shd, 0.55 * exp(-max(sdR(p - vec2(1.2, 2.6) * u, meterR, 9.0 * u), 0.0) / (3.0 * u)));
-        shd = max(shd, 0.50 * exp(-max(sdR(p - vec2(1.0, 2.0) * u, artR, 6.0 * u), 0.0) / (2.6 * u)));
-        shd = max(shd, 0.45 * exp(-max(sdR(p - vec2(0.8, 1.6) * u, plateR, 2.0 * u), 0.0) / (1.6 * u)));
+        shd = max(shd, 0.55 * exp(-max(sdR(p - sdir * 2.6 * u, meterR, 9.0 * u), 0.0) / (3.0 * u)));
+        shd = max(shd, 0.50 * exp(-max(sdR(p - sdir * 2.0 * u, artR, 6.0 * u), 0.0) / (2.6 * u)));
+        shd = max(shd, 0.45 * exp(-max(sdR(p - sdir * 1.5 * u, plateR, 2.0 * u), 0.0) / (1.6 * u)));
         col *= 1.0 - shd;
 
+        // the dial's backlight leaking out round the bezel
+        {
+            float dm = sdR(p, meterR, 9.0 * u);
+            float leak = exp(-max(dm, 0.0) / (5.0 * u)) * step(0.0, dm) * lamp * mix(0.10 + 0.10 * bloomAmt, 0.04, lt);
+            col += mix(paper.rgb, accent.rgb, 0.25) * leak;
+        }
         // ---- engravings ------------------------------------------------------------
         float gv = grooves(p);
         float up = grooves(p - vec2(0.0, 0.9 * u));

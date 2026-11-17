@@ -33,10 +33,27 @@ Item {
   property alias scrubFrac: core.scrubFrac
 
   DeckCore { id: core; engine: deck.engine; keys: deck.keys }
+  // The depth rig: the device leans toward the pointer, the key light swings
+  // with it (lightVec feeds every material shader), and each layer of the
+  // meter, the art window and the counter sits at its own depth (par).
+  DeckStage {
+    id: stage
+    core: core
+    anchors.fill: parent
+    margin: deck.sm
+    radius: 11 * deck.u
+    spillAmount: 0.55
+  }
+  readonly property point cardOff: stage.par(-4 * u)      // the dial card, behind the bezel
+  readonly property point needleOff: stage.par(-1.5 * u)  // the movement, in front of the card
+  readonly property point glassOff: stage.par(2 * u)      // the meter's glass, proud of the face
+  readonly property point recessOff: stage.par(-2.5 * u)  // the art and the drums, set in
   focus: keys
   Keys.onPressed: function(e) { core.key(e) }
 
-  implicitHeight: Math.round(lay.total)
+  implicitHeight: Math.round(lay.total + 2 * sm)
+  // the depth rig's margin (from the width alone, so the corner height can't loop)
+  readonly property real sm: Math.round(width * 0.035)
 
   // Fade up whenever the window shows (Widget.qml multiplies this by its rest dim).
   property real appear: 0
@@ -85,23 +102,24 @@ Item {
   // Design units at u = 1 (392 px wide). The meter and the art flex; when a
   // window is too short for their minimums the whole deck scales down instead.
   readonly property var lay: {
-    var W = width
+    var W = width - 2 * deck.sm
+    var H = height - 2 * deck.sm
     var k = keys ? 1 : 0
     var u = fill ? Math.min(W / 392, 1.9) : W / 392
-    function fixedH(u) { return u * (2 + 9 + 16 + 10 + 20 + 10 + 14 + 38 + 12 + 140 + 14 * k + 14) }
-    if (fill && height > 0) {
+    function fixedH(u) { return u * (16 + 10 + 20 + 10 + 14 + 38 + 12 + 140 + 14 * k + 14) }
+    if (fill && H > 0) {
       var need = fixedH(u) + u * (100 + 112)
-      if (need > height) u = Math.max(0.55, u * height / need)
+      if (need > H) u = Math.max(0.55, u * H / need)
     }
-    var m = 2 * u
+    var m = 0
     var railW = 17 * u
     var faceW = W - 2 * m - 2 * railW
     var cw = faceW - 32 * u
     var mN = cw * 0.56, aN = cw * 0.42
     var mMin = 100 * u, aMin = 112 * u
     var meterH = mN, artS = aN, spare = 0
-    if (fill && height > 0) {
-      var avail = height - fixedH(u)
+    if (fill && H > 0) {
+      var avail = H - fixedH(u)
       if (avail >= mN + aN) {
         meterH = Math.min(cw * 0.70, mN + (avail - mN - aN) * 0.55)
         spare = avail - meterH - aN
@@ -113,7 +131,7 @@ Item {
     }
     // spare height opens the gaps evenly (half a gap above and below the stack)
     var g = spare / 5
-    var devH = fill ? height - 11 * u : fixedH(u) + meterH + artS - 11 * u
+    var devH = fill ? H : fixedH(u) + meterH + artS
     var face = { x: m + railW, y: m, w: faceW, h: devH }
     var x0 = face.x + 16 * u
     var y = face.y + 16 * u + g * 0.5
@@ -172,7 +190,9 @@ Item {
   // ---- the chassis ---------------------------------------------------------------------
   function v4(r) { return Qt.vector4d(r.x, r.y, r.w, r.h) }
   ShaderEffect {
+    parent: stage.inner
     id: body
+    z: -1          // reparenting order isn't creation order: keep the chassis under everything
     anchors.fill: parent
     fragmentShader: Qt.resolvedUrl("shaders/field_body.frag.qsb")
     property vector2d res: Qt.vector2d(width, height)
@@ -194,14 +214,20 @@ Item {
     property color ink: deck.ink
     property color hide: deck.hideC
     property color accent: core.accent
+    property vector3d lightV: stage.lightVec
+    property real lamp: deck.lamp
+    property color paper: deck.paper
+    property real bloomAmt: deck.bloomAmt
     layer.enabled: true
   }
 
   // ---- the meter ---------------------------------------------------------------------------
   Item {
+    parent: stage.inner
     id: dial
     x: deck.lay.meter.x + 7 * deck.u; y: deck.lay.meter.y + 7 * deck.u
     width: deck.lay.meter.w - 14 * deck.u; height: deck.lay.meter.h - 14 * deck.u
+    clip: true
     readonly property real span: 0.80
     // the arc's radius comes from the width; a short dial pushes the pivot
     // further down so the arc flattens instead of shrinking
@@ -216,12 +242,19 @@ Item {
     }
     function vu(db) { return Math.pow(10, (db - 3) / 20) }
 
+    Item {
+    id: card
+    anchors.fill: parent
+    transform: Translate { x: deck.cardOff.x; y: deck.cardOff.y }
     ShaderEffect {
       anchors.fill: parent
       fragmentShader: Qt.resolvedUrl("shaders/field_meter.frag.qsb")
       property vector2d res: Qt.vector2d(width, height)
       property real u: deck.u
       property real mode: 0
+      property vector3d lightV: stage.lightVec
+      property vector4d par: Qt.vector4d(0, 0, 0, 0)
+      property vector2d cardOff: Qt.vector2d(0, 0)
       property vector4d geo: Qt.vector4d(dial.width / 2, dial.pivY, dial.arcR, dial.span)
       property real minor: dial.roomy ? 1 : 0
       property real lamp: deck.lamp
@@ -296,12 +329,16 @@ Item {
       font.family: deck.family; font.pixelSize: Math.round(7.5 * deck.u); font.letterSpacing: 0.6 * deck.u
       color: deck.ink; opacity: 0.6
     }
+    }
     ShaderEffect {
       anchors.fill: parent
       fragmentShader: Qt.resolvedUrl("shaders/field_meter.frag.qsb")
       property vector2d res: Qt.vector2d(width, height)
       property real u: deck.u
       property real mode: 1
+      property vector3d lightV: stage.lightVec
+      property vector4d par: Qt.vector4d(deck.needleOff.x, deck.needleOff.y, deck.glassOff.x, deck.glassOff.y)
+      property vector2d cardOff: Qt.vector2d(deck.cardOff.x, deck.cardOff.y)
       property vector4d geo: Qt.vector4d(dial.width / 2, dial.pivY, dial.arcR, dial.span)
       property real minor: dial.roomy ? 1 : 0
       property real lamp: deck.lamp
@@ -346,6 +383,7 @@ Item {
   // ---- the nameplate ---------------------------------------------------------------------------
   TextMetrics { id: plateTm; font.family: deck.family; font.pixelSize: Math.round(11 * deck.u); font.bold: true; font.letterSpacing: 2.4 * deck.u; text: "orpheus · field f2" }
   Item {
+    parent: stage.inner
     id: plate
     // room on the right end, before the pin, for the engraved close mark
     width: Math.round(plateTm.advanceWidth + 52 * deck.u); height: Math.round(deck.lay.plate.h)
@@ -386,6 +424,8 @@ Item {
     property bool shown: false
     property bool pending: false
     anchors.fill: parent
+    anchors.margins: -3 * deck.u
+    transform: Translate { x: deck.recessOff.x; y: deck.recessOff.y }
     fillMode: Image.PreserveAspectCrop; asynchronous: true
     sourceSize: owner ? Qt.size(owner.width * 2, owner.height * 2) : Qt.size(0, 0)
     opacity: shown ? 1 : 0
@@ -393,6 +433,7 @@ Item {
     onStatusChanged: if (owner) owner.layerStatus(this)
   }
   Item {
+    parent: stage.inner
     id: art
     x: deck.lay.art.x + 10 * deck.u; y: deck.lay.art.y + 10 * deck.u
     width: deck.lay.art.s - 20 * deck.u; height: width
@@ -466,11 +507,12 @@ Item {
       property vector2d res: Qt.vector2d(width, height)
       property real u: deck.u
       property real part: 5
+      property vector3d lightV: stage.lightVec
       property real press: 0; property real hover: 0; property real val: 0; property real on: 0; property real beat: 0
       property real light: core.light ? 1 : 0
       property real bloomAmt: deck.bloomAmt
       property real icon: 0
-      property vector4d dims: Qt.vector4d(0, 0, 0, 0)
+      property vector4d dims: Qt.vector4d(deck.glassOff.x - deck.recessOff.x, deck.glassOff.y - deck.recessOff.y, 0, 0)
       property color steel: deck.steel; property color ink: deck.ink
       property color lampC: core.accent; property color hot: core.hot
       layer.enabled: true
@@ -485,6 +527,7 @@ Item {
 
   // ---- the track: printed title, spaced artist, the counter, the tags ---------------------------
   Item {
+    parent: stage.inner
     id: info
     x: deck.lay.art.x + deck.lay.art.s + 14 * deck.u
     y: deck.lay.art.y + 1 * deck.u
@@ -542,9 +585,11 @@ Item {
       x: 0; y: tags.y - height - 8 * deck.u
       width: 4 * dw + 3 * gap + 10 * deck.u + 6 * deck.u
       height: dh + 6 * deck.u
+      clip: true
       readonly property string t: core.clock2(core.shownPos)
       Row {
         x: 3 * deck.u; y: 3 * deck.u
+        transform: Translate { x: deck.recessOff.x * 0.8; y: deck.recessOff.y * 0.8 }
         spacing: counter.gap
         Drum { digit: Number(counter.t.charAt(0)); base: 10 }
         Drum { digit: Number(counter.t.charAt(1)); base: 10 }
@@ -683,6 +728,7 @@ Item {
 
   // ---- the tape scale --------------------------------------------------------------------------------
   Item {
+    parent: stage.inner
     id: tapeScale
     x: deck.lay.scale.x; y: deck.lay.scale.y; width: deck.lay.scale.w; height: deck.lay.scale.h
     Repeater {
@@ -709,6 +755,7 @@ Item {
       property vector2d res: Qt.vector2d(width, height)
       property real u: deck.u
       property real part: 4
+      property vector3d lightV: stage.lightVec
       property real press: 0
       property real hover: seekMouse.containsMouse || core.scrubbing ? 1 : 0
       property real val: hover
@@ -742,6 +789,7 @@ Item {
   // ---- the control bay -----------------------------------------------------------------------------------
   component Part: ShaderEffect {
     fragmentShader: Qt.resolvedUrl("shaders/field_parts.frag.qsb")
+    property vector3d lightV: stage.lightVec
     property vector2d res: Qt.vector2d(width, height)
     property real u: deck.u
     property real part: 0
@@ -762,6 +810,7 @@ Item {
 
   // the knob: push to play
   Part {
+    parent: stage.inner
     id: knobFx
     readonly property real pad: 10 * deck.u
     width: 2 * (deck.lay.knob.w + pad); height: width
@@ -788,6 +837,7 @@ Item {
     }
   }
   Column {
+    parent: stage.inner
     anchors.horizontalCenter: knobFx.horizontalCenter
     y: deck.lay.knob.y + deck.lay.knob.w + 13 * deck.u
     spacing: 3 * deck.u
@@ -821,16 +871,19 @@ Item {
     }
   }
   Lever {
+    parent: stage.inner
     id: prevKey
     action: "previous"; tip: "previous track"; icon: 3
     x: deck.lay.colL - width / 2; y: deck.lay.lev.y
   }
   Lever {
+    parent: stage.inner
     id: nextKey
     action: "next"; tip: "next track"; icon: 4
     x: deck.lay.colR - width / 2; y: deck.lay.lev.y
   }
   Row {
+    parent: stage.inner
     anchors.horizontalCenter: prevKey.horizontalCenter
     y: prevKey.y + prevKey.height - 1 * deck.u
     spacing: 5 * deck.u
@@ -838,6 +891,7 @@ Item {
     KeyCap { anchors.verticalCenter: parent.verticalCenter; label: "p" }
   }
   Row {
+    parent: stage.inner
     anchors.horizontalCenter: nextKey.horizontalCenter
     y: nextKey.y + nextKey.height - 1 * deck.u
     spacing: 5 * deck.u
@@ -875,17 +929,20 @@ Item {
   }
   readonly property bool visOn: !!engine && !!engine.open
   Toggle {
+    parent: stage.inner
     id: likeSw
     state: core.liked; enabledSw: core.canLike
     action: "like"; tip: core.liked ? "unlike" : "like"
     x: deck.lay.colL - 28 * deck.u - width / 2; y: deck.lay.tog.y - height / 2
   }
   Lamp {
+    parent: stage.inner
     id: likeLamp
     x: deck.lay.colL - 4 * deck.u - width / 2; y: deck.lay.tog.y - 6 * deck.u - height / 2
     lampC: core.hot; on: core.liked ? 1 : 0
   }
   Column {
+    parent: stage.inner
     x: deck.lay.colL + 6 * deck.u; y: likeLamp.y + likeLamp.height / 2 - 6 * deck.u
     spacing: 3 * deck.u
     Engr { text: "like"; font.pixelSize: Math.round(8.5 * deck.u); font.letterSpacing: 1.6 * deck.u; font.bold: true; opacity: core.canLike ? 1 : 0.5 }
@@ -893,17 +950,20 @@ Item {
   }
 
   Toggle {
+    parent: stage.inner
     id: visSw
     state: deck.visOn
     action: "stage"; tip: "open or close the big visualizer"
     x: deck.lay.colR + 28 * deck.u - width / 2; y: deck.lay.tog.y - height / 2
   }
   Lamp {
+    parent: stage.inner
     id: visLamp
     x: deck.lay.colR + 4 * deck.u - width / 2; y: deck.lay.tog.y - 6 * deck.u - height / 2
     lampC: core.accent; on: deck.visOn ? 1 : 0
   }
   Column {
+    parent: stage.inner
     x: deck.lay.colR - 6 * deck.u - width; y: visLamp.y + visLamp.height / 2 - 6 * deck.u
     spacing: 3 * deck.u
     Engr { anchors.right: parent.right; text: "vis"; font.pixelSize: Math.round(8.5 * deck.u); font.letterSpacing: 1.6 * deck.u; font.bold: true }

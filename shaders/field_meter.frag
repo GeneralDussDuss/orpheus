@@ -26,9 +26,13 @@ layout(std140, binding = 0) uniform buf {
     vec4 ink;         // the printing
     vec4 hot;         // the over-zone and the peak lamp
     vec4 accent;      // the backlight's tint
+    vec3 lightV;      // the stage's key light
+    vec4 par;         // parallax px: the movement (xy) and the glass (zw), against the bezel
+    vec2 cardOff;     // parallax px of the dial card (it sits deepest)
 };
 
 const float PI = 3.14159265;
+#define LD lightV
 
 float h12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float vn(vec2 p) {
@@ -129,11 +133,12 @@ void main() {
     // ---- the needle -------------------------------------------------------------
     float na = angOf(needle);
     vec2 nd = dirOf(na);
-    vec2 base = piv;
-    vec2 tip = piv + nd * (R + 5.0 * u);
-    // shadow, thrown down and right onto the card from the front light
+    vec2 base = piv + par.xy;
+    vec2 tip = base + nd * (R + 5.0 * u);
+    // shadow on the card: it sits deeper, so it parallaxes with the card and
+    // falls away from the key light
     {
-        vec2 so = vec2(2.0, 3.6) * u;
+        vec2 so = cardOff - par.xy - LD.xy / max(LD.z, 0.3) * 3.0 * u;
         float ds = segD(p - so, base, tip);
         float sa = exp(-pow(max(ds - 0.4 * u, 0.0) / (1.4 * u), 2.0)) * 0.22;
         o = over(o, vec3(0.0), sa);
@@ -156,7 +161,7 @@ void main() {
     // ---- the pivot bridge: a black moulding over the bottom centre ----------------
     {
         // centred just under the card's foot, whatever the pivot's depth
-        vec2 bc0 = vec2(res.x * 0.5, res.y + 26.0 * u);
+        vec2 bc0 = vec2(res.x * 0.5, res.y + 26.0 * u) + par.xy;
         float br = 48.0 * u;
         vec2 q = p - bc0;
         float rr = length(q);
@@ -166,7 +171,7 @@ void main() {
             vec2 g = q / max(rr, 1e-3);
             float rim = smoothstep(4.0 * u, 0.0, -db);
             vec3 n = normalize(vec3(g * rim * 1.5, 1.0));
-            float spec = pow(max(dot(reflect(vec3(0, 0, -1), n), normalize(vec3(-0.3, -0.7, 0.65))), 0.0), 24.0);
+            float spec = pow(max(dot(reflect(vec3(0, 0, -1), n), normalize(LD + vec3(0.1, 0.0, 0.0))), 0.0), 24.0);
             vec3 bc = mix(ink.rgb, vec3(0.0), 0.7) * (0.7 + 0.3 * n.z) + vec3(0.55) * spec;
             // a fine moulded ridge, and the screw that holds the movement
             bc += vec3(0.05) * cov(abs(db + 5.0 * u) - 0.4 * u) * step(q.y, 0.0);
@@ -178,7 +183,7 @@ void main() {
 
     // ---- the peak lamp ---------------------------------------------------------------
     {
-        vec2 lc = vec2(res.x - 15.0 * u, 14.0 * u);
+        vec2 lc = vec2(res.x - 15.0 * u, 14.0 * u) + cardOff;
         float lr = 4.2 * u;
         float d = length(p - lc);
         vec3 off = mix(hot.rgb, vec3(0.0), 0.62);
@@ -202,7 +207,7 @@ void main() {
 
     // ---- the glass: the bezel's shade, a curved reflection, a fresnel rim --------------
     {
-        vec2 e = p / res;
+        vec2 e = (p - par.zw) / res - (LD.xy - vec2(-0.42, -0.62)) * vec2(0.55, 0.35);
         // the bezel overhangs the card: shade, deepest along the top
         float dEdge = -sdRB(p - res * 0.5, res * 0.5, 4.0 * u);
         float shade = exp(-dEdge / (6.0 * u)) * 0.45 + exp(-(p.y) / (14.0 * u)) * 0.22;
