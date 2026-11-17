@@ -674,9 +674,7 @@ Item {
     fragmentShader: Qt.resolvedUrl("shaders/monolith_wheel.frag.qsb")
     function nudge(n) {
       turn -= n * 0.35
-      if (!core.player || core.length <= 0) return
-      var t = Math.max(0, Math.min(core.length - 1, core.position + n * 5))
-      core.player.position = t
+      core.seekBy(n * 5)
     }
     MouseArea {
       id: wheelMouse

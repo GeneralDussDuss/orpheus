@@ -55,6 +55,11 @@ Item {
     scrubbing = false
   }
   function cancelScrub() { scrubbing = false }
+  // Nudge the play head by `d` seconds (wheels, scroll steps), clamped to the track.
+  function seekBy(d) {
+    if (!player || length <= 0) return
+    player.position = Math.max(0, Math.min(length - 0.5, position + d))
+  }
 
   Timer {
     interval: 1000
@@ -77,7 +82,10 @@ Item {
   readonly property color fg: Tui.ensure(Commons.Color.foreground, bg, 7)
   readonly property color dim: Tui.muted(Commons.Color.foreground, bg, 4.5)
   readonly property color accent: Tui.ensure(Commons.Color.accent, bg, 3)
-  readonly property color hot: Commons.Color.urgent !== undefined ? Tui.ensure(Commons.Color.urgent, bg, 3) : accent
+  // The theme's urgent colour for red zones, like lamps and pointers -- unless
+  // the theme left it grey (e.g. "white"), when the accent stands in.
+  readonly property color hot: Commons.Color.urgent !== undefined && Commons.Color.urgent.hslSaturation > 0.18
+                               ? Tui.ensure(Commons.Color.urgent, bg, 3) : accent
   readonly property color rawAccent: Commons.Color.accent !== undefined ? Commons.Color.accent : accent
   readonly property bool light: Tui.lum(bg) > 0.4 || (!!engine && !!engine.lightTheme)
   readonly property real bloom: Tui.bloom(engine)
