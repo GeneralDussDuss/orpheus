@@ -63,6 +63,16 @@ PanelWindow {
   readonly property bool playing: !!(engine && engine.player && engine.player.isPlaying)
 
   FontMetrics { id: fm; font.family: Style.font.family; font.pixelSize: Style.font.body }
+  // What KeysSheet asks of its host (the player window has the same names).
+  readonly property real cw: fm.advanceWidth("M")
+  readonly property real ch: fm.height
+  readonly property color baseBg: Commons.Color.background
+  readonly property color accent: Tui.ensure(Commons.Color.accent, bg, 3)
+  readonly property color fg: Tui.ensure(Commons.Color.foreground, bg, 7)
+  readonly property string family: Style.font.family
+  readonly property real clock: engine ? engine.time : -1
+  // Where the keys go once the sheet closes: the show's item, or the card's.
+  function refocus() { if (bleed) full.forceActiveFocus(); else card.forceActiveFocus() }
   readonly property int vizWidth: Math.round(Math.min(860, (screen ? screen.width : 1600) * 0.5))
   readonly property int vizHeight: Math.round(vizWidth * 0.48)
 
@@ -78,10 +88,15 @@ PanelWindow {
   // the game) and comes back when the game does.
   visible: !(desktop && !windows && fullscreen) && !(engine && engine.gameMode)
 
-  anchors.left: bleed
+  // The overlay card, once moved, is pinned to the screen's top-left with the
+  // position as margins; unmoved it has no anchors and the compositor centres it.
+  // Fullscreen and desktop never take this path (movable is false for them).
+  anchors.left: bleed || placed
   anchors.right: bleed
-  anchors.top: bleed
+  anchors.top: bleed || placed
   anchors.bottom: desktop || bleed
+  margins.left: placed ? cardX : 0
+  margins.top: placed ? cardY : 0
   margins.bottom: desktop && !bleed ? Style.gapsOut * 8 : 0
 
   WlrLayershell.layer: wallpaperMode ? WlrLayer.Background : desktop ? WlrLayer.Bottom : WlrLayer.Overlay
@@ -97,6 +112,35 @@ PanelWindow {
     function onWallpaperLost() { win.rebuild() }
   }
   onScreenChanged: if (wallpaperMode && win["wallpaperLayout"]) rebuild()
+
+  // ---- moving the card ---------------------------------------------------------
+  //
+  // Drag the card's title row to move it, double-click the row to centre it
+  // again. A layer surface has no window manager to ask, so the move is done
+  // here, in margins from the screen's top-left. Only the overlay card moves
+  // (the show and the wallpaper fill the monitor, the desktop card is anchored
+  // to the bottom), and not on Windows, whose panel shim is placed by its own
+  // rules. The spot is kept in config as fractions of the screen (Service.qml
+  // cardPos), written when the drag ends, not on every frame.
+  readonly property bool movable: !windows && !bleed && !desktop
+  property var cardLive: null                       // {x, y} in pixels while a drag is under way
+  readonly property var cardSaved: movable && engine ? engine.cardPos : null
+  readonly property bool placed: cardLive !== null || cardSaved !== null
+  readonly property real screenW: screen ? screen.width : 0
+  readonly property real screenH: screen ? screen.height : 0
+  // kept fully on the screen, whatever the saved fraction and the card's size now say
+  function clampX(x) { return Math.max(0, Math.min(screenW - width, x)) }
+  function clampY(y) { return Math.max(0, Math.min(screenH - height, y)) }
+  readonly property real cardX: cardLive ? cardLive.x : cardSaved ? clampX(cardSaved.x * screenW) : 0
+  readonly property real cardY: cardLive ? cardLive.y : cardSaved ? clampY(cardSaved.y * screenH) : 0
+  // where the card is now, centred or not
+  function cardOrigin() {
+    return placed ? Qt.point(cardX, cardY) : Qt.point((screenW - width) / 2, (screenH - height) / 2)
+  }
+  function resetCard() {
+    cardLive = null
+    if (engine && engine.cardPos) engine.setCardPos(null)
+  }
 
   // ---- style ---------------------------------------------------------------
   //
@@ -246,6 +290,7 @@ PanelWindow {
 
   function handleKey(e) {
     if (e.key === Qt.Key_Escape) leave(close)
+    else if (e.text === "?") keysSheet.open()
     else if (e.text === "t") toggleScene()
     // under the deck the arrows run the tape, and e ejects it
     else if (deck && (e.key === Qt.Key_Right || e.text === "l")) deckShuttle(10)
@@ -407,11 +452,13 @@ PanelWindow {
         { k: "e", l: "eject", run: function() { win.deckEject() }, tip: "eject · close the deck" },
         { k: "space", l: "play", run: function() { if (win.engine.player) win.engine.player.togglePlaying() }, tip: "play / pause" },
         { k: "f", l: "window", run: function() { win.leave(win.toggleShow) }, tip: "back to the window · or double-click" },
+        { k: "?", l: "keys", run: function() { keysSheet.open() }, tip: "every key and mouse gesture" },
         { k: "esc", l: "close", run: function() { win.leave(win.close) }, tip: "close the visualizer" }] : [
         { k: "←→", l: "style", run: function() { win.stepStyle(1) }, tip: "next style · click, right-click and scroll work too", tipKey: "← →" },
         { k: "t", l: "tape", run: function() { win.toggleScene() }, tip: "cassette deck" },
         { k: "space", l: "play", run: function() { if (win.engine.player) win.engine.player.togglePlaying() }, tip: "play / pause" },
         { k: "f", l: "window", run: function() { win.leave(win.toggleShow) }, tip: "back to the window · or double-click" },
+        { k: "?", l: "keys", run: function() { keysSheet.open() }, tip: "every key and mouse gesture" },
         { k: "esc", l: "close", run: function() { win.leave(win.close) }, tip: "close the visualizer" }]
     }
   }
@@ -433,6 +480,7 @@ PanelWindow {
       { k: "e", l: "eject", run: function() { win.deckEject() }, tip: "eject · close the deck", keep: 2 },
       { k: "f", l: "full", run: function() { win.leave(win.toggleShow) }, tip: "fullscreen show", keep: 0 },
       { k: "space", l: "play", run: function() { if (win.engine.player) win.engine.player.togglePlaying() }, tip: "play / pause", keep: 1 },
+      { k: "?", l: "keys", run: function() { keysSheet.open() }, tip: "every key and mouse gesture", keep: 1 },
       { k: "esc", l: "close", run: function() { win.leave(win.close) }, tip: "close the visualizer", keep: 0 }]
     readonly property var vizHints: [
       { k: "←→", l: "style", run: function() { win.stepStyle(1) }, tip: "next style · click, right-click and scroll the picture too", tipKey: "← →", keep: 1 },
@@ -440,6 +488,7 @@ PanelWindow {
       { k: "p", l: "player", run: function() { win.engine.setMiniPlayer(!win.engine.miniPlayer) }, tip: (win.engine && win.engine.miniPlayer ? "hide" : "show") + " the mini player", keep: 2 },
       { k: "f", l: "full", run: function() { win.leave(win.toggleShow) }, tip: "fullscreen show", keep: 0 },
       { k: "space", l: "play", run: function() { if (win.engine.player) win.engine.player.togglePlaying() }, tip: "play / pause", keep: 1 },
+      { k: "?", l: "keys", run: function() { keysSheet.open() }, tip: "every key and mouse gesture", keep: 1 },
       { k: "esc", l: "close", run: function() { win.leave(win.close) }, tip: "close the visualizer", keep: 0 }]
     TextMetrics { id: titleM; font.family: Style.font.family; font.pixelSize: Style.font.body; text: "  " + card.title + "  " }
     TextMetrics { id: hintM; font.family: Style.font.family; font.pixelSize: Style.font.caption; text: "x" }
@@ -593,4 +642,58 @@ PanelWindow {
       }
     }
   }
+
+  // The title row (the frame's top line and the style tabs under it) moves the
+  // card. A sibling above the card, not inside it, so it lines up with the
+  // window's own top-left. Its handlers only take passive grabs: the tabs and
+  // hints under it still get their plain clicks, and a drag past the threshold
+  // takes over from them.
+  Item {
+    id: cardGrip
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: parent.top
+    height: Math.round(card.ch * 2.25)
+    visible: win.movable
+    enabled: win.movable && !!win.engine && win.screenW > 0
+
+    DragHandler {
+      id: cardDrag
+      target: null
+      acceptedButtons: Qt.LeftButton
+      // The surface moves under the pointer, so the pointer is followed in
+      // screen coordinates: where the window is, plus where the pointer is in it.
+      property point startPos
+      property point startGlobal
+      function global() {
+        var p = centroid.scenePosition
+        return Qt.point(win.cardX + p.x, win.cardY + p.y)
+      }
+      onActiveChanged: {
+        if (active) {
+          startPos = win.cardOrigin()
+          win.cardLive = { x: startPos.x, y: startPos.y }
+          startGlobal = global()
+        } else if (win.cardLive) {
+          var live = win.cardLive
+          win.engine.setCardPos(live.x / win.screenW, live.y / win.screenH)
+          win.cardLive = null
+        }
+      }
+      onCentroidChanged: {
+        if (!active || !win.cardLive) return
+        var g = global()
+        win.cardLive = { x: win.clampX(startPos.x + g.x - startGlobal.x),
+                         y: win.clampY(startPos.y + g.y - startGlobal.y) }
+      }
+    }
+    // Double-click on the row: back to the middle. (Double-clicks elsewhere on
+    // the stage belong to the show; the card's picture has none.)
+    TapHandler {
+      acceptedButtons: Qt.LeftButton
+      onTapped: if (tapCount === 2) win.resetCard()
+    }
+  }
+
+  KeysSheet { id: keysSheet; host: win; lead: "in the visualizer window" }
 }

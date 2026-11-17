@@ -839,6 +839,16 @@ FloatingWindow {
     anchors.fill: parent
     anchors.margins: win.cw
 
+    // Drag the top edge to move the window. Declared first, so it sits under
+    // the status line's buttons: they keep their clicks and their cursor, and
+    // a drag starts on the bare strip. It reaches out over the window's
+    // padding to the very top and the sides.
+    MoveGrip {
+      x: -win.cw; y: -win.cw
+      width: parent.width + win.cw * 2
+      height: win.cw + statusLine.height
+    }
+
     // ── status line (btop-style): brand · now playing · signal path · close ──
     Item {
       id: statusLine

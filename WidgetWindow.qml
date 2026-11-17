@@ -37,6 +37,22 @@ FloatingWindow {
     sourceComponent: win.cassette ? cassetteBody : horizBody
   }
 
+  // Floating only: drag the top strip to move it (a tiled window is placed by
+  // the layout). Above the body, whose picture takes clicks across its whole
+  // face; the grip passes plain clicks through (MoveGrip.qml), so the close
+  // button in the corner still closes. cursor: false keeps that button's
+  // pointing hand rather than painting a move cursor over it.
+  MoveGrip {
+    visible: win.floating
+    enabled: win.floating
+    cursor: false
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: Math.round(win.cw * 0.5 + win.ch * 1.5)
+    z: 10
+  }
+
   Component {
     id: horizBody
     WidgetBody {

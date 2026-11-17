@@ -79,7 +79,7 @@ Item {
   // art there instead. Prism is the default because it measured as the cheapest
   // style by a wide margin (+0.7% shell CPU, against +13 to +20 for the others).
   readonly property var defaults: ({ style: "prism", railViz: "prism", miniPlayer: true, placement: "overlay", fps: 60, syncViz: true,
-                                     showMonitor: "", autoStyle: false, pilgrimage: false, trackTitle: true, lyricsOverViz: false,
+                                     showMonitor: "", cardPos: null, autoStyle: false, pilgrimage: false, trackTitle: true, lyricsOverViz: false,
                                      autoQuality: true, showFps: false, bloom: "subtle",
                                      endless: true, crossfade: 0, remote: "off",
                                      director: true, beatLock: true, lookaheadMs: 85, feedback: "subtle", dropMap: true, dropMapLeadMs: 30,
@@ -105,6 +105,13 @@ Item {
   // two Loaders); unlike a placement change, nothing is rebuilt.
   readonly property var scenes: ["viz", "cassette"]
   readonly property string scene: scenes.indexOf(config.scene) >= 0 ? config.scene : "viz"
+  // Where the visualizer's window card was left (the overlay placement), as the
+  // fractions of its screen that its top-left corner sits at: {x, y}, or null
+  // for the middle. Fractions, so it survives another monitor or resolution.
+  readonly property var cardPos: {
+    var p = config.cardPos
+    return p && typeof p.x === "number" && typeof p.y === "number" && isFinite(p.x) && isFinite(p.y) ? { x: p.x, y: p.y } : null
+  }
   readonly property string showMonitor: typeof config.showMonitor === "string" ? config.showMonitor : ""  // "" = focused
   readonly property bool autoStyle: config.autoStyle === true          // switch style on big drops
   // Pilgrimage: the stage travels between styles by section (Pilgrimage.qml).
@@ -968,6 +975,10 @@ Item {
   function setShowMonitor(name) {
     updateConfig(function(c) { c.showMonitor = name || "" })
     return statusText()
+  }
+  // Written when a drag ends, never per frame; null puts the card back in the middle.
+  function setCardPos(x, y) {
+    updateConfig(function(c) { c.cardPos = x === null || x === undefined ? null : { x: x, y: y } })
   }
   // The stage's on/off switches: autoStyle, trackTitle, lyricsOverViz, autoQuality, showFps.
   function setStageFlag(key, on) {

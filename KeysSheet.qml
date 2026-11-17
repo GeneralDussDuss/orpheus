@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell.Io
 import qs.Commons
 import qs.Commons as Commons
 import "Tui.js" as Tui
@@ -6,11 +7,18 @@ import "Tui.js" as Tui
 // `?`: every key the player answers to, and the global hotkeys this run
 // actually got (with the ones it did not, and why). j/k scroll, any of
 // esc / ? / q closes.
+//
+// The host (the player window, the visualizer stage) provides cw, ch, accent,
+// dim, bg, baseBg, fg, accentText, family, clock and refocus(): the metrics
+// and colours the sheet draws with, and where the keys go when it closes.
 Item {
   id: sheet
 
   property var host: null
   property bool shown: false
+  // The section named here comes first, for a host whose own keys are the ones
+  // wanted at a glance (the stage opens on "in the visualizer window").
+  property string lead: ""
 
   anchors.fill: parent
   visible: opacity > 0
@@ -20,10 +28,67 @@ Item {
 
   // opening lands at the top at once; only the keys glide
   property bool snap: false
-  function open() { snap = true; flick.contentY = 0; snap = false; shown = true; flick.forceActiveFocus() }
+  function open() {
+    snap = true; flick.contentY = 0; snap = false; shown = true; flick.forceActiveFocus()
+    askHyprland()
+  }
   function close() { shown = false; host.refocus() }
 
   readonly property bool hasKeys: typeof OrpheusKeys !== "undefined"
+
+  // ---- the global hotkeys on Linux --------------------------------------------
+  //
+  // Omarchy's are Hyprland binds (hypr/orpheus.lua), so ask Hyprland what is
+  // bound right now, each time the sheet opens: the answer follows a rebind, or
+  // orpheus_bindings = false. Under the Lua config the dispatcher is an opaque
+  // `__lua` and its arg an id, so the binds are told apart by description, the
+  // names orpheus.lua registers them under.
+  readonly property var hyprBinds: [
+    ["Music", "the player: open or close"],
+    ["Music visualizer", "the visualizer window: open or close"],
+    ["Music widget", "the desktop widget: on or off"],
+    ["Orpheus sign-in", "sign in to TIDAL"]
+  ]
+  // [{ combo, label, what }] once Hyprland has answered; null until then
+  property var hyprRows: null
+  property bool hyprFailed: false
+
+  function askHyprland() {
+    if (hasKeys || Qt.platform.os === "windows" || hyprProc.running) return
+    hyprProc.running = true
+  }
+  // SHIFT=1 CAPS=2 CTRL=4 ALT=8 MOD2=16 (num lock) MOD3=32 MOD5=128 SUPER=64
+  function comboOf(b) {
+    var names = [[64, "super"], [4, "ctrl"], [8, "alt"], [1, "shift"]], out = []
+    for (var i = 0; i < names.length; i++) if (b.modmask & names[i][0]) out.push(names[i][1])
+    out.push(String(b.key).toLowerCase())
+    return out.join("+")
+  }
+  function readBinds(text) {
+    var all
+    try { all = JSON.parse(text) } catch (e) { hyprFailed = true; return }
+    var rows = []
+    for (var i = 0; i < hyprBinds.length; i++) {
+      var found = null
+      for (var j = 0; j < all.length && !found; j++) if (all[j].description === hyprBinds[i][0]) found = all[j]
+      rows.push({ combo: found ? comboOf(found) : "", label: hyprBinds[i][0].toLowerCase(), what: hyprBinds[i][1], bound: !!found })
+    }
+    hyprFailed = false
+    hyprRows = rows
+  }
+  Process {
+    id: hyprProc
+    command: ["hyprctl", "binds", "-j"]
+    stdout: StdioCollector { onStreamFinished: sheet.readBinds(text) }
+    onExited: function(code) { if (code !== 0) sheet.hyprFailed = true }
+  }
+
+  // the sections, the lead one first
+  readonly property var ordered: {
+    if (lead === "") return sections
+    var first = sections.filter(function(s) { return s[0] === lead })
+    return first.concat(sections.filter(function(s) { return s[0] !== lead }))
+  }
 
   // [title, [[keys, what], ...]], checked against the handlers: Library.qml
   // handleKey / videoKey / the list, Stage.qml handleKey, EqPane, LyricsPane,
@@ -39,17 +104,19 @@ Item {
     ["search box", [["type", "search as you type"], ["↓  esc", "to the results"], ["⏎", "open the selected result"]]],
     ["visualizer", [["v", "cycle the player rail"], ["V", "open / close the visualizer window"], ["t", "cassette deck on / off"]]],
     ["in the visualizer window", [["l h  → ←", "next / previous style · in the deck: shuttle ± 10 s"], ["1-9  0  ⇧1-9", "pick a style (leaves the deck)"],
-                                  ["g", "pilgrimage on / off"], ["n", "next leg · pilgrimage"],
+                                  ["g", "pilgrimage on / off"], ["n", "next leg · pilgrimage"], ["?", "this sheet"],
                                   ["t", "cassette deck / visualizer"], ["e", "eject · cassette deck only"], ["f", "fullscreen show / window"],
                                   ["p", "mini player on / off"], ["space", "play / pause"], ["esc", "close it"]]],
     ["mouse · player", [["click row", "select it"], ["dbl-click row", "play or open it"], ["right-click", "menu: queue, radio, link"],
                         ["click picture", "next rail visual · right-click back"], ["scroll picture", "step through visuals"],
                         ["‹ name ›", "step, or pick from a list"], ["click art · artist", "go to the album / artist"],
                         ["click up next", "play it now"], ["drag seek bar", "scrub; hover shows the time"],
-                        ["vol", "click, drag or scroll"], ["eq", "click opens · right-click bypass"],
+                        ["vol", "click, drag or scroll"], ["drag top edge", "move the window"], ["eq", "click opens · right-click bypass"],
                         ["click a hint", "key hints are buttons too"], ["hover", "what it does, and its key"]]],
     ["mouse · visualizer, widget", [["click", "next style · right-click back"], ["scroll", "step through styles"],
-                                    ["dbl-click show", "back to a window"], ["drag a reel", "scrub the tape · scroll ± 5 s"],
+                                    ["dbl-click show", "back to a window"],
+                                    ["drag title", "move the floating widget, or the visualizer's window card"],
+                                    ["dbl-click title", "visualizer window card: back to the centre"], ["drag a reel", "scrub the tape · scroll ± 5 s"],
                                     ["click a j-card track", "play it"], ["drop a .frag", "import it as a style"]]],
     ["menus", [["j k  ↓ ↑", "move"], ["⇥ ⇧⇥", "the same"], ["⏎  space", "run"], ["g G  home end", "first / last"], ["esc  q", "close"]]],
     ["video page", [["⇥", "next provider"], ["⏎", "watch"], ["a", "listen instead"], ["c", "hand over to curd"],
@@ -89,12 +156,12 @@ Item {
   readonly property real keyW: host.cw * 15
   readonly property var columns: {
     var total = 0, i
-    for (i = 0; i < sections.length; i++) total += sections[i][1].length + 2
+    for (i = 0; i < ordered.length; i++) total += ordered[i][1].length + 2
     var share = total / cols, out = [[]], acc = 0
-    for (i = 0; i < sections.length; i++) {
-      var n = sections[i][1].length + 2
+    for (i = 0; i < ordered.length; i++) {
+      var n = ordered[i][1].length + 2
       if (acc > 0 && acc + n / 2 > share * out.length && out.length < cols) out.push([])
-      out[out.length - 1].push(sections[i])
+      out[out.length - 1].push(ordered[i])
       acc += n
     }
     return out
@@ -210,9 +277,39 @@ Item {
           color: host.dim
         }
         Text {
-          visible: !sheet.hasKeys
-          text: "on Omarchy these are Hyprland binds: see hypr/ in the plugin"
+          visible: !sheet.hasKeys && !sheet.hyprRows
+          text: sheet.hyprFailed ? "could not ask Hyprland (hyprctl binds); the binds live in hypr/orpheus.lua" : "asking Hyprland…"
           font.family: host.family; font.pixelSize: Style.font.body
+          color: host.dim
+        }
+        Repeater {
+          model: sheet.hasKeys ? [] : (sheet.hyprRows || [])
+          Row {
+            required property var modelData
+            Text {
+              width: host.cw * 22
+              text: modelData.bound ? modelData.combo : "not bound"
+              font.family: host.family; font.pixelSize: Style.font.body
+              color: modelData.bound ? host.accentText : host.dim
+            }
+            Text {
+              width: host.cw * 32
+              text: modelData.label
+              font.family: host.family; font.pixelSize: Style.font.body
+              color: modelData.bound ? host.fg : host.dim
+            }
+            Text {
+              text: modelData.bound ? modelData.what : "orpheus_bindings = false, or you rebound it"
+              font.family: host.family; font.pixelSize: Style.font.caption
+              color: host.dim
+            }
+          }
+        }
+        Text {
+          visible: !sheet.hasKeys && !!sheet.hyprRows
+          topPadding: host.ch * 0.3
+          text: "the binds are registered by hypr/orpheus.lua"
+          font.family: host.family; font.pixelSize: Style.font.caption
           color: host.dim
         }
         Repeater {
