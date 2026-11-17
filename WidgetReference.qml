@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import qs.Commons
 import "Tui.js" as Tui
 
@@ -31,12 +32,22 @@ Item {
   focus: keys
   Keys.onPressed: function(e) {
     core.key(e)
-    if (!e.accepted || e.isAutoRepeat) return
+    if (!e.accepted || e.isAutoRepeat || (e.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
     var a = e.key === Qt.Key_Space ? "toggle" : e.text === "n" ? "next" : e.text === "p" ? "previous"
           : e.text === "F" ? "like" : e.text === "V" ? "stage" : ""
     if (a !== "") deck.keyTapped(a)
   }
   signal keyTapped(string a)
+
+  // Fade up whenever the window shows (Widget.qml multiplies its own rest
+  // dimming into this), as the other decks do.
+  property real appear: 0
+  opacity: appear
+  NumberAnimation on appear { id: appearAnim; from: 0; to: 1; duration: Tui.STATE; easing.type: Easing.InOutCubic }
+  Connections {
+    target: deck.Window.window
+    function onVisibleChanged() { if (deck.Window.window && deck.Window.window.visible) appearAnim.restart() }
+  }
   // the scrub state, for whoever drives the deck from outside (the harness)
   property alias scrubbing: core.scrubbing
   property alias scrubFrac: core.scrubFrac
@@ -178,9 +189,32 @@ Item {
       text: "orpheus"
       font.pixelSize: deck.fpx(15); font.bold: true; font.letterSpacing: 3.2 * deck.s
     }
+    // close: an engraved ✕ at the plate's right end (the corner widget has no
+    // other way to close)
+    Engr {
+      id: closeMark
+      anchors { right: parent.right; rightMargin: deck.px(10); verticalCenter: parent.verticalCenter }
+      text: "✕"
+      font.pixelSize: deck.fpx(11)
+      color: closeMouse.containsMouse ? Tui.ensure(core.rawAccent, deck.metal, 3) : deck.inkDim
+      MouseArea {
+        id: closeMouse
+        anchors.fill: parent; anchors.margins: -4
+        hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+        onClicked: if (deck.engine) deck.engine.setWidget("enabled", "off")
+        TuiTip { text: "close the widget" }
+      }
+    }
+    Rectangle {
+      // a hairline engraved between the model name and the close mark
+      anchors { right: closeMark.left; rightMargin: deck.px(8); verticalCenter: parent.verticalCenter }
+      width: 1; height: Math.round(parent.height * 0.42)
+      color: Tui.alpha(deck.ink, 0.28)
+      Rectangle { x: 1; width: 1; height: parent.height; color: deck.engrHi }
+    }
     Engr {
       id: model
-      anchors { right: parent.right; rightMargin: deck.px(10); verticalCenter: parent.verticalCenter }
+      anchors { right: closeMark.left; rightMargin: deck.px(17); verticalCenter: parent.verticalCenter }
       text: "dr-1 reference"
       font.pixelSize: deck.fpx(10); font.letterSpacing: 1.6 * deck.s
       color: deck.inkDim
@@ -580,7 +614,7 @@ Item {
       // the knob, and the dial ring round it (click a tick to jump there)
       x: (knob.width - width) / 2; y: (knob.height - height) / 2
       width: 2 * (deck.rDial + deck.px(4)); height: width
-      enabled: !!core.player && core.length > 0
+      enabled: !!(core.player && core.player.canSeek !== false) && core.length > 0
       hoverEnabled: true; cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
       property real lastA: 0
       function angAt(m) { return Math.atan2(m.x - width / 2, -(m.y - height / 2)) }
