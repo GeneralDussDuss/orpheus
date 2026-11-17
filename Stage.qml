@@ -505,7 +505,8 @@ PanelWindow {
       var keys = []
       for (i = 0; i < full.length; i++) keys.push(Object.assign({}, full[i], { l: "" }))
       if (hintCells(keys) <= room) return keys
-      for (var keep = 1; keep <= 2; keep++) {
+      // drop the fewest that make room: the keep < 2 set first, then keep < 1
+      for (var keep = 2; keep >= 1; keep--) {
         var few = keys.filter(function(h) { return h.keep < keep })
         if (hintCells(few) <= room) return few
       }
@@ -644,12 +645,13 @@ PanelWindow {
   }
 
   // The title row (the frame's top line and the style tabs under it) moves the
-  // card. A sibling above the card, not inside it, so it lines up with the
-  // window's own top-left. Its handlers only take passive grabs: the tabs and
-  // hints under it still get their plain clicks, and a drag past the threshold
-  // takes over from them.
+  // card. A sibling UNDER the card (z -1), lined up with the window's own
+  // top-left: the tabs and hints take their presses first, so a drag or a
+  // double-click only lands here from the bare row between them (a
+  // double-clicked tab picks its style and nothing else).
   Item {
     id: cardGrip
+    z: -1
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.top: parent.top
@@ -661,19 +663,19 @@ PanelWindow {
       id: cardDrag
       target: null
       acceptedButtons: Qt.LeftButton
-      // The surface moves under the pointer, so the pointer is followed in
-      // screen coordinates: where the window is, plus where the pointer is in it.
-      property point startPos
-      property point startGlobal
-      function global() {
-        var p = centroid.scenePosition
-        return Qt.point(win.cardX + p.x, win.cardY + p.y)
-      }
+      // The surface moves under the pointer, but only once a frame, and a fast
+      // mouse reports several times a frame. So the target is always worked out
+      // from `base`, the position the window has had a frame to take, plus how
+      // far the pointer sits from where it grabbed the card: reports inside one
+      // frame recompute the same move instead of piling it up (which ran the
+      // card away from the pointer).
+      property point base
+      property point grab
       onActiveChanged: {
         if (active) {
-          startPos = win.cardOrigin()
-          win.cardLive = { x: startPos.x, y: startPos.y }
-          startGlobal = global()
+          base = win.cardOrigin()
+          grab = centroid.scenePressPosition
+          win.cardLive = { x: base.x, y: base.y }
         } else if (win.cardLive) {
           var live = win.cardLive
           win.engine.setCardPos(live.x / win.screenW, live.y / win.screenH)
@@ -682,13 +684,16 @@ PanelWindow {
       }
       onCentroidChanged: {
         if (!active || !win.cardLive) return
-        var g = global()
-        win.cardLive = { x: win.clampX(startPos.x + g.x - startGlobal.x),
-                         y: win.clampY(startPos.y + g.y - startGlobal.y) }
+        var p = centroid.scenePosition
+        win.cardLive = { x: win.clampX(base.x + p.x - grab.x), y: win.clampY(base.y + p.y - grab.y) }
       }
     }
-    // Double-click on the row: back to the middle. (Double-clicks elsewhere on
-    // the stage belong to the show; the card's picture has none.)
+    // Once a frame (GUI thread), the asked-for position becomes the base.
+    FrameAnimation {
+      running: cardDrag.active
+      onTriggered: if (win.cardLive) cardDrag.base = Qt.point(win.cardLive.x, win.cardLive.y)
+    }
+    // Double-click on the bare row: back to the middle.
     TapHandler {
       acceptedButtons: Qt.LeftButton
       onTapped: if (tapCount === 2) win.resetCard()

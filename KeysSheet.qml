@@ -67,6 +67,8 @@ Item {
   function readBinds(text) {
     var all
     try { all = JSON.parse(text) } catch (e) { hyprFailed = true; return }
+    // an error answer is JSON too, just not a list: say so, not "not bound"
+    if (!Array.isArray(all)) { hyprFailed = true; return }
     var rows = []
     for (var i = 0; i < hyprBinds.length; i++) {
       var found = null
