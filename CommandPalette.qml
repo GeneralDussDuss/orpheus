@@ -64,7 +64,7 @@ Item {
   }
   function run(i) {
     var c = all[hits[i]]
-    if (c && c.sub) { enterSub(c); return }
+    if (c && c.sub) { used(c.id); enterSub(c); return }
     close()
     if (!c) return
     used(c.id)
@@ -175,6 +175,9 @@ Item {
       add("viz.nextRail", "visuals", e.syncViz ? "cycle visualizer style · art" : "cycle rail visual", "v", "", function() { e.cycleRailViz(1) })
       // synced, the rail's styles are just the style: only album art is its own
       var rails = e.syncViz ? ["off"] : ["off"].concat(e.styles)
+      // synced with the rail on art: the way back to the live style
+      if (e.syncViz && e.railViz === "off")
+        add("viz.rail.live", "visuals", "set rail · " + (e.styleLabels[e.style] || e.style).toLowerCase(), "", "", function() { e.setRailViz(e.style) })
       for (var ri = 0; ri < rails.length; ri++)
         (function(s) {
           add("viz.rail." + s, "visuals", "set rail · " + (s === "off" ? "album art" : e.styleLabels[s].toLowerCase()), "", e.railViz === s ? "● now" : "", function() { e.setRailViz(s) })
