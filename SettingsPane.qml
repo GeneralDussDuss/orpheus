@@ -4,6 +4,7 @@ import qs.Commons
 import qs.Commons as Commons
 import "Tui.js" as Tui
 import "Pilgrim.js" as Pilgrim
+import "Follow.js" as Follow
 
 // Settings, as a page of the player: everything the tray menu and config.json
 // used to be the only way to reach.
@@ -50,7 +51,16 @@ Rectangle {
   property int section: 0
   property int cursor: 0
   property string editing: ""        // the hotkey action / text row being edited, if any
-  property bool vizFold: false       // visuals ▸ advanced: per-window styles
+  // Folds, open or not: "sec:<section>" is a section's `more`, the others are
+  // folds inside one (viz, react). Per session; never written to config.json.
+  property var folds: ({})
+  function isOpen(key) { return folds[key] === true }
+  function setFold(key, on) {
+    var f = {}
+    for (var k in folds) f[k] = folds[k]
+    f[key] = on
+    folds = f
+  }
   property string query: ""          // the search, across every section
   readonly property bool searching: query.trim() !== ""
 
@@ -93,10 +103,48 @@ Rectangle {
     } else if (id === "visuals") {
       r.push({ kind: "choice", id: "style", label: "visualizer style", options: styles, def: d.style, key: "v",
                desc: "one style for the visualizer window, the wallpaper, the player rail and the widget" })
+      r.push({ kind: "choice", id: "react", label: "react to music", options: Follow.NAMES, def: "subtle",
+               desc: "how much the show follows the song · off, subtle, full, or custom when you tune the switches yourself" })
+      // the eight switches the preset drives; searching shows them without the fold
+      var reactOpen = isOpen("react")
+      if (!searching) r.push({ kind: "action", id: "fold", fold: "react", ess: true, label: "tune the 8 switches", hint: reactOpen ? "▾" : "▸",
+                              desc: "⏎ to " + (reactOpen ? "fold" : "unfold") + " · director, beat lock, auto style, pilgrimage, title card, lyrics, drop map, drop effects" })
+      if (reactOpen || searching) {
+        r.push({ kind: "toggle", id: "director", ess: true, label: "follow the song's structure", def: d.director,
+                 desc: "builds tighten, drops hit harder, breakdowns calm down" })
+        r.push({ kind: "toggle", id: "beatLock", ess: true, label: "lock flashes to the beat", def: d.beatLock,
+                 desc: "flashes land on a predicted beat grid instead of a detection late" })
+        r.push({ kind: "toggle", id: "autoStyle", ess: true, label: "switch styles on drops", def: d.autoStyle,
+                 desc: "jump to another visualizer style when a big drop lands" })
+        r.push({ kind: "toggle", id: "pilgrimage", ess: true, label: "pilgrimage", def: d.pilgrimage,
+                 desc: "travel between styles with the song · each section morphs into its own world" })
+        r.push({ kind: "toggle", id: "trackTitle", ess: true, label: "title card on track change", def: d.trackTitle,
+                 desc: "the new track's name fades in over the visualizer" })
+        r.push({ kind: "toggle", id: "lyricsOverViz", ess: true, label: "lyrics over the visualizer", def: d.lyricsOverViz,
+                 desc: "the sung line, karaoke style, over the stage" })
+        r.push({ kind: "toggle", id: "dropMap", ess: true, label: "drop map", def: d.dropMap,
+                 desc: "analyse each track ahead of time so beats, builds and drops land exactly · needs ffmpeg" })
+        r.push({ kind: "toggle", id: "dropFx", ess: true, label: "drop effects", def: d.dropFx,
+                 desc: "a chroma burst, grain and a vignette when a drop lands" })
+        if (e) {
+          var pr = Pilgrim.resolve(e.pilgrimRoute, e.styles), missing = [], seenMiss = {}
+          for (var pk = 0; pk < Pilgrim.CODES.length; pk++) {
+            var want = (e.pilgrimRoute && Array.isArray(e.pilgrimRoute[Pilgrim.CODES[pk]]))
+                       ? e.pilgrimRoute[Pilgrim.CODES[pk]] : Pilgrim.DEFAULT_ROUTE[Pilgrim.CODES[pk]]
+            for (var pi = 0; pi < want.length; pi++)
+              if (typeof want[pi] === "string" && e.styles.indexOf(want[pi]) < 0 && !seenMiss[want[pi]]) {
+                seenMiss[want[pi]] = true; missing.push(want[pi])
+              }
+          }
+          if (missing.length) r.push({ kind: "note", label: "route styles not installed · " + missing.join(" ") + " · their legs fall back" })
+        }
+        var an = api && api.status ? api.status.analysis : null
+        if (an && !an.available) r.push({ kind: "note", label: an.ffmpeg ? "numpy is missing · install the desktop extra" : "no decoder · winget install yt-dlp.FFmpeg (or put ffmpeg on PATH)" })
+      }
       var synced = !e || e.syncViz
-      var open = vizFold || !synced
-      r.push({ kind: "action", id: "vizFold", label: "advanced: per-window styles", hint: open ? "▾" : "▸",
-               desc: "⏎ to " + (open ? "fold" : "unfold") + " · give the player rail and the widget styles of their own" })
+      var open = isOpen("viz") || !synced || searching
+      if (!searching) r.push({ kind: "action", id: "fold", fold: "viz", label: "advanced: per-window styles", hint: open ? "▾" : "▸",
+                              desc: "⏎ to " + (open ? "fold" : "unfold") + " · give the player rail and the widget styles of their own" })
       if (open) {
         r.push({ kind: "toggle", id: "syncViz", label: "style everywhere", def: d.syncViz,
                  desc: "on: the rail and the widget show the style above · off: pick one for each below" })
@@ -124,8 +172,6 @@ Rectangle {
                desc: "glow around the bright parts of the visualizer · dark themes only" })
       r.push({ kind: "choice", id: "feedback", label: "trails", options: ["off", "subtle", "full"], def: d.feedback,
                desc: "each frame leaves a fading echo of the last, like milkdrop" })
-      r.push({ kind: "toggle", id: "dropFx", label: "drop effects", def: d.dropFx,
-               desc: "a chroma burst, grain and a vignette when a drop lands" })
       r.push({ kind: "choice", id: "ambient", label: "ambient light", options: ["off", "subtle", "vivid"], def: d.ambient,
                desc: "the visualizer, dim and blurred, behind the player's panes · dark themes only" })
       r.push({ kind: "choice", id: "deckLook", label: "cassette look", options: ["shell", "light"], def: d.deckLook,
@@ -137,35 +183,6 @@ Rectangle {
                desc: "the playing row, playhead and focused pane glow with the kick · dark themes only" })
       r.push({ kind: "toggle", id: "bootScreen", label: "boot screen", def: d.bootScreen !== false,
                desc: "a short start-up screen the first time the player opens · any key skips it" })
-      r.push({ kind: "toggle", id: "trackTitle", label: "title card on track change", def: d.trackTitle,
-               desc: "the new track's name fades in over the visualizer" })
-      r.push({ kind: "toggle", id: "lyricsOverViz", label: "lyrics over the visualizer", def: d.lyricsOverViz,
-               desc: "the sung line, karaoke style, over the stage" })
-      r.push({ kind: "header", label: "follow the music" })
-      r.push({ kind: "toggle", id: "director", label: "follow the song's structure", def: d.director,
-               desc: "builds tighten, drops hit harder, breakdowns calm down" })
-      r.push({ kind: "toggle", id: "beatLock", label: "lock flashes to the beat", def: d.beatLock,
-               desc: "flashes land on a predicted beat grid instead of a detection late" })
-      r.push({ kind: "toggle", id: "autoStyle", label: "switch styles on drops", def: d.autoStyle,
-               desc: "jump to another visualizer style when a big drop lands" })
-      r.push({ kind: "toggle", id: "pilgrimage", label: "pilgrimage", def: d.pilgrimage,
-               desc: "travel between styles with the song · each section morphs into its own world" })
-      if (e) {
-        var pr = Pilgrim.resolve(e.pilgrimRoute, e.styles), missing = [], seenMiss = {}
-        for (var pk = 0; pk < Pilgrim.CODES.length; pk++) {
-          var want = (e.pilgrimRoute && Array.isArray(e.pilgrimRoute[Pilgrim.CODES[pk]]))
-                     ? e.pilgrimRoute[Pilgrim.CODES[pk]] : Pilgrim.DEFAULT_ROUTE[Pilgrim.CODES[pk]]
-          for (var pi = 0; pi < want.length; pi++)
-            if (typeof want[pi] === "string" && e.styles.indexOf(want[pi]) < 0 && !seenMiss[want[pi]]) {
-              seenMiss[want[pi]] = true; missing.push(want[pi])
-            }
-        }
-        if (missing.length) r.push({ kind: "note", label: "route styles not installed · " + missing.join(" ") + " · their legs fall back" })
-      }
-      r.push({ kind: "toggle", id: "dropMap", label: "drop map", def: d.dropMap,
-               desc: "analyse each track ahead of time so beats, builds and drops land exactly · needs ffmpeg" })
-      var an = api && api.status ? api.status.analysis : null
-      if (an && !an.available) r.push({ kind: "note", label: an.ffmpeg ? "numpy is missing · install the desktop extra" : "no decoder · winget install yt-dlp.FFmpeg (or put ffmpeg on PATH)" })
       r.push({ kind: "header", label: "your shaders" })
       r.push({ kind: "action", id: "shaderImport", label: "import shader from clipboard", hint: "a shadertoy link, or glsl with mainImage",
                desc: "copy a shadertoy link or an image shader's code, then ⏎; it lands in your shaders folder and on the stage" })
@@ -311,11 +328,53 @@ Rectangle {
     return r
   }
 
-  // Every section's rows, for the search. Rows are stamped with their section.
+  // ---- essentials and the fold ---------------------------------------------
+  //
+  // A section shows its essentials; the rest sits behind one `more (N)` row.
+  // Essential: the theme list, streaming quality, equalizer, visualizer style,
+  // react to music (and its eight switches), the widget's on/off, style and
+  // corner, the global hotkeys. A header goes with the row after it, a note
+  // with the row before it. Stamps every row `more` (not essential).
+  function isEssential(r) {
+    if (r.ess === true) return true
+    if (r.kind === "theme" || r.kind === "hotkey") return true
+    return ["builder", "quality", "eq", "style", "react", "widget.enabled", "widget.style", "widget.corner", "hotkeysReset"].indexOf(r.id) >= 0
+  }
+  function classify(rs) {
+    var n = rs.length, ess = [], i, j
+    for (i = 0; i < n; i++) if (selectable(rs[i])) ess[i] = isEssential(rs[i])
+    for (i = 0; i < n; i++) {
+      if (selectable(rs[i])) continue
+      var prev = -1, next = -1
+      for (j = i - 1; j >= 0; j--) if (selectable(rs[j])) { prev = j; break }
+      for (j = i + 1; j < n; j++) if (selectable(rs[j])) { next = j; break }
+      var from = rs[i].kind === "header" ? (next >= 0 ? next : prev) : (prev >= 0 ? prev : next)
+      ess[i] = from >= 0 ? ess[from] : true
+    }
+    for (i = 0; i < n; i++) rs[i].more = !ess[i]
+    return rs
+  }
+  // The rows as the page shows them: essentials, then the fold row, then the
+  // rest once it is open.
+  function layout(id, rs) {
+    var ess = [], more = [], count = 0
+    for (var i = 0; i < rs.length; i++) {
+      if (rs[i].more) { more.push(rs[i]); if (selectable(rs[i])) count++ }
+      else ess.push(rs[i])
+    }
+    if (!more.length) return ess
+    var open = isOpen("sec:" + id)
+    ess.push({ kind: "action", id: "fold", fold: "sec:" + id, label: (open ? "▾ " : "▸ ") + "more (" + count + ")", ess: false,
+               desc: (open ? "⏎ or h to fold" : "⏎ or l to unfold") + " · the rest of this section's settings" })
+    return open ? ess.concat(more) : ess
+  }
+
+  // Every section's rows, for the search: folded ones too, stamped with their
+  // section and whether they live behind a fold.
   function allRows() {
     var out = []
     for (var s = 0; s < sections.length; s++) {
-      var rs = build(sections[s].id)
+      var rs = classify(build(sections[s].id))
       for (var i = 0; i < rs.length; i++) { rs[i].sec = s; out.push(rs[i]) }
     }
     return out
@@ -329,7 +388,7 @@ Rectangle {
 
   readonly property var rows: {
     if (!searching) {
-      var own = build(sections[section].id)
+      var own = layout(sections[section].id, classify(build(sections[section].id)))
       for (var j = 0; j < own.length; j++) own[j].sec = section
       return own
     }
@@ -401,6 +460,7 @@ Rectangle {
     var c = cfg
     switch (r.id) {
     case "style": return engine.style
+    case "react": return Follow.detect(function(k) { return engine[k] })
     case "railViz": return engine.railViz
     case "railArt": return engine.railViz === "off" ? "art" : "style"
     case "fps": return engine.fps
@@ -476,6 +536,11 @@ Rectangle {
     if (!engine) return
     switch (r.id) {
     case "style": engine.setStyle(v); return
+    case "react": {
+      var vals = Follow.values(v)       // "custom" is only ever read, never picked
+      if (vals) engine.updateConfig(function(c) { for (var k in vals) c[k] = vals[k] })
+      return
+    }
     case "railViz": engine.setRailViz(v); return
     case "railArt": engine.setRailViz(v === "art" ? "off" : engine.style); return
     case "syncViz":
@@ -522,6 +587,10 @@ Rectangle {
     if (!r || r.def === undefined || !engine) return false
     if (isDefault(r)) { host.say(r.label + " · already the default"); return true }
     var path = r.id.split(".")
+    if (r.id === "react") {
+      engine.updateConfig(function(c) { for (var i = 0; i < Follow.KEYS.length; i++) delete c[Follow.KEYS[i]] })
+      host.say(r.label + " · back to " + defaultText(r)); return true
+    }
     if (r.id === "style" || r.id === "railViz" || r.id === "railArt" || r.id === "widget.viz") { setValue(r, r.def) }
     else engine.updateConfig(function(c) {
       if (path.length === 2) { if (c[path[0]]) delete c[path[0]][path[1]] }
@@ -536,6 +605,7 @@ Rectangle {
     var r = rows[cursor]
     if (!r) return
     if (r.disabled) { host.say(r.desc); return }
+    if (r.fold) { setFold(r.fold, dir > 0); return }
     if (r.kind === "toggle") { setValue(r, !value(r)); return }
     if (r.kind === "number") {
       var n = Math.max(r.min, Math.min(r.max, value(r) + dir * r.step))
@@ -553,7 +623,7 @@ Rectangle {
     if (r.kind === "toggle" || r.kind === "choice") { change(1); return }
     if (r.kind === "theme") { Commons.Color.setTheme(r.id); host.say("theme ╱╱ " + r.label); return }
     if (r.kind === "hotkey" || r.kind === "text" || r.kind === "number") { startEdit(r); return }
-    if (r.id === "vizFold") { vizFold = !vizFold; return }
+    if (r.fold) { setFold(r.fold, !isOpen(r.fold)); return }
     if (r.id === "builder") { Commons.Color.openBuilder(); return }
     if (r.id === "eq") { host.showEq(); return }
     if (r.id === "autoeq") { host.go({ type: "eq", title: "equalizer", pick: true }); return }
@@ -1086,7 +1156,7 @@ Rectangle {
       if (r.def !== undefined && r.kind !== "text" && dt !== "")
         out += '<font color="' + Tui.hex(Tui.mix(host.dim, host.bg, 0.2)) + '">   · default ' + Tui.esc(dt)
              + (pane.isDefault(r) ? "" : ", d puts it back") + '</font>'
-      if (pane.searching) out += '<font color="' + Tui.hex(Tui.mix(host.dim, host.bg, 0.2)) + '">   · in ' + Tui.esc(pane.sections[r.sec].label) + '</font>'
+      if (pane.searching) out += '<font color="' + Tui.hex(Tui.mix(host.dim, host.bg, 0.2)) + '">   · in ' + Tui.esc(pane.sections[r.sec].label) + (r.more ? " · more" : "") + '</font>'
       return out
     }
     font.family: host.family; font.pixelSize: Style.font.caption
