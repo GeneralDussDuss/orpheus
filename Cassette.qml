@@ -673,7 +673,7 @@ Item {
         { act: "previous", tip: "previous track", key: "" },
         { act: "toggle", tip: "play / pause", key: "space" },
         { act: "next", tip: "next track", key: "" },
-        { act: "eject", tip: "eject · close the deck", key: "e" }
+        { act: "eject", tip: "eject · close the deck", key: "E" }
       ]
       Item {
         id: pk
