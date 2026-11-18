@@ -41,6 +41,13 @@ it and keeps your sign-in. What the scripts do, flag by flag: [docs/install.md](
 
 Then press `Super+Shift+M` for the player and `Ctrl+Shift+O` to sign in. *Insert cassette, press play.*
 
+**First 60 seconds**
+
+1. `Super+Shift+M` opens the player.
+2. Sign in with `l`, or press `8` for YouTube and SoundCloud without TIDAL.
+3. `/` to search, `space` to play.
+4. `?` shows every key, `ctrl+k` every command.
+
 ## The idea
 
 Most visualizers react to **loudness**: a kick lands, the bars jump, and that is the whole

@@ -313,7 +313,7 @@ FloatingWindow {
     { key: "5", label: "albums", page: { type: "collection", what: "albums", title: "albums" } },
     { key: "6", label: "tracks", page: { type: "collection", what: "tracks", title: "liked tracks" } },
     { key: "7", label: "artists", page: { type: "collection", what: "artists", title: "artists" } },
-    { key: "8", label: "video", page: { type: "video", title: "video" } },
+    { key: "8", label: "web", page: { type: "video", title: "web" } },
     { key: "9", label: "stats", page: { type: "stats", title: "stats" } },
     { key: ",", label: "settings", page: { type: "settings", title: "settings" } }
   ]
@@ -475,7 +475,13 @@ FloatingWindow {
   }
   function emptyActions() {
     if (videoPage || page.type === "search") return []
-    return [{ k: "/", l: "search", run: function() { go({ type: "search", title: "search" }) }, tip: "search TIDAL" }]
+    var acts = [{ k: "/", l: "search", run: function() { go({ type: "search", title: "search" }) }, tip: "search TIDAL" }]
+    // home also points at the section that needs no TIDAL account
+    if (page.type === "home") acts.push({ k: "8", l: "try youtube", run: function() { go({ type: "video", title: "web" }) }, tip: "YouTube and SoundCloud, no TIDAL needed" })
+    // liked albums and tracks are filled by liking what is playing
+    if (page.type === "collection" && (page.what === "albums" || page.what === "tracks"))
+      acts.push({ k: "F", l: "like what's playing", run: function() { if (win.track) win.api.toggleLike("track", win.track.id); else win.say("nothing playing") }, tip: "like what is playing", tipKey: "F" })
+    return acts
   }
 
   function load() {
@@ -890,11 +896,18 @@ FloatingWindow {
         HintBar {
           anchors.verticalCenter: parent.verticalCenter
           keyColor: win.accentText; labelColor: win.fg; hoverColor: win.accentText
-          items: [{ k: "v", l: "viz", run: function() { win.engine.cycleRailViz(1) }, tip: "cycle the visualizer by the art" },
-                  { k: "^K", l: "commands", run: function() { cmdPalette.open() }, tip: "every action, by name" },
-                  { k: "?", l: "keys", run: function() { keysSheet.open() }, tip: "every key and mouse gesture" },
+          // signed out, or nothing played yet: name the next steps; after that, the extras
+          readonly property bool starting: !win.api || !win.api.signedIn || !win.track
+          items: (starting
+                 ? (!win.api || !win.api.signedIn ? [{ k: "l", l: "sign in", run: function() { if (loginCover.item) loginCover.item.linkSignIn(); else win.showLogin() }, tip: "sign in to TIDAL through a link in the browser" }] : [])
+                   .concat([{ k: "/", l: "search", run: function() { win.go({ type: "search", title: "search" }) }, tip: "search the catalogue" },
+                            { k: "⏎", l: "play", tip: "on a song: play it" },
+                            { k: "?", l: "every key", run: function() { keysSheet.open() }, tip: "every key and mouse gesture" }])
+                 : [{ k: "v", l: "viz", run: function() { win.engine.cycleRailViz(1) }, tip: "cycle the visualizer by the art" },
+                    { k: "^K", l: "commands", run: function() { cmdPalette.open() }, tip: "every action, by name" },
+                    { k: "?", l: "keys", run: function() { keysSheet.open() }, tip: "every key and mouse gesture" }]
                   // the least needed line goes first when the window is narrow
-                  ].concat(statusLine.width / win.colW > 110 ? [{ k: "right-click", l: "for more" }] : []).concat([
+                  ).concat(statusLine.width / win.colW > 110 ? [{ k: "right-click", l: "for more" }] : []).concat([
                   { k: "✕", l: "", run: function() { win.dismissHint() }, tip: "got it, don't show this again", tipKey: "" }])
         }
       }

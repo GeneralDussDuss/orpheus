@@ -51,7 +51,7 @@ has()  { command -v "$1" >/dev/null 2>&1; }
 # ---- what is there ---------------------------------------------------------
 
 REQUIRED=(mpv cava uv jq)
-OPTIONAL=("yt-dlp:YouTube and SoundCloud" "ani-cli:anime search and playback" "curd:anime with AniList sync")
+OPTIONAL=("wl-paste:hi-res sign-in paste; package wl-clipboard" "ffmpeg:drop effects" "yt-dlp:YouTube and SoundCloud" "ani-cli:anime search and playback" "curd:anime with AniList sync")
 
 check() {
   step "checking"
@@ -67,7 +67,7 @@ check() {
   fi
   ok "mpv, cava, uv, jq"
   for o in "${OPTIONAL[@]}"; do
-    has "${o%%:*}" && ok "${o%%:*}" || note "${o%%:*} not installed (optional: ${o#*:})"
+    has "${o%%:*}" && ok "${o%%:*}" || note "${o%%:*} not installed (optional, enables: ${o#*:})"
   done
   return 0
 }

@@ -55,9 +55,19 @@ Rectangle {
     onTriggered: pane.readClipboard()
   }
   // wl-paste works without focus on Wayland; Windows has a plain clipboard.
+  // Without wl-paste (wl-clipboard not installed) nothing can be watched, so
+  // the screen asks for a paste instead and reads Qt's clipboard, which works
+  // while this window has focus, i.e. on ctrl+v.
+  property bool canWatch: Qt.platform.os === "windows"
+  Process {
+    command: ["sh", "-c", "command -v wl-paste"]
+    running: Qt.platform.os !== "windows"
+    onExited: function(code) { pane.canWatch = code === 0 }
+  }
   function readClipboard() {
-    if (Qt.platform.os === "windows") pane.clipboardRead(Quickshell.clipboardText)
-    else clip.running = true
+    if (Qt.platform.os === "windows" || !pane.canWatch) {
+      if (Qt.platform.os === "windows" || pane.manualPaste) pane.clipboardRead(Quickshell.clipboardText)
+    } else clip.running = true
   }
   function clipboardRead(text) {
     if (!pane.tryUrl(text) && pane.manualPaste) paste.insert(paste.cursorPosition, text.trim())
@@ -153,6 +163,22 @@ Rectangle {
                                              : "❯ systemctl --user start orpheusd"
           font.family: host.family; font.pixelSize: Tui.px("body", Style.font.body); color: host.dim
         }
+        // The systemd unit is Linux only. Click to copy.
+        Text {
+          id: stuckHint
+          visible: Qt.platform.os !== "windows"
+          topPadding: host.ch * 0.4
+          text: (stuckMa.containsMouse ? "copy  " : "stuck?  ") + "systemctl --user status orpheusd · journalctl --user -u orpheusd -e"
+          font.family: host.family; font.pixelSize: Tui.px("caption", Style.font.body)
+          color: stuckMa.containsMouse ? host.accentText : host.dim
+          MouseArea {
+            id: stuckMa
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: { Quickshell.clipboardText = "systemctl --user status orpheusd; journalctl --user -u orpheusd -e"; host.say("copied · the service status and log commands", "ok") }
+          }
+        }
         // it is already trying again on its own; say so, so the page isn't a dead end
         Text {
           topPadding: host.ch * 0.4
@@ -203,6 +229,22 @@ Rectangle {
             Text { text: modelData.d; font.family: host.family; font.pixelSize: Tui.px("body", Style.font.body); color: host.dim }
           }
         }
+        Row {
+          topPadding: host.ch * 0.4
+          spacing: 0
+          Text { text: "no TIDAL?  "; font.family: host.family; font.pixelSize: Tui.px("body", Style.font.body); color: host.dim }
+          HintBar {
+            pixelSize: Tui.px("body", Style.font.body)
+            keyColor: host.accentText; labelColor: host.dim; hoverColor: host.accentText
+            items: [{ k: "8", l: "youtube · soundcloud", run: function() { host.go({ type: "video", title: "web" }) }, tip: "YouTube and SoundCloud need no TIDAL account" }]
+          }
+          Text { text: "    "; font.family: host.family; font.pixelSize: Tui.px("body", Style.font.body) }
+          HintBar {
+            pixelSize: Tui.px("body", Style.font.body)
+            keyColor: host.accentText; labelColor: host.dim; hoverColor: host.accentText
+            items: [{ k: ",", l: "navidrome", run: function() { host.go({ type: "settings", title: "settings" }) }, tip: "connect a Navidrome server in settings" }]
+          }
+        }
         Text {
           visible: pane.login.state === "waiting" && pane.login.method === "link"
           width: parent.width
@@ -220,7 +262,7 @@ Rectangle {
         Text {
           width: parent.width
           wrapMode: Text.WordWrap
-          text: "1  sign in on the TIDAL page that opened\n2  you'll land on a page that says \"Oops\". That's expected\n3  copy that page's full address (ctrl+l, ctrl+c). Orpheus picks it up by itself"
+          text: "1  sign in on the TIDAL page that opened\n2  you'll land on a page that says \"Oops\". That's expected\n3  copy that page's full address (ctrl+l, ctrl+c). " + (pane.canWatch ? "Orpheus picks it up by itself" : "Then paste it below (ctrl+v)")
           font.family: host.family; font.pixelSize: Tui.px("body", Style.font.body); color: host.fg
         }
         Rectangle {
@@ -261,7 +303,7 @@ Rectangle {
           spacing: host.cw * 2
           Text {
             textFormat: Text.StyledText
-            text: pane.finishing ? Tui.busy(host.clock, "signing in", Tui.hex(host.accentText)) : "watching the clipboard ·"
+            text: pane.finishing ? Tui.busy(host.clock, "signing in", Tui.hex(host.accentText)) : pane.canWatch ? "watching the clipboard ·" : "paste the address · ctrl+v ·"
             font.family: host.family; font.pixelSize: Tui.px("caption", Style.font.body); color: host.dim
           }
           HintBar {
