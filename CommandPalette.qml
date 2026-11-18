@@ -24,6 +24,8 @@ Item {
   property var hits: []           // indices into `all`, best first; -1 = a group header
   property var heads: []          // for each hit: the group header to draw above it, or ""
   property int cursor: 0
+  property var mainAll: null      // the catalogue, set aside while a sub-list ("style…") is showing
+  property string subTitle: ""
 
   anchors.fill: parent
   visible: opacity > 0
@@ -33,6 +35,8 @@ Item {
 
   function open() {
     all = catalogue()
+    mainAll = null
+    subTitle = ""
     input.text = ""
     filter()
     shown = true
@@ -42,8 +46,25 @@ Item {
     shown = false
     host.refocus()
   }
+  // A sub-list: the entries swap for a picker's choices (same look, same
+  // filter); esc steps back to the commands, ⏎ on a choice runs it and closes.
+  function enterSub(c) {
+    if (!mainAll) mainAll = all
+    subTitle = c.subTitle
+    all = c.sub()
+    input.text = ""
+    filter()
+  }
+  function back() {
+    all = mainAll
+    mainAll = null
+    subTitle = ""
+    input.text = ""
+    filter()
+  }
   function run(i) {
     var c = all[hits[i]]
+    if (c && c.sub) { enterSub(c); return }
     close()
     if (!c) return
     used(c.id)
@@ -86,6 +107,19 @@ Item {
   function catalogue() {
     var out = [], h = host, e = h.engine, a = h.api, st = h.st || {}
     function add(id, group, label, key, now, run) { out.push({ id: id, group: group, label: label, key: key || "", now: now || "", run: run }) }
+    // "name…": opens a sub-list of choices, each [value, label]; picking one runs pick(value)
+    function addPicker(id, group, label, now, choices, cur, pick) {
+      out.push({ id: id, group: group, label: label, key: "", now: now || "", run: function() {}, subTitle: label.replace("…", ""),
+                 sub: function() {
+                   var list = []
+                   for (var i = 0; i < choices.length; i++)
+                     (function(ch) {
+                       list.push({ id: id + "." + ch[0], group: label.replace("…", ""), label: ch[1], key: "", now: cur === ch[0] ? "● now" : "",
+                                   run: function() { pick(ch[0]) }, ord: list.length })
+                     })(choices[i])
+                   return list
+                 } })
+    }
     function onOff(v) { return v ? "on" : "off" }
     // a key the player already answers to, pressed for you: the palette and the
     // keyboard can never disagree about what it does
@@ -130,12 +164,17 @@ Item {
       // visuals
       add("viz.window", "visuals", "toggle visualizer window", "V", e.open ? "open" : "closed", function() { e.open = !e.open })
       add("viz.nextStyle", "visuals", "cycle visualizer style", "", "", function() { e.nextStyle(1) })
+      var styleChoices = []
+      for (var sx = 0; sx < e.styles.length; sx++) styleChoices.push([e.styles[sx], e.styleLabels[e.styles[sx]].toLowerCase()])
+      addPicker("viz.stylePicker", "visuals", "style…", e.styleLabels[e.style] ? e.styleLabels[e.style].toLowerCase() : "", styleChoices, e.style,
+                function(v) { e.setStyle(v) })
       for (var i = 0; i < e.styles.length; i++)
         (function(s) {
           add("viz.style." + s, "visuals", "set style · " + e.styleLabels[s].toLowerCase(), "", e.style === s ? "● now" : "", function() { e.setStyle(s) })
         })(e.styles[i])
-      add("viz.nextRail", "visuals", "cycle rail visual", "v", "", function() { e.cycleRailViz(1) })
-      var rails = ["off"].concat(e.styles)
+      add("viz.nextRail", "visuals", e.syncViz ? "cycle visualizer style · art" : "cycle rail visual", "v", "", function() { e.cycleRailViz(1) })
+      // synced, the rail's styles are just the style: only album art is its own
+      var rails = e.syncViz ? ["off"] : ["off"].concat(e.styles)
       for (var ri = 0; ri < rails.length; ri++)
         (function(s) {
           add("viz.rail." + s, "visuals", "set rail · " + (s === "off" ? "album art" : e.styleLabels[s].toLowerCase()), "", e.railViz === s ? "● now" : "", function() { e.setRailViz(s) })
@@ -186,7 +225,7 @@ Item {
           add("viz." + fl[0], "visuals", fl[1], "", onOff(e[fl[0]]), function() { e.setStageFlag(fl[0], "toggle") })
         })(flags[g])
       if (e.pilgrimage === true && e.nextLeg)
-        add("viz.pilgrimage.next", "visuals", "pilgrimage · next leg", "n", "", function() { e.nextLeg() })
+        add("viz.pilgrimage.next", "visuals", "pilgrimage · next leg", "", "", function() { e.nextLeg() })
 
       // sound
       if (a) {
@@ -231,10 +270,15 @@ Item {
       var wstyles = e.widgetStyles || ["compact", "full", "cassette"]
       for (var ws = 0; ws < wstyles.length; ws++)
         (function(s) { add("widget.style." + s, "behaviour", "set widget style · " + s, "", w.style === s ? "● now" : "", function() { e.setWidget("style", s) }) })(wstyles[ws])
+      var wstyleChoices = wstyles.map(function(x) { return [x, x] })
+      addPicker("widget.stylePicker", "behaviour", "widget style…", w.style || "", wstyleChoices, w.style, function(v) { e.setWidget("style", v) })
+      var layers = typeof OrpheusKeys !== "undefined" && OrpheusKeys.windows ? ["top", "desktop"] : ["top", "reserve", "desktop", "tile", "float"]
+      addPicker("widget.layerPicker", "behaviour", "widget placement…", w.layer || "", layers.map(function(x) { return [x, x] }), w.layer,
+                function(v) { e.setWidget("layer", v) })
       var corners = ["top-left", "top-right", "bottom-left", "bottom-right"]
       for (var k = 0; k < corners.length; k++)
         (function(cn) { add("widget.corner." + cn, "behaviour", "set widget corner · " + cn, "", w.corner === cn ? "● now" : "", function() { e.setWidget("corner", cn) }) })(corners[k])
-      add("widget.sync", "behaviour", "toggle widget follows visualizer", "", onOff(e.syncViz), cfgSet("syncViz", !e.syncViz))
+      add("widget.sync", "behaviour", "toggle one style everywhere", "", onOff(e.syncViz), function() { e.setSyncViz(!e.syncViz) })
       add("widget.mini", "behaviour", "toggle mini player", "", onOff(e.miniPlayer), function() { e.setMiniPlayer(e.miniPlayer ? "off" : "on") })
       if (typeof OrpheusKeys !== "undefined" && OrpheusKeys.windows) {
         add("win.startup", "behaviour", "toggle start with windows", "", onOff(OrpheusKeys.startWithWindows), function() { OrpheusKeys.setStartWithWindows(!OrpheusKeys.startWithWindows) })
@@ -374,9 +418,9 @@ Item {
       Behavior on y { NumberAnimation { duration: Tui.STATE; easing.type: Tui.OUT } }
     }
     background: Qt.rgba(pal.base.r, pal.base.g, pal.base.b, 1)
-    title: "commands"
+    title: pal.subTitle ? "commands · " + pal.subTitle : "commands"
     hintItems: [{ k: "⏎", l: "run", run: function() { pal.run(pal.cursor) } }, { k: "↑↓", l: "pick" },
-                { k: "esc", l: "close", run: function() { pal.close() } }]
+                { k: "esc", l: pal.mainAll ? "back" : "close", run: function() { if (pal.mainAll) pal.back(); else pal.close() } }]
     footer: (input.text.trim() ? pal.hits.length + " of " + pal.all.length : pal.all.length + " commands")
     focused: true
     flickable: results
@@ -398,7 +442,8 @@ Item {
         onTextEdited: pal.filter()
         Keys.onPressed: function(e) {
           var k = e.key, ctrl = e.modifiers & Qt.ControlModifier
-          if (k === Qt.Key_Escape) { pal.close(); e.accepted = true }
+          if (k === Qt.Key_Escape) { if (pal.mainAll) pal.back(); else pal.close(); e.accepted = true }
+          else if (k === Qt.Key_Backspace && !text && pal.mainAll) { pal.back(); e.accepted = true }
           else if (k === Qt.Key_Return || k === Qt.Key_Enter) { pal.run(pal.cursor); e.accepted = true }
           else if (k === Qt.Key_Down || (ctrl && (k === Qt.Key_J || k === Qt.Key_N))) { pal.cursor = Math.min(pal.hits.length - 1, pal.cursor + 1); e.accepted = true }
           else if (k === Qt.Key_Up || (ctrl && (k === Qt.Key_K || k === Qt.Key_P))) {
