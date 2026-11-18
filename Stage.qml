@@ -285,7 +285,7 @@ PanelWindow {
   function toggleScene() {
     if (!engine.cycleScene) return
     engine.cycleScene()
-    picked(engine.scene === "cassette" ? "cassette deck" : (engine.styleLabels[current] || current))
+    picked(engine.scene === "cassette" ? "tape deck" : (engine.styleLabels[current] || current))
   }
 
   function handleKey(e) {
@@ -298,7 +298,7 @@ PanelWindow {
     else if (deck && e.text === "E") deckEject()
     else if (e.key === Qt.Key_Right || e.text === "l") stepStyle(1)
     else if (e.key === Qt.Key_Left || e.text === "h") stepStyle(-1)
-    else if (e.text === "J") { picked(engine.pilgrimage ? "pilgrimage off" : "pilgrimage"); engine.setStageFlag("pilgrimage", "toggle") }
+    else if (e.text === "J") { picked(engine.pilgrimage ? "style journey off" : "style journey"); engine.setStageFlag("pilgrimage", "toggle") }
     else if (e.text === "N" && engine.pilgrimage) { var leg = pilgrim.skip(); if (leg) picked(engine.styleLabels[leg] || leg) }
     else if (e.text === "m" && !bleed) engine.setMiniPlayer(!engine.miniPlayer)
     else if (e.text === "f") leave(toggleShow)
@@ -456,7 +456,7 @@ PanelWindow {
         { k: "?", l: "keys", run: function() { keysSheet.open() }, tip: "every key and mouse gesture" },
         { k: "esc", l: "close", run: function() { win.leave(win.close) }, tip: "close the visualizer" }] : [
         { k: "←→", l: "style", run: function() { win.stepStyle(1) }, tip: "next style · click, right-click and scroll work too", tipKey: "← →" },
-        { k: "t", l: "tape", run: function() { win.toggleScene() }, tip: "cassette deck" },
+        { k: "t", l: "tape", run: function() { win.toggleScene() }, tip: "tape deck" },
         { k: "space", l: "play", run: function() { if (win.engine.player) win.engine.player.togglePlaying() }, tip: "play / pause" },
         { k: "f", l: "window", run: function() { win.leave(win.toggleShow) }, tip: "back to the window · or double-click" },
         { k: "?", l: "keys", run: function() { keysSheet.open() }, tip: "every key and mouse gesture" },
@@ -485,7 +485,7 @@ PanelWindow {
       { k: "esc", l: "close", run: function() { win.leave(win.close) }, tip: "close the visualizer", keep: 0 }]
     readonly property var vizHints: [
       { k: "←→", l: "style", run: function() { win.stepStyle(1) }, tip: "next style · click, right-click and scroll the picture too", tipKey: "← →", keep: 1 },
-      { k: "t", l: "tape", run: function() { win.toggleScene() }, tip: "cassette deck", keep: 2 },
+      { k: "t", l: "tape", run: function() { win.toggleScene() }, tip: "tape deck", keep: 2 },
       { k: "m", l: "player", run: function() { win.engine.setMiniPlayer(!win.engine.miniPlayer) }, tip: (win.engine && win.engine.miniPlayer ? "hide" : "show") + " the mini player", keep: 2 },
       { k: "f", l: "full", run: function() { win.leave(win.toggleShow) }, tip: "fullscreen show", keep: 0 },
       { k: "space", l: "play", run: function() { if (win.engine.player) win.engine.player.togglePlaying() }, tip: "play / pause", keep: 1 },
@@ -564,7 +564,7 @@ PanelWindow {
           // The last tab is the mode, not a style: the journey between them.
           Text {
             readonly property bool on: !!win.engine && win.engine.pilgrimage === true
-            text: (on ? "[" : " ") + "~ pilgrimage" + (on ? "]" : " ")
+            text: (on ? "[" : " ") + "~ style journey" + (on ? "]" : " ")
             font.family: Style.font.family
             font.pixelSize: Style.font.caption
             font.bold: on
@@ -573,7 +573,7 @@ PanelWindow {
             Behavior on color { ColorAnimation { duration: Tui.STATE; easing.type: Easing.InOutCubic } }
             MouseArea { id: pilTabMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                         onClicked: win.engine.setStageFlag("pilgrimage", "toggle")
-                        TuiTip { text: "pilgrimage · travel between styles with the song"; key: "J" } }
+                        TuiTip { text: "style journey · travel between styles with the song"; key: "J" } }
           }
         }
         // Under the deck the tabs give way to the side of the tape that is playing.

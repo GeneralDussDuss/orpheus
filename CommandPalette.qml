@@ -193,10 +193,10 @@ Item {
       for (var pl = 0; pl < places.length; pl++)
         (function(p) { add("viz.as." + p, "visuals", "set visualizer as · " + (placeNames[p] || p), "", e.placement === p ? "● now" : "", function() { e.setPlacement(p) }) })(places[pl])
       if (e.scenes) {
-        add("viz.scene.toggle", "visuals", "toggle cassette deck", "t", e.scene === "cassette" && e.open ? "on" : "off", function() { e.toggleCassette() })
-        var sceneNames = { viz: "visualizer", cassette: "cassette deck" }
+        add("viz.scene.toggle", "visuals", "toggle tape deck", "t", e.scene === "cassette" && e.open ? "on" : "off", function() { e.toggleCassette() })
+        var sceneNames = { viz: "visualizer", cassette: "tape deck" }
         for (var sc = 0; sc < e.scenes.length; sc++)
-          (function(s) { add("viz.scene." + s, "visuals", "set stage scene · " + (sceneNames[s] || s), "", e.scene === s ? "● now" : "", function() { e.setScene(s) }) })(e.scenes[sc])
+          (function(s) { add("viz.scene." + s, "visuals", "set visualizer scene · " + (sceneNames[s] || s), "", e.scene === s ? "● now" : "", function() { e.setScene(s) }) })(e.scenes[sc])
       }
       var levels = ["off", "subtle", "full"]
       for (var b = 0; b < levels.length; b++)
@@ -220,15 +220,15 @@ Item {
           add("viz." + fl[0], "visuals", fl[1], "", onOff(e[fl[0]]), function() { var v = !e[fl[0]]; e.updateConfig(function(c) { c[fl[0]] = v }) })
         })(looks[lk])
       var flags = [["trackTitle", "toggle title card"], ["lyricsOverViz", "toggle lyrics over visualizer"],
-                   ["director", "toggle song structure"], ["beatLock", "toggle beat lock"], ["autoStyle", "toggle style switch on drops"],
-                   ["pilgrimage", "toggle pilgrimage"], ["dropMap", "toggle drop map"]]
+                   ["director", "toggle follow the song's sections"], ["beatLock", "toggle beat lock"], ["autoStyle", "toggle style switch on drops"],
+                   ["pilgrimage", "toggle style journey"], ["dropMap", "toggle drop detection"]]
       for (var g = 0; g < flags.length; g++)
         (function(fl) {
           if (typeof e[fl[0]] !== "boolean") return
           add("viz." + fl[0], "visuals", fl[1], "", onOff(e[fl[0]]), function() { e.setStageFlag(fl[0], "toggle") })
         })(flags[g])
       if (e.pilgrimage === true && e.nextLeg)
-        add("viz.pilgrimage.next", "visuals", "pilgrimage · next leg", "", "", function() { e.nextLeg() })
+        add("viz.pilgrimage.next", "visuals", "style journey · next leg", "", "", function() { e.nextLeg() })
 
       // sound
       if (a) {
@@ -272,8 +272,8 @@ Item {
       add("widget.toggle", "behaviour", "toggle widget", "", onOff(w.enabled !== false), function() { e.setWidget("enabled", "toggle") })
       var wstyles = e.widgetStyles || ["compact", "full", "cassette"]
       for (var ws = 0; ws < wstyles.length; ws++)
-        (function(s) { add("widget.style." + s, "behaviour", "set widget style · " + s, "", w.style === s ? "● now" : "", function() { e.setWidget("style", s) }) })(wstyles[ws])
-      var wstyleChoices = wstyles.map(function(x) { return [x, x] })
+        (function(s) { add("widget.style." + s, "behaviour", "set widget style · " + (s === "cassette" ? "studio" : s), "", w.style === s ? "● now" : "", function() { e.setWidget("style", s) }) })(wstyles[ws])
+      var wstyleChoices = wstyles.map(function(x) { return [x, x === "cassette" ? "studio" : x] })
       addPicker("widget.stylePicker", "behaviour", "widget style…", w.style || "", wstyleChoices, w.style, function(v) { e.setWidget("style", v) })
       var layers = typeof OrpheusKeys !== "undefined" && OrpheusKeys.windows ? ["top", "desktop"] : ["top", "reserve", "desktop", "tile", "float"]
       addPicker("widget.layerPicker", "behaviour", "widget placement…", w.layer || "", layers.map(function(x) { return [x, x] }), w.layer,

@@ -78,23 +78,23 @@ menus. Colours come from the active Omarchy theme, so it changes when your deskt
 
 - **The player** (`Super+Shift+M`): mixes, playlists, albums, tracks, artists, search, a queue, and a
   visualizer in the right-hand rail. Drag its top edge to move it.
-- **The stage** (`Super+Ctrl+M`): the same engine fullscreen or as a floating card, with a mini player.
+- **The visualizer** (`Super+Ctrl+M`): the same engine fullscreen or as a floating card, with a mini player.
   Drag the card by its title; double-click to centre it. Pin the fullscreen show to a monitor in
   settings ▸ "show on screen".
 - **Twenty styles**: Prism, Skyline, Horizon, Orb, Tunnel, Halo, Scope, Nova, Ink, Abyss, Aurora, Lens,
-  Gyre, Nebula, Inferno, Teletype, Sanctum, Grid, Aether and Mandala. A director reads the song's
-  structure and lands style changes on the downbeat.
-- **Drop map**: each track (TIDAL or Navidrome) is analysed ahead so builds and drops land exactly: the
+  Gyre, Nebula, Inferno, Teletype, Sanctum, Grid, Aether and Mandala. The visualizer reads the song's
+  sections and lands style changes on the downbeat.
+- **Drop detection**: each track (TIDAL or Navidrome) is analysed ahead so builds and drops land exactly: the
   picture winds up over the last bars, blacks out on the last beat and bursts on the drop. Needs ffmpeg.
-- **Pilgrimage** (`J` on the stage): the song travels between styles by section, the build in one world
+- **Style journey** (`J` in the visualizer): the song travels between styles by section, the build in one world
   and the drop diving into another. `N` skips a leg; a style you pick yourself is a detour until the
   next section.
-- **Cassette deck** (`t`): reels that turn at real tape speed, vu needles, the queue as a j-card you can
+- **Tape deck** (`t`): reels that turn at real tape speed, vu needles, the queue as a j-card you can
   click, a take-up counter, piano keys and eject. Pausing coasts into a brake kiss. Drag a reel to scrub.
   Two looks: `shell` and `light`.
 - **The desktop widget** (`Super+Alt+M`): horizontal (`compact`, `full`) or one of four vertical decks,
   below. It sits in a corner, on the desktop, tiled or floating.
-- **The bar**: a tiny always-on spectrum. Click for the stage, right-click or scroll for the next style,
+- **The bar**: a tiny always-on spectrum. Click for the visualizer, right-click or scroll for the next style,
   middle-click for the mini player.
 - **More than TIDAL**: section `8` searches YouTube and SoundCloud through `yt-dlp` (as video in its own
   window, or as audio through the same queue, EQ and visualizer) and anime through `ani-cli`. A
@@ -113,7 +113,7 @@ menus. Colours come from the active Omarchy theme, so it changes when your deskt
 Four vertical widget styles, for a portrait bar or a tall floating window. All of them take their colours
 from the live theme, and only the meters move while music plays; the rest is drawn once and cached.
 
-- **`cassette`**, the Studio deck: the visualizer on top, big art on a glow, a mirrored spectrum and a
+- **studio** (`cassette` in config), the Studio deck: the visualizer on top, big art on a glow, a mirrored spectrum and a
   hairline seek line, in a double-rule frame. (The reels are gone, and not coming back.)
 - **`monolith`** (left): one block of anodised aluminium, a dot-matrix visualizer behind smoked glass,
   rubber keys, and a knurled wheel on the edge you roll to seek.
@@ -123,7 +123,7 @@ from the live theme, and only the meters move while music plays; the rest is dra
   a tape-position scale you drag, a push-to-play knob and bat-handle toggles.
 
 ```sh
-omarchy-shell orpheus widget style monolith   # or cassette, reference, field, compact, full
+omarchy-shell orpheus widget style monolith   # or cassette (studio), reference, field, compact, full
 omarchy-shell orpheus widget layer float      # top, reserve, desktop, tile, float
 ```
 
@@ -138,13 +138,13 @@ Press `?` anywhere for the full sheet, including what Hyprland has bound right n
 | key | |
 |---|---|
 | `Super+Shift+M` | the player |
-| `Super+Ctrl+M` | the stage |
+| `Super+Ctrl+M` | the visualizer |
 | `Super+Alt+M` | the desktop widget |
 | `Ctrl+Shift+O` | sign in |
 
 In the player: `space` pause, `n` / `p` next / previous, `/` search, `1`-`9` sections, `e` equalizer,
-`L` lyrics, `t` cassette deck, `V` the stage, `,` settings, `Ctrl+K` command palette, `y` / `Y` copy a
-link. On the stage: `←` / `→` change style, `f` fullscreen, `J` pilgrimage, `esc` close.
+`L` lyrics, `t` tape deck, `V` the visualizer, `,` settings, `Ctrl+K` command palette, `y` / `Y` copy a
+link. In the visualizer: `←` / `→` change style, `f` fullscreen, `J` style journey, `esc` close.
 
 `Super+Shift+M` is Omarchy's own music key, and Orpheus takes it over. To bring your own keys, put
 `orpheus_bindings = false` in `hyprland.lua` above the `require("hypr.orpheus")` line.
@@ -191,7 +191,7 @@ save and hot-reload while you edit. Uniforms, pragmas and limits: [docs/shaders.
 - Linux: `mpv`, `cava`, `uv`, `jq` and PipeWire. The installer offers to add what is missing.
 - Windows: `winget`, which installs the rest.
 - Optional: a paid TIDAL subscription (everything else works without one), `yt-dlp` for YouTube and
-  SoundCloud, `ani-cli` or `curd` for anime, and `ffmpeg` + numpy for the drop map (without them every
+  SoundCloud, `ani-cli` or `curd` for anime, and `ffmpeg` + numpy for drop detection (without them every
   track plays on the live beat grid).
 
 It has run on very few machines so far (Arch-based Omarchy, Hyprland 0.56). If you get it working
@@ -216,7 +216,7 @@ somewhere else, or it breaks, an issue is genuinely useful.
 - **Black visualizer after a shader edit.** `./build-shaders.sh` and restart the shell; the uniform
   block in `_common.glsl` must match `Viz.qml`. For your own shaders, see settings ▸ visuals ▸ your
   shaders or `.build/<name>.log`: a broken save keeps the last good build.
-- **The drop map never kicks in.** Settings ▸ visuals says "no decoder" when the daemon cannot find
+- **Drop detection never kicks in.** Settings ▸ visuals says "no decoder" when the daemon cannot find
   `ffmpeg`; `curl -s 127.0.0.1:47837/status | jq .analysis` says why.
 - **A floating widget can't be dragged.** Omarchy's `Super+O` "pop" tiles an already-floating window.
   Reopen the window (toggle the

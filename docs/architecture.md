@@ -9,7 +9,7 @@ Two halves that talk over a loopback socket.
                  │  orpheusd  (Python)      │  JSON  │  Quickshell plugin   │
                  │                          │◄──────►│  (QML + GLSL)        │
                  │  · tidalapi session      │  :47837│                      │
-                 │  · mpv over JSON IPC     │        │  · Library / Stage   │
+                 │  · mpv over JSON IPC     │        │  · Library / Visualizer   │
                  │  · MPRIS over dbus-next  │        │  · Widget / BarWidget│
                  │  · queue + resume.json   │        │  · 20 style shaders  │
                  └───┬──────────────────────┘        └──────────▲───────────┘
@@ -41,8 +41,8 @@ Tempo is estimated by autocorrelating the spectral-flux envelope at a fixed 50 H
 against a target derived from onset density, with a veto on any candidate that would imply more than
 3.5 onsets per beat. That is what stops a dense breakbeat locking to half-time.
 
-The director reads the song's structure (intro, build, drop, breakdown, steady): style changes land on
-the downbeat with a transition, and it can switch style when a drop lands. When the drop map knows a
+The visualizer follows the song's sections (intro, build, drop, breakdown, steady): style changes land on
+the downbeat with a transition, and it can switch style when a drop lands. When drop detection knows a
 track, it follows the map instead: the picture winds up over the last bars, blacks out on the last
-beat and bursts on the drop, drop marks show on the seek bar, and each Pilgrimage morph lands on the
+beat and bursts on the drop, drop marks show on the seek bar, and each style-journey morph lands on the
 section boundary itself.

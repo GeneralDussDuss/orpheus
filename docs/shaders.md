@@ -12,7 +12,7 @@ Any Shadertoy-style `.frag` in your shader folder becomes a style called `@<file
 
 Save a file there and it compiles in a second or two (qsb, one at a time, idle priority). Edit it while
 it is on screen and it rebuilds in place. A broken save keeps the last good picture and says which line:
-in a toast, a tick on the stage, settings ▸ visuals ▸ your shaders, and `.build/<name>.log`.
+in a toast, a tick on the visualizer, settings ▸ visuals ▸ your shaders, and `.build/<name>.log`.
 
 Other ways in:
 

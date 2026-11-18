@@ -10,11 +10,11 @@ there is nothing to set.
 |---|---|---|
 | settings | `~/.config/orpheus/config.json` | same path under your home |
 | state: sign-in, quality, EQ, queue | `~/.local/state/orpheus/` | `%LOCALAPPDATA%\Orpheus\state` |
-| cache: lyrics, drop maps, AutoEQ | `~/.cache/orpheus/` | `%LOCALAPPDATA%\Orpheus\cache` |
+| cache: lyrics, drop detection, AutoEQ | `~/.cache/orpheus/` | `%LOCALAPPDATA%\Orpheus\cache` |
 | your shaders | `~/.config/orpheus/shaders` | `%LOCALAPPDATA%\Orpheus\shaders` |
 | mpv socket | `$XDG_RUNTIME_DIR/orpheus/mpv.sock` | |
 
-Audio quality (`high` 320k, `lossless` FLAC, `hires`) is picked in the player. The drop map needs
+Audio quality (`high` 320k, `lossless` FLAC, `hires`) is picked in the player. Drop detection needs
 `ffmpeg` on `PATH` and numpy (`uv sync --extra analysis`, or `--extra desktop`); maps are cached in
 `~/.cache/orpheus/analysis/`.
 
@@ -27,22 +27,22 @@ position, restored on start.
 
 | key | default | |
 |---|---|---|
-| `style` | `prism` | the stage's style (any of the 20, or `@name` for yours) |
+| `style` | `prism` | the visualizer's style (any of the 20, or `@name` for yours) |
 | `railViz` | `prism` | the visualizer in the player's rail (own style only with `syncViz` off); `off` shows the album art |
-| `scene` | `viz` | the stage opens on `viz` or `cassette` |
-| `deckLook` | `shell` | the cassette deck's look: `shell` or `light` |
-| `placement` | `overlay` | the stage: `overlay` (a card over everything), `desktop`, `fullscreen` |
-| `showMonitor` | `""` | pin the stage to a monitor by name; empty = the focused one when it opens |
+| `scene` | `viz` | the visualizer opens on `viz` or `cassette` (the tape deck) |
+| `deckLook` | `shell` | the tape deck's look: `shell` or `light` |
+| `placement` | `overlay` | the visualizer: `overlay` (a card over everything), `desktop`, `fullscreen` |
+| `showMonitor` | `""` | pin the visualizer to a monitor by name; empty = the focused one when it opens |
 | `cardPos` | `null` | where you dragged the visualizer card (fractions); `null` = centred |
-| `miniPlayer` | `true` | the stage's mini player |
-| `syncViz` | `true` | one style drives the stage, the rail and the widget; `false` gives the rail (`railViz`) and widget (`widget.viz`) their own |
+| `miniPlayer` | `true` | the visualizer's mini player |
+| `syncViz` | `true` | one style drives the visualizer, the rail and the widget; `false` gives the rail (`railViz`) and widget (`widget.viz`) their own |
 | `bloom` · `feedback` | `subtle` | `off`, `subtle` or `full` |
 | `ambient` | `subtle` | `off`, `subtle` or `vivid` |
-| `autoStyle`, `pilgrimage` | `false` | stage flags |
-| `trackTitle`, `autoQuality`, `director`, `beatLock` | `true` | stage flags |
-| `lyricsOverViz`, `showFps` | `false` | stage flags |
-| `pilgrimRoute` | | the styles Pilgrimage travels through |
-| `dropMap` | `true` | analyse tracks ahead for the drop map (daemon and player) |
+| `autoStyle`, `pilgrimage` | `false` | visualizer flags |
+| `trackTitle`, `autoQuality`, `director`, `beatLock` | `true` | visualizer flags |
+| `lyricsOverViz`, `showFps` | `false` | visualizer flags |
+| `pilgrimRoute` | | the styles the style journey travels through |
+| `dropMap` | `true` | analyse tracks ahead for drop detection (daemon and player) |
 | `dropMapLeadMs` | `30` | how early the player acts on a mapped beat |
 | `dropFx`, `titleFx`, `pulseUi`, `bootScreen` | `true` | effects and the boot screen |
 | `endless` | `true` | keep going with TIDAL radio when the queue runs out |
@@ -60,10 +60,10 @@ Set it with `omarchy-shell orpheus widget <key> <value>`. Settings persist.
 | key | values |
 |---|---|
 | `enabled` | `on` · `off` · `toggle` |
-| `style` | `compact` · `full` (horizontal), `cassette` · `monolith` · `reference` · `field` (vertical) |
+| `style` | `compact` · `full` (horizontal), `cassette` (shown as studio) · `monolith` · `reference` · `field` (vertical) |
 | `corner` | `top-left` · `top-right` · `bottom-left` · `bottom-right` (default) |
 | `layer` | `top` (default) · `reserve` · `desktop` · `tile` · `float` |
-| `viz` | any style; with `syncViz` on this sets the stage's style too |
+| `viz` | any style; with `syncViz` on this sets the visualizer's style too |
 | `monitor` | a monitor name, or empty for wherever it lands |
 
 `layer` decides how it behaves: `desktop` pins it behind your windows like a wallpaper, `tile` makes it
@@ -76,7 +76,7 @@ itself (scroll or right-click), because this player does not do popout menus.
 | variable | |
 |---|---|
 | `ORPHEUS_PORT` | the daemon's port (default `47837`, or `--port`). `Api.qml` hardcodes 47837, so changing it means editing the QML too |
-| `ORPHEUS_FFMPEG` | the ffmpeg the drop map uses |
+| `ORPHEUS_FFMPEG` | the ffmpeg drop detection uses |
 | `ORPHEUS_SHADERS` | moves your shader folder |
 | `ORPHEUS_QSB` | the shader compiler (set but empty = none) |
 
@@ -86,14 +86,14 @@ itself (scroll or right-click), because this player does not do popout menus.
 
 | method | |
 |---|---|
-| `status` · `toggle` · `show` · `hide` | the stage |
+| `status` · `toggle` · `show` · `hide` | the visualizer |
 | `library` · `login` · `eq` · `lyrics` · `settings` | the player, opened on a page |
-| `style <name>` · `nextStyle` | the stage's style |
+| `style <name>` · `nextStyle` | the visualizer's style |
 | `railViz <name>` · `nextRailViz` | the player's rail |
-| `scene viz\|cassette\|next` · `cassette` | the stage's scene; `cassette` toggles the deck (opening the stage on it if closed) |
-| `miniPlayer` · `placement` · `showMonitor <name>` | stage layout |
+| `scene viz\|cassette\|next` · `cassette` | the visualizer's scene; `cassette` toggles the tape deck (opening the visualizer on it if closed) |
+| `miniPlayer` · `placement` · `showMonitor <name>` | visualizer layout |
 | `autoStyle` `pilgrimage` `trackTitle` `lyricsOverViz` `autoQuality` `showFps` `director` `beatLock` `dropMap` | `on` · `off` · `toggle` |
-| `pilgrimNext` | Pilgrimage's next leg |
+| `pilgrimNext` | the style journey's next leg |
 | `bloom` · `feedback` | `off` · `subtle` · `full` · `next` |
 | `widget <key> <value>` | see above (there is no `widgetViz`; use `widget viz <style>`) |
 | `importShader <text>` | import a shadertoy link or GLSL as a style |
@@ -107,7 +107,7 @@ so a web page you visit cannot drive it.
 - library: `GET /search`, `/collection/{what}`, `/liked`, `/queue?from=&count=` (a window of the play order), `/lyrics/{id}`, `/stats`; `POST /favorite`
 - sign-in: `POST /login/link`, `/login/pkce/start`, `/login/pkce/finish`, `/logout`
 - EQ: `GET|POST /eq`, `POST /eq/presets`, `DELETE /eq/presets/{id}`, `GET /autoeq/search?q=`, `POST /autoeq/apply`, `/autoeq/clear`, `/autoeq/refresh`
-- drop map and shaders: `GET /analysis/{id}`, `GET /shaders`, `POST /shaders/import`, `/shaders/reload`
+- drop detection and shaders: `GET /analysis/{id}`, `GET /shaders`, `POST /shaders/import`, `/shaders/reload`
 - video: `GET /yt/search`, `POST /yt/play`, `GET /anime/search`, `/anime/episodes`, `POST /anime/watch`, `/anime/curd`, `/video/{action}`
 - scrobbling and remote: `GET /scrobble`, `POST /scrobble/flush`, `/lastfm/auth/start`, `/lastfm/auth/finish`, `/lastfm/disconnect`, `GET /remote/pair`, `POST /remote/pair/reset`
 

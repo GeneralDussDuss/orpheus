@@ -1600,7 +1600,7 @@ FloatingWindow {
         // `y` copies the selected row; this button copies what is playing, which
         // is what a button beside the now-playing art can only mean.
         hintItems: {
-          var h = [{ k: "V", l: "stage", run: function() { win.engine.open = !win.engine.open }, tip: "open or close the big visualizer" }]
+          var h = [{ k: "V", l: "visualizer", run: function() { win.engine.open = !win.engine.open }, tip: "open or close the big visualizer" }]
           if (width / win.cw >= 36)
             h.push({ k: "y", l: "share", run: function() { if (win.track) win.shareItem(win.track, false); else win.say("nothing playing") },
                      tip: "copy the playing track's link (y copies the selected row)", tipKey: "" })

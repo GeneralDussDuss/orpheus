@@ -44,9 +44,9 @@ Useful flags: `--open library|stage|widget|none`, `--style <name>`,
 `--shot <dir>` (render each window off-screen to PNGs, with a throwaway config so your
 real settings are untouched), `--write-icon <path.ico>`. `ORPHEUS_HOME` points the
 config somewhere else; `ORPHEUS_MPV` points at a specific `mpv.exe`, `ORPHEUS_FFMPEG` at
-`ffmpeg.exe` (the drop map's decoder), `ORPHEUS_SHADERS` at your shader folder and
+`ffmpeg.exe` (the decoder for drop detection), `ORPHEUS_SHADERS` at your shader folder and
 `ORPHEUS_QSB` at the shader compiler (set but empty = none). `--scene viz|cassette` picks the
-stage's scene first; `--shot` also sandboxes `ORPHEUS_SHADERS`.
+visualizer's scene first; `--shot` also sandboxes `ORPHEUS_SHADERS`.
 
 Tools dir: `%LOCALAPPDATA%\Orpheus\tools\qsb\` holds `qsb.exe` + `Qt6ShaderTools.dll` for your
 own shaders (optional; the daemon also finds qsb on PATH, beside PySide6, or at `ORPHEUS_QSB`).
@@ -87,7 +87,7 @@ there is no console, so everything goes there.
   the desktop/taskbar nor an Orpheus window counts as a game. Borderless games often
   read as "accepts notifications", which is why the window check is there. It turns on
   at once and off after two quiet polls, so an alt-tab does not bring everything back.
-  While it is on: the widget's loaders are off, every stage placement hides (the overlay
+  While it is on: the widget's loaders are off, every visualizer placement hides (the overlay
   and the fullscreen show are topmost windows), toasts are skipped, and the `--open`
   window is not shown over a game Orpheus was started during. Nothing is written to
   config.json, and it all comes back when the game goes. QML reads it as
@@ -99,7 +99,7 @@ there is no console, so everything goes there.
   WindowDoesNotAcceptFocus | Tool | WindowStaysOnTopHint` plus `WS_EX_NOACTIVATE |
   WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW`, shown with `SW_SHOWNOACTIVATE`,
   so clicks go straight through it to the game and it never takes focus. Unlike the
-  stage, it is meant to be click-through. It is hidden between appearances, because an
+  visualizer, it is meant to be click-through. It is hidden between appearances, because an
   idle topmost window over a game can still cost the game DWM's direct-flip path.
   Config: `"hud": "on" | "off"` (track-change pop-ups; the hotkey works either way),
   `"hudCorner": "top-left" | "top-right" | "bottom-left" | "bottom-right"`.
@@ -139,7 +139,7 @@ there is no console, so everything goes there.
   a box.
 - On a CI runner Win+Alt+M was already taken. The tray only lists hotkeys that actually
   registered.
-- ffmpeg (the drop map's decoder) arrives with `yt-dlp.yt-dlp`'s winget dependency under
+- ffmpeg (the decoder for drop detection) arrives with `yt-dlp.yt-dlp`'s winget dependency under
   `WinGet\Packages\yt-dlp.FFmpeg_*\…\bin`, not in `WinGet\Links`, so a fresh shell's PATH may
   not have it. `find_tools()` and `ffmpeg_path()` glob for it; without it Settings ▸ visuals
   shows "no decoder" under the drop-map toggle and every track plays on the live grid.

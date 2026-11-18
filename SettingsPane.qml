@@ -108,21 +108,21 @@ Rectangle {
       // the eight switches the preset drives; searching shows them without the fold
       var reactOpen = isOpen("react")
       if (!searching) r.push({ kind: "action", id: "fold", fold: "react", ess: true, label: "tune the 8 switches", hint: reactOpen ? "▾" : "▸",
-                              desc: "⏎ to " + (reactOpen ? "fold" : "unfold") + " · director, beat lock, auto style, pilgrimage, title card, lyrics, drop map, drop effects" })
+                              desc: "⏎ to " + (reactOpen ? "fold" : "unfold") + " · follow the song, beat lock, auto style, style journey, title card, lyrics, drop detection, drop effects" })
       if (reactOpen || searching) {
-        r.push({ kind: "toggle", id: "director", ess: true, label: "follow the song's structure", def: d.director,
+        r.push({ kind: "toggle", id: "director", ess: true, label: "follow the song's sections", def: d.director,
                  desc: "builds tighten, drops hit harder, breakdowns calm down" })
         r.push({ kind: "toggle", id: "beatLock", ess: true, label: "lock flashes to the beat", def: d.beatLock,
                  desc: "flashes land on a predicted beat grid instead of a detection late" })
         r.push({ kind: "toggle", id: "autoStyle", ess: true, label: "switch styles on drops", def: d.autoStyle,
                  desc: "jump to another visualizer style when a big drop lands" })
-        r.push({ kind: "toggle", id: "pilgrimage", ess: true, label: "pilgrimage", def: d.pilgrimage,
-                 desc: "travel between styles with the song · each section morphs into its own world" })
+        r.push({ kind: "toggle", id: "pilgrimage", ess: true, label: "style journey", def: d.pilgrimage,
+                 desc: "style journey · wanders through styles on its own, each section morphing into its own world" })
         r.push({ kind: "toggle", id: "trackTitle", ess: true, label: "title card on track change", def: d.trackTitle,
                  desc: "the new track's name fades in over the visualizer" })
         r.push({ kind: "toggle", id: "lyricsOverViz", ess: true, label: "lyrics over the visualizer", def: d.lyricsOverViz,
-                 desc: "the sung line, karaoke style, over the stage" })
-        r.push({ kind: "toggle", id: "dropMap", ess: true, label: "drop map", def: d.dropMap,
+                 desc: "the sung line, karaoke style, over the visualizer" })
+        r.push({ kind: "toggle", id: "dropMap", ess: true, label: "drop detection", def: d.dropMap,
                  desc: "analyse each track ahead of time so beats, builds and drops land exactly · needs ffmpeg" })
         r.push({ kind: "toggle", id: "dropFx", ess: true, label: "drop effects", def: d.dropFx,
                  desc: "a chroma burst, grain and a vignette when a drop lands" })
@@ -150,7 +150,7 @@ Rectangle {
                  desc: "on: the rail and the widget show the style above · off: pick one for each below" })
         if (!synced) {
           r.push({ kind: "choice", id: "railViz", label: "player rail style", options: ["off"].concat(styles), def: d.railViz,
-                   desc: "the plane beside the player: a visualizer, or the album art" })
+                   desc: "the side panel beside the player: a visualizer, or the album art" })
           r.push({ kind: "choice", id: "widget.viz", label: "widget style · visualizer", options: styles, def: d.widget.viz,
                    desc: "the visualizer inside the widget" })
         } else {
@@ -161,8 +161,8 @@ Rectangle {
       r.push({ kind: "choice", id: "placement", label: "visualizer as", def: d.placement,
                options: e && e.placements ? e.placements : ["overlay", "desktop"],
                desc: "a window on top, live wallpaper behind the icons, or a fullscreen show" })
-      r.push({ kind: "choice", id: "scene", label: "stage scene", options: e && e.scenes ? e.scenes : ["viz", "cassette"], def: d.scene, key: "t",
-               desc: "what the visualizer window and the show draw: the visualizer, or a cassette deck with reels, vu meters and the queue as a j-card" })
+      r.push({ kind: "choice", id: "scene", label: "visualizer scene", options: e && e.scenes ? e.scenes : ["viz", "cassette"], def: d.scene, key: "t",
+               desc: "what the visualizer window and the show draw: the visualizer, or a tape deck with reels, vu meters and the queue as a j-card" })
       r.push({ kind: "choice", id: "showMonitor", label: "show on screen", options: screens(), def: "",
                desc: "which monitor the wallpaper and the fullscreen show use" })
       r.push({ kind: "toggle", id: "stage", label: "visualizer window", key: "V",
@@ -174,7 +174,7 @@ Rectangle {
                desc: "each frame leaves a fading echo of the last, like milkdrop" })
       r.push({ kind: "choice", id: "ambient", label: "ambient light", options: ["off", "subtle", "vivid"], def: d.ambient,
                desc: "the visualizer, dim and blurred, behind the player's panes · dark themes only" })
-      r.push({ kind: "choice", id: "deckLook", label: "cassette look", options: ["shell", "light"], def: d.deckLook,
+      r.push({ kind: "choice", id: "deckLook", label: "tape deck look", options: ["shell", "light"], def: d.deckLook,
                desc: "the deck (t): a lit clear-shell machine, or the same deck drawn in light" })
       r.push({ kind: "header", label: "motion" })
       r.push({ kind: "toggle", id: "titleFx", label: "title decode", def: d.titleFx,
@@ -185,7 +185,7 @@ Rectangle {
                desc: "a short start-up screen the first time the player opens · any key skips it" })
       r.push({ kind: "header", label: "your shaders" })
       r.push({ kind: "action", id: "shaderImport", label: "import shader from clipboard", hint: "a shadertoy link, or glsl with mainImage",
-               desc: "copy a shadertoy link or an image shader's code, then ⏎; it lands in your shaders folder and on the stage" })
+               desc: "copy a shadertoy link or an image shader's code, then ⏎; it lands in your shaders folder and in the visualizer" })
       r.push({ kind: "action", id: "shaderFolder", label: "open the shaders folder", hint: (e && e.userStyles ? e.userStyles.length : 0) + " styles",
                desc: "drop any shadertoy-style .frag here; it compiles on save and appears as a style · " + (e ? e.shaderDir : "") })
       r.push({ kind: "action", id: "shaderReload", label: "recompile your shaders", desc: "rescan the folder now, e.g. after installing qsb" })
@@ -215,7 +215,7 @@ Rectangle {
       r.push({ kind: "toggle", id: "widget.enabled", label: "desktop widget", def: d.widget.enabled,
                desc: "a small now-playing card in a corner of the screen" })
       r.push({ kind: "choice", id: "widget.style", label: "widget style", options: e && e.widgetStyles ? e.widgetStyles : ["compact", "full", "cassette"], def: d.widget.style,
-               desc: "full has the art and a visualizer; compact is one line; cassette (studio), monolith, reference and field stand vertical" })
+               desc: "full has the art and a visualizer; compact is one line; studio, monolith, reference and field stand vertical" })
       r.push({ kind: "choice", id: "widget.corner", label: "widget corner", options: corners, def: d.widget.corner,
                desc: "where on the screen the widget sits" })
       r.push({ kind: "choice", id: "widget.monitor", label: "widget screen", options: screens(), def: d.widget.monitor,
@@ -223,7 +223,7 @@ Rectangle {
       r.push({ kind: "choice", id: "widget.layer", label: "widget layer", def: d.widget.layer,
                options: onWindows ? ["top", "desktop"] : ["top", "reserve", "desktop", "tile", "float"],
                desc: "above other windows (faded until hovered), or down on the desktop" })
-      r.push({ kind: "toggle", id: "miniPlayer", label: "mini player on the stage", def: d.miniPlayer,
+      r.push({ kind: "toggle", id: "miniPlayer", label: "mini player in the visualizer", def: d.miniPlayer,
                desc: "transport controls over the visualizer window" })
       if (onWindows) {
         r.push({ kind: "header", label: "windows" })
@@ -312,7 +312,7 @@ Rectangle {
                desc: "an fps counter in the corner of the visualizer" })
       r.push({ kind: "number", id: "lookaheadMs", label: "beat lookahead", min: 0, max: 400, step: 5, unit: "ms", def: d.lookaheadMs,
                desc: "how far ahead the beat grid aims · raise it if flashes land late, lower if early" })
-      r.push({ kind: "number", id: "dropMapLeadMs", label: "drop map lead", min: -200, max: 400, step: 5, unit: "ms", def: d.dropMapLeadMs,
+      r.push({ kind: "number", id: "dropMapLeadMs", label: "drop detection lead", min: -200, max: 400, step: 5, unit: "ms", def: d.dropMapLeadMs,
                desc: "how early the mapped beat shows · raise it if mapped flashes land late, lower if early" })
       r.push({ kind: "header", label: "phone remote" })
       r.push({ kind: "text", id: "remoteHost", label: "remote address", def: "", placeholder: "this machine's LAN address",
@@ -506,7 +506,8 @@ Rectangle {
     if (r.id === "style" || r.id === "railViz" || r.id === "widget.viz") return styleName(v)
     if (r.id === "fps") return v + " fps"
     if (r.id === "placement") return ({ desktop: "wallpaper", fullscreen: "fullscreen show", overlay: "window on top" })[v] || v
-    if (r.id === "scene") return ({ viz: "visualizer", cassette: "cassette deck" })[v] || v
+    if (r.id === "scene") return ({ viz: "visualizer", cassette: "tape deck" })[v] || v
+    if (r.id === "widget.style") return v === "cassette" ? "studio" : v
     if (r.id === "showMonitor" || r.id === "widget.monitor") return v || "the main one"
     if (r.id === "widget.layer") return ({ top: "above windows", desktop: "on the desktop", reserve: "reserve space", tile: "tiled window", float: "floating window" })[v] || v
     if (r.id === "quality") return ({ high: "320k", lossless: "lossless", hires: "hi-res" })[v] || "unknown"

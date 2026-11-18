@@ -48,7 +48,7 @@ irm https://raw.githubusercontent.com/GeneralDussDuss/orpheus/main/install.ps1 |
 Curd for anime, fetches Orpheus into `%LOCALAPPDATA%\Orpheus\app`, builds its Python environment, adds
 **Orpheus** to the Start menu and Settings → Apps, and opens it. mpv's installer asks for administrator
 approval once. `winget` is built into Windows 10 and 11 as App Installer. winget's `yt-dlp` brings
-ffmpeg and the desktop extra brings numpy, so the drop map works out of the box.
+ffmpeg and the desktop extra brings numpy, so drop detection works out of the box.
 
 Run the same line again to update. To remove it, use Uninstall in Settings → Apps, or this; either way
 keeps your sign-in and settings in `%LOCALAPPDATA%\Orpheus\state`:
@@ -72,15 +72,15 @@ pieces. Click the tray icon for the player, right-click for the visualizer, the 
   three colours (background, text, accent) into a whole palette, with a dice roll, and saves it to
   `~/.config/orpheus/themes`. **From Album Art** pulls a palette from the cover of what is playing.
 - **The show.** A fullscreen show, a **wallpaper mode** that sits behind your desktop icons, and
-  **kinetic lyrics** over the stage (entrance: wave, rain or plain). Trails and bloom are settings, and
-  the director lands style changes on the downbeat.
+  **kinetic lyrics** over the visualizer (entrance: wave, rain or plain). Trails and bloom are settings, and
+  the visualizer lands style changes on the downbeat.
 - **Only Orpheus.** The visualizers capture the app's own audio through **WASAPI process loopback**
   (Windows 10 2004 and later), so a game or a call in the background does not drive them. Where that is
   missing, they fall back to `cava` on the whole output.
 - **Controls.** Rebindable global hotkeys (see [keys.md](keys.md#windows-rebindable-in-settings)).
 - **Windows shell.** Taskbar thumbnail buttons (previous, play / pause, next), toasts on track change,
   a jump list, a frameless window drawn entirely by the TUI, and **glass**, a blurred see-through player.
-- **Game mode.** Notices a fullscreen game, stands the widget, stage and toasts down, and brings them
+- **Game mode.** Notices a fullscreen game, stands the widget, visualizer and toasts down, and brings them
   back afterwards. An **in-game HUD** (cover, title, a mini spectrum) slides in on track changes,
   click-through and never taking focus. **Discord Rich Presence** with your own application ID.
 - **Anime** is Curd's: in section `8`, `c` opens it in its own console with AniList sync.

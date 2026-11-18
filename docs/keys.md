@@ -10,7 +10,7 @@ asks Hyprland what the global keys are bound to right now, so it follows a rebin
 | key | |
 |---|---|
 | `Super+Shift+M` | the player (takes over Omarchy's music key, Spotify by default) |
-| `Super+Ctrl+M` | the visualizer window / stage |
+| `Super+Ctrl+M` | the visualizer window |
 | `Super+Alt+M` | the desktop widget on / off |
 | `Ctrl+Shift+O` | sign in |
 
@@ -26,7 +26,7 @@ o.bind("SUPER + SHIFT + C", "Copy song link", "orpheus share")
 
 `Win+Alt+M` player, `Win+Alt+V` visualizer, `Win+Alt+P` mini player, `Win+Alt+W` widget,
 `Win+Alt+Space` play / pause, `Win+Alt+←` / `→` previous / next, `Win+Alt+N` the HUD,
-`Win+Alt+Q` the cassette deck, and more. The `?` sheet lists the ones your run actually registered, and why
+`Win+Alt+Q` the tape deck, and more. The `?` sheet lists the ones your run actually registered, and why
 any did not. Media keys and the Windows media overlay work too.
 
 ## In the player
@@ -50,22 +50,22 @@ any did not. Media keys and the Windows media overlay work too.
 | `y` `Y` | copy a TIDAL link / a universal song.link |
 | `v` | cycle the player's visualizer rail |
 | `V` | open / close the visualizer window |
-| `t` | cassette deck on / off |
+| `t` | tape deck on / off |
 
 Lists: `j` `k` `↓` `↑` move, `pgdn` `pgup` move 10, `g` `G` top / bottom, `⏎` open or play,
 `a` play the row next, `f` like the row, `P` `S` play / shuffle the page.
 
 Search box: type to search, `↓` or `esc` to the results, `⏎` opens the selected one.
 
-## In the visualizer window (stage)
+## In the visualizer window
 
 | keys | |
 |---|---|
 | `l` `h` `→` `←` | next / previous style; in the deck, shuttle ± 10 s |
 | `1`-`9` `0` `⇧1`-`⇧9` | pick a style (leaves the deck) |
-| `J` · `N` | journey (pilgrimage) on / off · its next leg |
-| `t` | cassette deck / visualizer |
-| `E` | eject (cassette deck only) |
+| `J` · `N` | style journey on / off · its next leg |
+| `t` | tape deck / visualizer |
+| `E` | eject (tape deck only) |
 | `f` | fullscreen show / window |
 | `m` | mini player on / off |
 | `F` | like what is playing |
@@ -89,7 +89,7 @@ says what it does and its key.
 
 Visualizer and widget: click for the next style, right-click back, scroll to step through. Double-click
 the fullscreen show to get a window back. Drag the title to move the floating widget or the
-visualizer's window card; double-click the card's title to centre it again. On the cassette deck, drag
+visualizer's window card; double-click the card's title to centre it again. On the tape deck, drag
 a reel to scrub (one turn is 30 s, scroll for ± 5 s) and click a j-card track to play it. Drop a
 `.frag` on the visualizer to import it as a style.
 
@@ -97,7 +97,7 @@ Bar: click for the visualizer, right-click or scroll for the next style, middle-
 
 ## Panes
 
-- **Video page**: `⇥` next provider, `⏎` watch, `a` listen instead, `c` hand over to Curd, `space`
+- **Web page**: `⇥` next provider, `⏎` watch, `a` listen instead, `c` hand over to Curd, `space`
   pause, `l` `h` seek, `F` fullscreen, `x` close the video.
 - **Equalizer**: `h` `l` pick a band, `k` `j` up / down half a decibel, `K` `J` coarse, `0` zero the band,
   `z` zero all, `>` `<` next / previous preset, `b` bypass, `]` `[` preamp, `\` auto headroom, `A` find
@@ -134,7 +134,7 @@ the daemon rather than the shell, because the window's status poll only runs whi
 
 `orpheus [open|stage|close|toggle|status|share [-u]|tape]` is idempotent: `open` and `close` check
 state first, `toggle` flips the player, `status` prints the shell's status JSON, `tape` toggles the
-cassette deck. Apart from `share`, everything is an IPC call; nothing is launched or kept alive. That
+tape deck. Apart from `share`, everything is an IPC call; nothing is launched or kept alive. That
 is what makes it safe for a `.desktop` entry, which a launcher may fire twice.
 
 For everything else, call the shell directly. See [config.md](config.md#ipc) for the methods.

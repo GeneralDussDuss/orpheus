@@ -370,7 +370,7 @@ Item {
         return
       }
       var s = d.style
-      var line = s.ok ? "shader ╱╱ " + s.label + " · on the stage" : "shader ✕ " + s.name + " · " + s.error
+      var line = s.ok ? "shader ╱╱ " + s.label + " · on the visualizer" : "shader ✕ " + s.name + " · " + s.error
       if (!s.url) { if (done) done(!!s.ok, line, s.name); return }
       // The list has to know the new style before setStyle will take it: the
       // /status shaders.version that would refetch it may not have moved yet.
