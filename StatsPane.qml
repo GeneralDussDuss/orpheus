@@ -77,7 +77,7 @@ Rectangle {
     else if (t === "g") { Tui.scrollTo(flick, 0); e.accepted = true }
     else if (t === "G") { Tui.scrollTo(flick, flick.contentHeight); e.accepted = true }
     else if (t === "w") { range = "wrapped"; e.accepted = true }
-    else if (t === "r") { load(); e.accepted = true }
+    else if (t === "R") { load(); e.accepted = true }
     else e.accepted = host.handleKey(e)
   }
 
@@ -248,7 +248,7 @@ Rectangle {
       kind: pane.err ? "error" : "busy"
       title: pane.err ? "no stats to show" : "reading the history"
       reason: pane.err
-      actions: pane.err ? [{ k: "r", l: "reload", run: function() { pane.load() }, tip: "read the history again" }] : []
+      actions: pane.err ? [{ k: "R", l: "reload", run: function() { pane.load() }, tip: "read the history again" }] : []
     }
 
     Column {
@@ -429,7 +429,7 @@ Rectangle {
       items: [{ k: "⇥", l: "range", run: function() { pane.step(1) }, tip: "next time range" },
               { k: "w", l: "wrapped", run: function() { pane.range = "wrapped" }, tip: "this calendar month" },
               { k: "j/k", l: "scroll" },
-              { k: "r", l: "reload", run: function() { pane.load() }, tip: "read the history again" },
+              { k: "R", l: "reload", run: function() { pane.load() }, tip: "read the history again" },
               { k: "esc", l: "back", run: function() { host.back() } }]
     }
     Text {

@@ -1070,7 +1070,7 @@ FloatingWindow {
         if (win.page.type === "stats")
           return [h("⇥", "range", function() { if (statsLoader.item) statsLoader.item.step(1) }, "next time range"),
                   h("w", "wrapped", function() { if (statsLoader.item) statsLoader.item.range = "wrapped" }, "this calendar month"),
-                  h("r", "reload", function() { if (statsLoader.item) statsLoader.item.load() }, "read the history again"),
+                  h("R", "reload", function() { if (statsLoader.item) statsLoader.item.load() }, "read the history again"),
                   h("esc", "back", win.back)]
         if (win.page.type === "search") return [h("/", "search", function() { searchInput.forceActiveFocus() }), h("⏎", "play", act)]
         return [h("⏎", "open", act, "open or play the row"), h("a", "next", function() { win.queueItem(win.cursorItem(), true) }, "play the row next"),
@@ -2381,7 +2381,14 @@ FloatingWindow {
     Qt.callLater(refocus)
   }
   TuiMenu { id: ctxMenu; onClosed: win.refocus() }
-  KeysSheet { id: keysSheet; host: win }
+  KeysSheet {
+    id: keysSheet
+    host: win
+    // the window's current page decides which keys the sheet opens on
+    context: loginCover.active ? "sign in" : win.page.type === "eq" ? "equalizer" : win.page.type === "lyrics" ? "lyrics"
+           : win.page.type === "settings" ? "settings" : win.page.type === "stats" ? "stats"
+           : win.videoPage ? "video page" : "player library"
+  }
 
   Component.onCompleted: {
     list.forceActiveFocus()

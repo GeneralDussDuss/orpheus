@@ -411,8 +411,8 @@ Rectangle {
     else if (t === "J") { nudge(-step * 6); e.accepted = true }
     else if (t === "0") { resetBand(); e.accepted = true }
     else if (t === "z") { resetAll(); e.accepted = true }
-    else if (t === "p") { cyclePreset(1); e.accepted = true }
-    else if (t === "P") { cyclePreset(-1); e.accepted = true }
+    else if (t === ">") { cyclePreset(1); e.accepted = true }
+    else if (t === "<") { cyclePreset(-1); e.accepted = true }
     else if (t === "b") { toggleBypass(); e.accepted = true }
     else if (t === "[") { setPreamp(preampShown - 0.5); e.accepted = true }
     else if (t === "]") { setPreamp(preampShown + 0.5); e.accepted = true }
@@ -848,7 +848,7 @@ Rectangle {
     HintBar {
       visible: !pane.picking
       keyColor: host.accentText; labelColor: host.dim; hoverColor: host.accentText
-      items: [{ k: "p", l: "preset", run: function() { pane.cyclePreset(1) }, tip: "next preset" },
+      items: [{ k: "<>", l: "preset", run: function() { pane.cyclePreset(1) }, tip: "next preset · < goes back", tipKey: ">" },
               { k: "b", l: pane.eqOn ? "bypass" : "turn on", run: function() { pane.toggleBypass() } },
               { k: "]/[", l: "preamp", run: function() { pane.setPreamp(pane.preampShown + 0.5) }, tip: "preamp up", tipKey: "]" },
               { k: "\\", l: "auto", run: function() { pane.autoHeadroom() }, tip: "automatic headroom" },

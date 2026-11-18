@@ -86,8 +86,8 @@ menus. Colours come from the active Omarchy theme, so it changes when your deskt
   structure and lands style changes on the downbeat.
 - **Drop map**: each track (TIDAL or Navidrome) is analysed ahead so builds and drops land exactly: the
   picture winds up over the last bars, blacks out on the last beat and bursts on the drop. Needs ffmpeg.
-- **Pilgrimage** (`g` on the stage): the song travels between styles by section, the build in one world
-  and the drop diving into another. `n` skips a leg; a style you pick yourself is a detour until the
+- **Pilgrimage** (`J` on the stage): the song travels between styles by section, the build in one world
+  and the drop diving into another. `N` skips a leg; a style you pick yourself is a detour until the
   next section.
 - **Cassette deck** (`t`): reels that turn at real tape speed, vu needles, the queue as a j-card you can
   click, a take-up counter, piano keys and eject. Pausing coasts into a brake kiss. Drag a reel to scrub.
@@ -144,7 +144,7 @@ Press `?` anywhere for the full sheet, including what Hyprland has bound right n
 
 In the player: `space` pause, `n` / `p` next / previous, `/` search, `1`-`9` sections, `e` equalizer,
 `L` lyrics, `t` cassette deck, `V` the stage, `,` settings, `Ctrl+K` command palette, `y` / `Y` copy a
-link. On the stage: `←` / `→` change style, `f` fullscreen, `g` pilgrimage, `esc` close.
+link. On the stage: `←` / `→` change style, `f` fullscreen, `J` pilgrimage, `esc` close.
 
 `Super+Shift+M` is Omarchy's own music key, and Orpheus takes it over. To bring your own keys, put
 `orpheus_bindings = false` in `hyprland.lua` above the `require("hypr.orpheus")` line.

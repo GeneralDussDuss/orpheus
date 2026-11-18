@@ -19,6 +19,23 @@ Item {
   // The section named here comes first, for a host whose own keys are the ones
   // wanted at a glance (the stage opens on "in the visualizer window").
   property string lead: ""
+  // Which window asked: the sheet opens on that window's keys (see `scopes`),
+  // and `a` swaps to every key. "" or an unknown name shows everything.
+  property string context: ""
+  property bool showAll: false
+  readonly property var scopes: ({
+    "player library": ["anywhere in the player", "playback", "lists", "search box", "visualizer", "mouse · player", "this sheet"],
+    "video page": ["video page", "anywhere in the player", "playback", "this sheet"],
+    "visualizer": ["in the visualizer window", "mouse · visualizer, widget", "this sheet"],
+    "equalizer": ["equalizer", "autoeq picker", "anywhere in the player", "this sheet"],
+    "lyrics": ["lyrics", "playback", "anywhere in the player", "this sheet"],
+    "settings": ["settings", "anywhere in the player", "this sheet"],
+    "stats": ["stats", "anywhere in the player", "this sheet"],
+    "sign in": ["sign in", "this sheet"],
+    "widget": ["widget · floating or tiled window", "mouse · visualizer, widget", "this sheet"],
+    "command palette": ["command palette", "this sheet"]
+  })
+  readonly property bool scoped: !showAll && !!scopes[context]
 
   anchors.fill: parent
   visible: opacity > 0
@@ -29,7 +46,7 @@ Item {
   // opening lands at the top at once; only the keys glide
   property bool snap: false
   function open() {
-    snap = true; flick.contentY = 0; snap = false; shown = true; flick.forceActiveFocus()
+    showAll = false; snap = true; flick.contentY = 0; snap = false; shown = true; flick.forceActiveFocus()
     askHyprland()
   }
   function close() { shown = false; host.refocus() }
@@ -87,9 +104,14 @@ Item {
 
   // the sections, the lead one first
   readonly property var ordered: {
-    if (lead === "") return sections
-    var first = sections.filter(function(s) { return s[0] === lead })
-    return first.concat(sections.filter(function(s) { return s[0] !== lead }))
+    var all = sections
+    if (scoped) {
+      var want = scopes[context]
+      all = sections.filter(function(s) { return want.indexOf(s[0]) >= 0 })
+    }
+    if (lead === "") return all
+    var first = all.filter(function(s) { return s[0] === lead })
+    return first.concat(all.filter(function(s) { return s[0] !== lead }))
   }
 
   // [title, [[keys, what], ...]], checked against the handlers: Library.qml
@@ -106,9 +128,9 @@ Item {
     ["search box", [["type", "search as you type"], ["↓  esc", "to the results"], ["⏎", "open the selected result"]]],
     ["visualizer", [["v", "cycle the player rail"], ["V", "open / close the visualizer window"], ["t", "cassette deck on / off"]]],
     ["in the visualizer window", [["l h  → ←", "next / previous style · in the deck: shuttle ± 10 s"], ["1-9  0  ⇧1-9", "pick a style (leaves the deck)"],
-                                  ["g", "pilgrimage on / off"], ["n", "next leg · pilgrimage"], ["?", "this sheet"],
-                                  ["t", "cassette deck / visualizer"], ["e", "eject · cassette deck only"], ["f", "fullscreen show / window"],
-                                  ["p", "mini player on / off"], ["space", "play / pause"], ["esc", "close it"]]],
+                                  ["J", "journey (pilgrimage) on / off"], ["N", "next leg · pilgrimage"], ["?", "this sheet"],
+                                  ["t", "cassette deck / visualizer"], ["E", "eject · cassette deck only"], ["f", "fullscreen show / window"],
+                                  ["m", "mini player on / off"], ["space", "play / pause"], ["F", "like what is playing"], ["esc", "close it"]]],
     ["widget · floating or tiled window", [["space", "play / pause"], ["n  p", "next / previous track"], ["F", "like what is playing"],
                                            ["V", "open / close the visualizer window"]]],
     ["mouse · player", [["click row", "select it"], ["dbl-click row", "play or open it"], ["right-click", "menu: queue, radio, link"],
@@ -126,13 +148,13 @@ Item {
     ["video page", [["⇥", "next provider"], ["⏎", "watch"], ["a", "listen instead"], ["c", "hand over to curd"],
                     ["space", "pause the video"], ["l h  → ←", "seek the video"], ["F", "fullscreen"], ["x", "close the video"]]],
     ["equalizer", [["h l  ← →", "pick a band"], ["k j  ↑ ↓", "band up / down a step"], ["K J", "up / down coarse"], ["0  z", "zero the band / all"],
-                   ["p  P", "next / previous preset"], ["b", "bypass"], ["]  [", "preamp up / down"], ["\\", "auto headroom"],
+                   ["<  >", "previous / next preset"], ["b", "bypass"], ["]  [", "preamp up / down"], ["\\", "auto headroom"],
                    ["A", "find headphones (AutoEQ)"], ["x  X", "AutoEQ on / off · clear"],
                    ["drag  scroll", "set a band"], ["middle-click", "zero a band"], ["right-click", "bypass"]]],
     ["autoeq picker", [["type", "filter"], ["⏎", "apply"], ["↑ ↓", "move"], ["pgup pgdn", "page"],
                        ["ctrl+r", "refresh the index"], ["esc", "back to the bars"]]],
     ["lyrics", [["]  [", "sync later / earlier"], ["\\", "reset the sync"], ["m", "entrance: wave, rain, plain"], ["j k  ↓ ↑", "scroll"], ["g  G", "top / bottom"], ["click a line", "seek to that line"]]],
-    ["stats", [["⇥ ⇧⇥  ] [", "next / previous range"], ["l h  → ←", "the same"], ["w", "wrapped"], ["r", "reload"],
+    ["stats", [["⇥ ⇧⇥  ] [", "next / previous range"], ["l h  → ←", "the same"], ["w", "wrapped"], ["R", "reload"],
                ["j k  ↓ ↑", "scroll"], ["pgdn pgup", "scroll a page"], ["g  G", "top / bottom"]]],
     ["settings", [["⇥  ⇧⇥  ] [", "section"], ["j k  ↓ ↑", "move"], ["pgdn pgup", "move 8"], ["g G  home end", "first / last"],
                   ["l h  → ←", "change a value"], ["⏎", "set, edit or rebind"],
@@ -142,7 +164,7 @@ Item {
                  ["q  ctrl+w", "close the player"]]],
     ["command palette", [["type", "filter"], ["↓ ↑", "pick"], ["ctrl+j/k ctrl+n/p", "the same"], ["pgdn pgup", "move 8"],
                          ["⏎  click", "run"], ["esc  ctrl+k", "close"]]],
-    ["this sheet", [["j k  ↓ ↑", "scroll"], ["space pgdn pgup", "a page"], ["g  G", "top / bottom"], ["esc  ?  q", "close"]]]
+    ["this sheet", [["a", "this window's keys / all keys"], ["j k  ↓ ↑", "scroll"], ["space pgdn pgup", "a page"], ["g  G", "top / bottom"], ["esc  ?  q", "close"]]]
   ]
 
   Rectangle {
@@ -184,8 +206,10 @@ Item {
       Behavior on y { NumberAnimation { duration: Tui.STATE; easing.type: Tui.OUT } }
     }
     background: Qt.rgba(sheet.base.r, sheet.base.g, sheet.base.b, 1)
-    title: "keys"
-    hintItems: [{ k: "j/k", l: "scroll" }, { k: "esc", l: "close", run: function() { sheet.close() } }]
+    title: "keys · " + (sheet.scoped ? sheet.context : "all")
+    hintItems: [{ k: "a", l: sheet.scoped ? "all keys" : (sheet.scopes[sheet.context] ? "this window" : "all keys"),
+                  run: function() { sheet.showAll = !sheet.showAll }, tip: "this window's keys, or every key" },
+                { k: "j/k", l: "scroll" }, { k: "esc", l: "close", run: function() { sheet.close() } }]
     focused: true
     flickable: flick
     clock: host.clock
@@ -209,6 +233,7 @@ Item {
         else if (k === Qt.Key_Up || t === "k") Tui.scrollTo(flick, contentY - step)
         else if (k === Qt.Key_PageDown || k === Qt.Key_Space) Tui.scrollTo(flick, contentY + height * 0.8)
         else if (k === Qt.Key_PageUp) Tui.scrollTo(flick, contentY - height * 0.8)
+        else if (t === "a") { if (scopes[context]) { showAll = !showAll; Tui.scrollTo(flick, 0) } }
         else if (t === "g") Tui.scrollTo(flick, 0)
         else if (t === "G") Tui.scrollTo(flick, contentHeight)
         e.accepted = true

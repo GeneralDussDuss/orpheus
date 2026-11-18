@@ -57,7 +57,7 @@ sit on top of it, so the bars now mean "on top of my headphones". Its curve is d
 on the same scale, with the combined response dashed over it. With a correction live, the automatic
 preamp is measured from the combined response (the top of the whole cascade, rounded up to half a
 decibel), so it is exactly enough headroom and no more. `x` switches the correction off without
-forgetting it, `X` forgets it, and presets (`p`) leave it alone.
+forgetting it, `X` forgets it, and presets (`>` `<`) leave it alone.
 
 **Caching.** The index (about 9,000 headphones) is fetched on the first search and refreshed in the
 background once a month (`ctrl+r` in the picker refreshes it now); devices are fetched once. Both live

@@ -292,16 +292,17 @@ PanelWindow {
     if (e.key === Qt.Key_Escape) leave(close)
     else if (e.text === "?") keysSheet.open()
     else if (e.text === "t") toggleScene()
-    // under the deck the arrows run the tape, and e ejects it
+    // under the deck the arrows run the tape, and E ejects it
     else if (deck && (e.key === Qt.Key_Right || e.text === "l")) deckShuttle(10)
     else if (deck && (e.key === Qt.Key_Left || e.text === "h")) deckShuttle(-10)
-    else if (deck && e.text === "e") deckEject()
+    else if (deck && e.text === "E") deckEject()
     else if (e.key === Qt.Key_Right || e.text === "l") stepStyle(1)
     else if (e.key === Qt.Key_Left || e.text === "h") stepStyle(-1)
-    else if (e.text === "g") { picked(engine.pilgrimage ? "pilgrimage off" : "pilgrimage"); engine.setStageFlag("pilgrimage", "toggle") }
-    else if (e.text === "n" && engine.pilgrimage) { var leg = pilgrim.skip(); if (leg) picked(engine.styleLabels[leg] || leg) }
-    else if (e.text === "p" && !bleed) engine.setMiniPlayer(!engine.miniPlayer)
+    else if (e.text === "J") { picked(engine.pilgrimage ? "pilgrimage off" : "pilgrimage"); engine.setStageFlag("pilgrimage", "toggle") }
+    else if (e.text === "N" && engine.pilgrimage) { var leg = pilgrim.skip(); if (leg) picked(engine.styleLabels[leg] || leg) }
+    else if (e.text === "m" && !bleed) engine.setMiniPlayer(!engine.miniPlayer)
     else if (e.text === "f") leave(toggleShow)
+    else if (e.text === "F") { if (engine.api && engine.api.track) engine.api.toggleLike("track", engine.api.track.id) }
     else if (e.text >= "1" && e.text <= "9" && Number(e.text) <= engine.styles.length) pick(engine.styles[Number(e.text) - 1])
     // past nine styles: 0 is the tenth, shift+1-9 the eleventh on. Shift+1 arrives
     // as "!" on most layouts, so take either the digit key or the US symbol row.
@@ -449,7 +450,7 @@ PanelWindow {
       items: win.deck ? [
         { k: "t", l: "viz", run: function() { win.toggleScene() }, tip: "back to the visualizer" },
         { k: "←→", l: "tape", run: function() { win.deckShuttle(10) }, tip: "shuttle ± 10 s · drag a reel to scrub", tipKey: "← →" },
-        { k: "e", l: "eject", run: function() { win.deckEject() }, tip: "eject · close the deck" },
+        { k: "E", l: "eject", run: function() { win.deckEject() }, tip: "eject · close the deck" },
         { k: "space", l: "play", run: function() { if (win.engine.player) win.engine.player.togglePlaying() }, tip: "play / pause" },
         { k: "f", l: "window", run: function() { win.leave(win.toggleShow) }, tip: "back to the window · or double-click" },
         { k: "?", l: "keys", run: function() { keysSheet.open() }, tip: "every key and mouse gesture" },
@@ -463,7 +464,7 @@ PanelWindow {
     }
   }
 
-  // ┌─ orpheus · skyline ──────── ←→ style  p player  esc ┐
+  // ┌─ orpheus · skyline ──────── ←→ style  m player  esc ┐
   TuiBox {
     id: card
     visible: !win.bleed
@@ -477,7 +478,7 @@ PanelWindow {
     readonly property var deckHints: [
       { k: "t", l: "viz", run: function() { win.toggleScene() }, tip: "back to the visualizer", keep: 1 },
       { k: "←→", l: "tape", run: function() { win.deckShuttle(10) }, tip: "shuttle ± 10 s · drag a reel to scrub", tipKey: "← →", keep: 2 },
-      { k: "e", l: "eject", run: function() { win.deckEject() }, tip: "eject · close the deck", keep: 2 },
+      { k: "E", l: "eject", run: function() { win.deckEject() }, tip: "eject · close the deck", keep: 2 },
       { k: "f", l: "full", run: function() { win.leave(win.toggleShow) }, tip: "fullscreen show", keep: 0 },
       { k: "space", l: "play", run: function() { if (win.engine.player) win.engine.player.togglePlaying() }, tip: "play / pause", keep: 1 },
       { k: "?", l: "keys", run: function() { keysSheet.open() }, tip: "every key and mouse gesture", keep: 1 },
@@ -485,7 +486,7 @@ PanelWindow {
     readonly property var vizHints: [
       { k: "←→", l: "style", run: function() { win.stepStyle(1) }, tip: "next style · click, right-click and scroll the picture too", tipKey: "← →", keep: 1 },
       { k: "t", l: "tape", run: function() { win.toggleScene() }, tip: "cassette deck", keep: 2 },
-      { k: "p", l: "player", run: function() { win.engine.setMiniPlayer(!win.engine.miniPlayer) }, tip: (win.engine && win.engine.miniPlayer ? "hide" : "show") + " the mini player", keep: 2 },
+      { k: "m", l: "player", run: function() { win.engine.setMiniPlayer(!win.engine.miniPlayer) }, tip: (win.engine && win.engine.miniPlayer ? "hide" : "show") + " the mini player", keep: 2 },
       { k: "f", l: "full", run: function() { win.leave(win.toggleShow) }, tip: "fullscreen show", keep: 0 },
       { k: "space", l: "play", run: function() { if (win.engine.player) win.engine.player.togglePlaying() }, tip: "play / pause", keep: 1 },
       { k: "?", l: "keys", run: function() { keysSheet.open() }, tip: "every key and mouse gesture", keep: 1 },
@@ -572,7 +573,7 @@ PanelWindow {
             Behavior on color { ColorAnimation { duration: Tui.STATE; easing.type: Easing.InOutCubic } }
             MouseArea { id: pilTabMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                         onClicked: win.engine.setStageFlag("pilgrimage", "toggle")
-                        TuiTip { text: "pilgrimage · travel between styles with the song"; key: "g" } }
+                        TuiTip { text: "pilgrimage · travel between styles with the song"; key: "J" } }
           }
         }
         // Under the deck the tabs give way to the side of the tape that is playing.
@@ -700,5 +701,5 @@ PanelWindow {
     }
   }
 
-  KeysSheet { id: keysSheet; host: win; lead: "in the visualizer window" }
+  KeysSheet { id: keysSheet; host: win; context: "visualizer"; lead: "in the visualizer window" }
 }

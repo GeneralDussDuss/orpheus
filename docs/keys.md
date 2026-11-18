@@ -63,11 +63,12 @@ Search box: type to search, `↓` or `esc` to the results, `⏎` opens the selec
 |---|---|
 | `l` `h` `→` `←` | next / previous style; in the deck, shuttle ± 10 s |
 | `1`-`9` `0` `⇧1`-`⇧9` | pick a style (leaves the deck) |
-| `g` · `n` | pilgrimage on / off · its next leg |
+| `J` · `N` | journey (pilgrimage) on / off · its next leg |
 | `t` | cassette deck / visualizer |
-| `e` | eject (cassette deck only) |
+| `E` | eject (cassette deck only) |
 | `f` | fullscreen show / window |
-| `p` | mini player on / off |
+| `m` | mini player on / off |
+| `F` | like what is playing |
 | `space` | play / pause |
 | `?` · `esc` | key sheet · close |
 
@@ -99,14 +100,14 @@ Bar: click for the visualizer, right-click or scroll for the next style, middle-
 - **Video page**: `⇥` next provider, `⏎` watch, `a` listen instead, `c` hand over to Curd, `space`
   pause, `l` `h` seek, `F` fullscreen, `x` close the video.
 - **Equalizer**: `h` `l` pick a band, `k` `j` up / down half a decibel, `K` `J` coarse, `0` zero the band,
-  `z` zero all, `p` `P` next / previous preset, `b` bypass, `]` `[` preamp, `\` auto headroom, `A` find
+  `z` zero all, `>` `<` next / previous preset, `b` bypass, `]` `[` preamp, `\` auto headroom, `A` find
   headphones (AutoEQ), `x` AutoEQ on / off, `X` forget it. Mouse: click or drag a band, scroll to nudge,
   middle-click zeroes, right-click bypasses.
 - **AutoEQ picker**: type to filter, `⏎` apply, `↑` `↓` move, `pgup` `pgdn` page, `ctrl+r` refresh the
   index, `esc` back to the bars.
 - **Lyrics**: `]` `[` sync later / earlier (a quarter second), `\` reset the sync, `m` entrance (wave,
   rain, plain), `j` `k` scroll, `g` `G` top / bottom, click a line to seek there.
-- **Stats**: `⇥` `⇧⇥` `]` `[` or `l` `h` change range, `w` wrapped, `r` reload, `j` `k` `pgdn` `pgup`
+- **Stats**: `⇥` `⇧⇥` `]` `[` or `l` `h` change range, `w` wrapped, `R` reload, `j` `k` `pgdn` `pgup`
   `g` `G` scroll.
 - **Settings**: `⇥` `⇧⇥` `]` `[` section, `j` `k` move, `pgdn` `pgup` move 8, `g` `G` first / last,
   `l` `h` change a value, `⏎` set, edit or rebind, `d` back to default, `x` `del` hotkey off / clear a
@@ -116,7 +117,7 @@ Bar: click for the visualizer, right-click or scroll for the next style, middle-
 - **Menus**: `j` `k` `⇥` `⇧⇥` move, `⏎` `space` run, `g` `G` `home` `end` first / last, `esc` `q` close.
 - **Command palette**: type to filter, `↓` `↑` or `ctrl+j/k` `ctrl+n/p` pick, `pgdn` `pgup` move 8,
   `⏎` or click runs, `esc` `ctrl+k` close.
-- **This sheet**: `j` `k` scroll, `space` `pgdn` `pgup` a page, `g` `G` top / bottom, `esc` `?` `q` close.
+- **This sheet**: it opens on the current window's keys (`keys · equalizer`, …); `a` swaps to every key and back. `j` `k` scroll, `space` `pgdn` `pgup` a page, `g` `G` top / bottom, `esc` `?` `q` close.
 
 ## Sharing
 
