@@ -144,7 +144,7 @@ Rectangle {
       var synced = !e || e.syncViz
       var open = isOpen("viz") || !synced || searching
       if (!searching) r.push({ kind: "action", id: "fold", fold: "viz", label: "advanced: per-window styles", hint: open ? "▾" : "▸",
-                              desc: "⏎ to " + (open ? "fold" : "unfold") + " · give the player rail and the widget styles of their own" })
+                              desc: (!synced ? "open while each window has its own style" : "⏎ to " + (open ? "fold" : "unfold")) + " · give the player rail and the widget styles of their own" })
       if (open) {
         r.push({ kind: "toggle", id: "syncViz", label: "style everywhere", def: d.syncViz,
                  desc: "on: the rail and the widget show the style above · off: pick one for each below" })
