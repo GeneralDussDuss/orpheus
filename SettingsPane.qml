@@ -50,6 +50,7 @@ Rectangle {
   property int section: 0
   property int cursor: 0
   property string editing: ""        // the hotkey action / text row being edited, if any
+  property bool vizFold: false       // visuals ▸ advanced: per-window styles
   property string query: ""          // the search, across every section
   readonly property bool searching: query.trim() !== ""
 
@@ -90,10 +91,25 @@ Rectangle {
                  desc: "⏎ or click to switch the whole app to " + list[i].label.toLowerCase() })
       }
     } else if (id === "visuals") {
-      r.push({ kind: "choice", id: "style", label: "visualizer style", options: styles, def: d.style,
-               desc: "the look of the visualizer window, the wallpaper and the fullscreen show" })
-      r.push({ kind: "choice", id: "railViz", label: "player rail", options: ["off"].concat(styles), def: d.railViz, key: "v",
-               desc: "the plane beside the player: a visualizer, or the album art" })
+      r.push({ kind: "choice", id: "style", label: "visualizer style", options: styles, def: d.style, key: "v",
+               desc: "one style for the visualizer window, the wallpaper, the player rail and the widget" })
+      var synced = !e || e.syncViz
+      var open = vizFold || !synced
+      r.push({ kind: "action", id: "vizFold", label: "advanced: per-window styles", hint: open ? "▾" : "▸",
+               desc: "⏎ to " + (open ? "fold" : "unfold") + " · give the player rail and the widget styles of their own" })
+      if (open) {
+        r.push({ kind: "toggle", id: "syncViz", label: "style everywhere", def: d.syncViz,
+                 desc: "on: the rail and the widget show the style above · off: pick one for each below" })
+        if (!synced) {
+          r.push({ kind: "choice", id: "railViz", label: "player rail style", options: ["off"].concat(styles), def: d.railViz,
+                   desc: "the plane beside the player: a visualizer, or the album art" })
+          r.push({ kind: "choice", id: "widget.viz", label: "widget style · visualizer", options: styles, def: d.widget.viz,
+                   desc: "the visualizer inside the widget" })
+        } else {
+          r.push({ kind: "choice", id: "railArt", label: "player rail shows", options: ["style", "art"], def: "style",
+                   desc: "the visualizer by the album art, or the album art itself" })
+        }
+      }
       r.push({ kind: "choice", id: "placement", label: "visualizer as", def: d.placement,
                options: e && e.placements ? e.placements : ["overlay", "desktop"],
                desc: "a window on top, live wallpaper behind the icons, or a fullscreen show" })
@@ -190,13 +206,6 @@ Rectangle {
       r.push({ kind: "choice", id: "widget.layer", label: "widget layer", def: d.widget.layer,
                options: onWindows ? ["top", "desktop"] : ["top", "reserve", "desktop", "tile", "float"],
                desc: "above other windows (faded until hovered), or down on the desktop" })
-      r.push({ kind: "toggle", id: "syncViz", label: "widget follows the visualizer", def: d.syncViz,
-               desc: "the widget shows whatever style the visualizer shows" })
-      r.push({ kind: "choice", id: "widget.viz", label: "widget visualizer", options: styles, def: d.widget.viz,
-               disabled: value({ id: "syncViz", kind: "toggle" }) === true,
-               desc: value({ id: "syncViz", kind: "toggle" }) === true
-                     ? "following the visualizer · turn that off to pick one for the widget"
-                     : "the style inside the widget" })
       r.push({ kind: "toggle", id: "miniPlayer", label: "mini player on the stage", def: d.miniPlayer,
                desc: "transport controls over the visualizer window" })
       if (onWindows) {
@@ -393,6 +402,7 @@ Rectangle {
     switch (r.id) {
     case "style": return engine.style
     case "railViz": return engine.railViz
+    case "railArt": return engine.railViz === "off" ? "art" : "style"
     case "fps": return engine.fps
     case "bloom": return engine.bloom
     case "feedback": return engine.feedback
@@ -467,6 +477,11 @@ Rectangle {
     switch (r.id) {
     case "style": engine.setStyle(v); return
     case "railViz": engine.setRailViz(v); return
+    case "railArt": engine.setRailViz(v === "art" ? "off" : engine.style); return
+    case "syncViz":
+      // un-syncing starts the rail and the widget on what they show now, so nothing jumps
+      engine.setSyncViz(v)
+      return
     case "glass": if (Commons.Color.setGlass) Commons.Color.setGlass(!!v); return
     case "bloom": engine.setBloom(v); return
     case "feedback": if (engine.setFeedback) { engine.setFeedback(v); return } break
@@ -507,7 +522,7 @@ Rectangle {
     if (!r || r.def === undefined || !engine) return false
     if (isDefault(r)) { host.say(r.label + " · already the default"); return true }
     var path = r.id.split(".")
-    if (r.id === "style" || r.id === "railViz" || r.id === "widget.viz") { setValue(r, r.def) }
+    if (r.id === "style" || r.id === "railViz" || r.id === "railArt" || r.id === "widget.viz") { setValue(r, r.def) }
     else engine.updateConfig(function(c) {
       if (path.length === 2) { if (c[path[0]]) delete c[path[0]][path[1]] }
       else delete c[r.id]
@@ -538,6 +553,7 @@ Rectangle {
     if (r.kind === "toggle" || r.kind === "choice") { change(1); return }
     if (r.kind === "theme") { Commons.Color.setTheme(r.id); host.say("theme ╱╱ " + r.label); return }
     if (r.kind === "hotkey" || r.kind === "text" || r.kind === "number") { startEdit(r); return }
+    if (r.id === "vizFold") { vizFold = !vizFold; return }
     if (r.id === "builder") { Commons.Color.openBuilder(); return }
     if (r.id === "eq") { host.showEq(); return }
     if (r.id === "autoeq") { host.go({ type: "eq", title: "equalizer", pick: true }); return }

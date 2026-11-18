@@ -152,12 +152,15 @@ Item {
     for (var j in c) w[j] = c[j]
     return w
   }
-  // With syncViz on (the default) the widget shows whatever the visualizer shows,
-  // and choosing a style from either one changes both.
+  // With syncViz on (the default, and what any config without an explicit
+  // `false` gets) ONE style drives the visualizer, the player rail and the
+  // widget, and every route that picks a style changes that one. The rail keeps
+  // one extra state, "off" (album art), which is a mode of the rail and not a
+  // style. With syncViz off the rail and widget keep their own saved styles.
   readonly property bool syncViz: config.syncViz !== false
   readonly property string widgetViz: syncViz ? style : knownStyle(widget.viz)
   readonly property string railViz: config.railViz === "off" ? "off"
-                                    : knownStyle(config.railViz)
+                                    : syncViz ? style : knownStyle(config.railViz)
 
   function applyConfig(raw) {
     var parsed = {}
@@ -934,9 +937,19 @@ Item {
     var i = styles.indexOf(style)
     return setStyle(styles[(i + (step || 1) + styles.length) % styles.length])
   }
+  // Un-syncing starts the rail and the widget on what they show now, so nothing jumps.
+  function setSyncViz(on) {
+    updateConfig(function(c) {
+      if (!on) { if (c.railViz !== "off") c.railViz = style; c.widget = c.widget || {}; c.widget.viz = style }
+      c.syncViz = !!on
+    })
+    return statusText()
+  }
   function setRailViz(name) {
     if (name !== "off" && styles.indexOf(name) < 0) return "unknown viz: " + name + " (off|" + styles.join("|") + ")"
-    updateConfig(function(c) { c.railViz = name })
+    // synced: choosing a style on the rail picks THE style (art stays a rail-only mode)
+    if (syncViz && name !== "off") updateConfig(function(c) { c.style = name; c.railViz = name })
+    else updateConfig(function(c) { c.railViz = name })
     return statusText()
   }
   // Cycles art -> each style -> back to art, in place. The player never opens a

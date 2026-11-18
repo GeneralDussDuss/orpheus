@@ -28,14 +28,14 @@ position, restored on start.
 | key | default | |
 |---|---|---|
 | `style` | `prism` | the stage's style (any of the 20, or `@name` for yours) |
-| `railViz` | `prism` | the visualizer in the player's rail; `off` shows the album art |
+| `railViz` | `prism` | the visualizer in the player's rail (own style only with `syncViz` off); `off` shows the album art |
 | `scene` | `viz` | the stage opens on `viz` or `cassette` |
 | `deckLook` | `shell` | the cassette deck's look: `shell` or `light` |
 | `placement` | `overlay` | the stage: `overlay` (a card over everything), `desktop`, `fullscreen` |
 | `showMonitor` | `""` | pin the stage to a monitor by name; empty = the focused one when it opens |
 | `cardPos` | `null` | where you dragged the visualizer card (fractions); `null` = centred |
 | `miniPlayer` | `true` | the stage's mini player |
-| `syncViz` | `true` | the widget shows whatever the stage shows |
+| `syncViz` | `true` | one style drives the stage, the rail and the widget; `false` gives the rail (`railViz`) and widget (`widget.viz`) their own |
 | `bloom` · `feedback` | `subtle` | `off`, `subtle` or `full` |
 | `ambient` | `subtle` | `off`, `subtle` or `vivid` |
 | `autoStyle`, `pilgrimage` | `false` | stage flags |
